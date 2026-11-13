@@ -35,7 +35,7 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **Decided: small custom printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × AM32 ESCs (bidirectional mode) on the ESP32 servo channels, 3S 5000 mAh, PAHT-CF frame + PETG body. ≈ 2.5 kg, backpack-sized, 12–15 mph, ≈ $150–200 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` |
+| Chassis | **Decided: small custom printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × AM32 ESCs (bidirectional mode) on the ESP32 servo channels, 3S 5000 mAh, PAHT-CF frame + PETG body. ≈ 2.5 kg, backpack-sized, 12–15 mph, ≈ $150–260 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` (§2a = drive-module drawings) |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Vision camera (Phase 5) | Optional: GoPro in USB-webcam mode or a Logitech C920 |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe |
