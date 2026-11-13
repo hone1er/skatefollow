@@ -1,10 +1,21 @@
 """ROS 2 <-> ESP32 serial bridge.
 
-Reads lines like "R,0.532,1" from the ESP32 and publishes:
-  /ultrasonic/range   sensor_msgs/Range   (+inf when nothing is in range)
-  /esp32/link_ok      std_msgs/Bool       (ESP32 reports it hears our heartbeat)
+ESP32 -> Pi (published):
+  R,<m>,<link>   ->  ultrasonic/range   sensor_msgs/Range    (+inf when nothing is in range)
+                     esp32/link_ok      std_msgs/Bool        (ESP32 hears our heartbeat)
+  S,<fs>,<t>,<s> ->  esp32/failsafe     std_msgs/Bool        (ESP32 is forcing neutral)
+  V,<version>    ->  logged             (firmware version banner at boot)
 
-Sends "H\n" heartbeats to the ESP32 so its watchdog knows the Pi is alive.
+Pi -> ESP32 (sent):
+  H                  heartbeat, heartbeat_hz (10)
+  C,<thr>,<steer>    normalised -1..1 actuator command, cmd_rate_hz (50), from cmd_vel
+
+Subscribes cmd_vel (geometry_msgs/Twist) and converts it with ackermann.py
+using the wheelbase / max_steer_angle / max_speed parameters. If cmd_vel is
+older than cmd_timeout the bridge sends neutral. If the bridge dies entirely
+the ESP32's own 200 ms command watchdog goes to neutral. Also publishes
+esp32/actuators (geometry_msgs/Vector3: x = throttle, y = steer) for tuning.
+
 Reconnects automatically if the USB cable is unplugged and plugged back in.
 """
 
@@ -12,10 +23,13 @@ import math
 
 import rclpy
 import serial
+from geometry_msgs.msg import Twist, Vector3
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Range
 from std_msgs.msg import Bool
+
+from honebot_hardware.ackermann import AckermannParams, twist_to_ackermann
 
 
 class Esp32Bridge(Node):
@@ -25,17 +39,36 @@ class Esp32Bridge(Node):
         self.baud = self.declare_parameter('baud', 115200).value
         self.frame_id = self.declare_parameter('frame_id', 'ultrasonic_link').value
         heartbeat_hz = self.declare_parameter('heartbeat_hz', 10.0).value
+        cmd_rate_hz = self.declare_parameter('cmd_rate_hz', 50.0).value
+        self.cmd_timeout = self.declare_parameter('cmd_timeout', 0.3).value
+        self.send_commands = self.declare_parameter('send_commands', True).value
+        self.ack = AckermannParams(
+            wheelbase=self.declare_parameter('wheelbase', 0.33).value,
+            max_steer_angle=self.declare_parameter('max_steer_angle', 0.45).value,
+            max_speed=self.declare_parameter('max_speed', 5.0).value,
+            min_speed_for_steer=self.declare_parameter('min_speed_for_steer', 0.3).value,
+            steer_reversed=self.declare_parameter('steer_reversed', False).value,
+            throttle_reversed=self.declare_parameter('throttle_reversed', False).value,
+        )
 
         self.range_pub = self.create_publisher(Range, 'ultrasonic/range', 10)
         self.link_pub = self.create_publisher(Bool, 'esp32/link_ok', 10)
+        self.failsafe_pub = self.create_publisher(Bool, 'esp32/failsafe', 10)
+        self.act_pub = self.create_publisher(Vector3, 'esp32/actuators', 10)
+        self.create_subscription(Twist, 'cmd_vel', self._on_cmd, 10)
 
         self.ser = None
         self.buf = b''
         self.last_link_ok = None
+        self.last_failsafe = None
         self.bad_lines = 0
+        self.cmd = None
+        self.cmd_stamp = None
+        self._warned_stale = False
 
         self.create_timer(0.01, self._poll)                 # read serial at 100 Hz
         self.create_timer(1.0 / heartbeat_hz, self._heartbeat)
+        self.create_timer(1.0 / cmd_rate_hz, self._send_cmd)
         self.create_timer(1.0, self._ensure_open)
         self._ensure_open()
 
@@ -66,6 +99,35 @@ class Esp32Bridge(Node):
             self.ser.write(b'H\n')
         except (serial.SerialException, OSError) as e:
             self._drop(e)
+
+    # --- actuator commands -----------------------------------------------
+    def _on_cmd(self, msg: Twist):
+        self.cmd = msg
+        self.cmd_stamp = self.get_clock().now()
+
+    def _send_cmd(self):
+        if self.ser is None or not self.send_commands:
+            return
+        fresh = False
+        if self.cmd_stamp is not None:
+            age = (self.get_clock().now() - self.cmd_stamp).nanoseconds * 1e-9
+            fresh = age <= self.cmd_timeout
+        if fresh:
+            throttle, steer = twist_to_ackermann(self.cmd.linear.x, self.cmd.angular.z, self.ack)
+            if self._warned_stale:
+                self.get_logger().info('cmd_vel is back; sending commands')
+                self._warned_stale = False
+        else:
+            throttle, steer = 0.0, 0.0
+            if self.cmd_stamp is not None and not self._warned_stale:
+                self.get_logger().warn('cmd_vel stale; sending neutral')
+                self._warned_stale = True
+        try:
+            self.ser.write(f'C,{throttle:.3f},{steer:.3f}\n'.encode('ascii'))
+        except (serial.SerialException, OSError) as e:
+            self._drop(e)
+            return
+        self.act_pub.publish(Vector3(x=float(throttle), y=float(steer), z=0.0))
 
     def _poll(self):
         if self.ser is None:
@@ -98,6 +160,10 @@ class Esp32Bridge(Node):
                 return
             self._publish_range(dist)
             self._publish_link(link_ok)
+        elif parts[0] == 'S' and len(parts) >= 2:
+            self._publish_failsafe(parts[1] == '1')
+        elif parts[0] == 'V' and len(parts) == 2:
+            self.get_logger().info(f'ESP32 firmware version {parts[1]}')
         else:
             self._bad(line)
 
@@ -127,6 +193,15 @@ class Esp32Bridge(Node):
                 self.get_logger().warn('ESP32 reports NO heartbeat')
             self.last_link_ok = ok
 
+    def _publish_failsafe(self, active):
+        self.failsafe_pub.publish(Bool(data=active))
+        if active != self.last_failsafe:
+            if active:
+                self.get_logger().warn('ESP32 FAILSAFE: motors forced to neutral')
+            else:
+                self.get_logger().info('ESP32 failsafe cleared; motors live')
+            self.last_failsafe = active
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -137,6 +212,10 @@ def main(args=None):
         pass  # Ctrl-C or SIGTERM (launch/systemd stopping us): exit cleanly
     finally:
         if node.ser is not None:
+            try:
+                node.ser.write(b'C,0.000,0.000\n')
+            except Exception:
+                pass
             node.ser.close()
         node.destroy_node()
         if rclpy.ok():

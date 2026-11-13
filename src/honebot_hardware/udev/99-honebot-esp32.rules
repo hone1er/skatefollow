@@ -1,0 +1,19 @@
+# honebot ESP32 (Silicon Labs CP2102, 10c4:ea60)
+#
+# 1. Stable device name /dev/esp32 regardless of ttyUSB numbering.
+# 2. closing_wait=none: this CP2102 does not answer the driver's "transmit
+#    buffer empty?" request, so every close() of the port blocks ~5 s waiting
+#    for the USB control timeout. Skipping the wait makes the bridge exit
+#    instantly. Needs the 'setserial' package.
+#
+# Install (on the Pi):
+#   sudo apt install setserial
+#   sudo cp ~/honebot_ws/src/honebot_hardware/udev/99-honebot-esp32.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#   ls -l /dev/esp32          # should point at ttyUSB0
+# Then launch with port:=/dev/esp32 (or make it the default in esp32.launch.py).
+#
+# One-off test without installing anything permanent:
+#   sudo setserial /dev/ttyUSB0 closing_wait none
+
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="esp32", RUN+="/usr/bin/setserial /dev/%k closing_wait none"

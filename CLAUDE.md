@@ -35,6 +35,7 @@ Hard requirements that shape every decision:
 | Chassis (1/10 brushless RC car + ESC + steering servo) | **Not chosen yet** |
 | UWB modules (e.g. DWM3000 / ESP32+DW3000 boards) | **Not chosen yet** |
 | Camera, gimbal | **Not chosen yet** (USB webcam suggested to start vision work) |
+| ESC + steering servo signal pins | **Firmware ready, nothing wired**: throttle GPIO 25, steer GPIO 26 |
 | Wireless kill switch (2nd ESP32 over ESP-NOW) | Planned |
 
 ### Wiring (ESP32 ↔ HC-SR04) — verified working
@@ -46,6 +47,7 @@ Hard requirements that shape every decision:
 | Echo | 1 kΩ → GPIO 18, and 2 kΩ from GPIO 18 → GND (5 V → 3.3 V divider) |
 
 Onboard LED = GPIO 2 (used as the heartbeat/link indicator).
+The USB chip is a **CP2102 (bcdDevice 1.00, serial "0001")**: closing the port blocks ~5 s (see gotchas).
 
 ## 4. Systems and environment
 
@@ -61,7 +63,11 @@ Onboard LED = GPIO 2 (used as the heartbeat/link indicator).
 - `~/.bashrc` sources `/opt/ros/jazzy/setup.bash` (listed twice, harmless) and
   `~/honebot_ws/install/setup.bash`.
 - User `hone1er` is in the `dialout` group (serial access). Group changes only apply to **new** login sessions.
-- `python3-serial` (pyserial 3.5) installed. git 2.43 installed. **The workspace is not under git yet.**
+- `python3-serial` (pyserial 3.5) installed. git 2.43 installed. **Workspace is a git repo (branch `main`)**
+  with local identity set; not pushed anywhere yet.
+- Already installed ROS packages worth knowing: `foxglove_bridge`, `joy`, `teleop_twist_joy`,
+  `teleop_twist_keyboard`, `rosbag2`, `tf2_ros`. **Not** installed: `ackermann_msgs`, `usb_cam`, `v4l2_camera`,
+  `setserial`, `arduino-cli`.
 - ESP32 enumerates as **`/dev/ttyUSB0`**.
 - GUI apps over SSH fail ("could not connect to display"). Options: `QT_QPA_PLATFORM=linuxfb` on the Pi's
   HDMI console for simple Qt apps (turtlesim), install `xubuntu-core` for a desktop, or use Foxglove from the
@@ -86,19 +92,32 @@ Onboard LED = GPIO 2 (used as the heartbeat/link indicator).
 
 ```
 honebot_ws/
-├── CLAUDE.md                         this file
+├── CLAUDE.md                         this file (handoff); README.md = quick run card
 ├── firmware/
-│   └── esp32_ultrasonic/esp32_ultrasonic.ino   ESP32 firmware (Arduino)
+│   └── esp32_ultrasonic/esp32_ultrasonic.ino   ESP32 firmware v2.0.0 (Arduino, core 3.x)
 └── src/
     ├── honebot_follow/               ament_python — follow-me controller
     │   ├── honebot_follow/control.py     pure math, no ROS (unit-tested)
     │   ├── honebot_follow/follower.py    ROS node, currently drives turtlesim
-    │   ├── launch/turtle_follow.launch.py
+    │   ├── launch/turtle_follow.launch.py   use_safety:=true routes through the gate + ESP32
     │   └── test/test_control.py          6 pytest tests
-    └── honebot_hardware/             ament_python — Pi ↔ ESP32 serial bridge
-        ├── honebot_hardware/esp32_bridge.py
-        └── launch/esp32.launch.py
+    ├── honebot_safety/               ament_python — safety gate
+    │   ├── honebot_safety/gate.py        pure gate logic (unit-tested)
+    │   ├── honebot_safety/safety_gate.py ROS node
+    │   ├── launch/safety_gate.launch.py
+    │   └── test/test_gate.py             12 pytest tests
+    ├── honebot_hardware/             ament_python — Pi ↔ ESP32 serial bridge
+    │   ├── honebot_hardware/esp32_bridge.py
+    │   ├── honebot_hardware/ackermann.py  pure Twist→throttle/steer (unit-tested)
+    │   ├── launch/esp32.launch.py
+    │   ├── udev/99-honebot-esp32.rules    /dev/esp32 symlink + closing_wait fix (owner installs)
+    │   └── test/test_ackermann.py        10 pytest tests
+    └── honebot_bringup/              ament_python — top-level launch + systemd
+        ├── launch/bringup.launch.py      esp32 bridge + safety gate + foxglove_bridge
+        ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
+        └── systemd/honebot.service       auto-start unit (owner installs with sudo)
 ```
+Command flow: `controller → /cmd_vel_raw → safety_gate → /cmd_vel → esp32_bridge → ESP32`.
 
 Build/test (on the Pi, from `~/honebot_ws`):
 ```bash
@@ -122,28 +141,64 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - Run: `QT_QPA_PLATFORM=linuxfb ros2 launch honebot_follow turtle_follow.launch.py` on the HDMI console,
   then `ros2 run turtlesim turtle_teleop_key` from SSH. Owner confirmed it runs.
 
+### honebot_safety — `safety_gate` node
+- Subscribes `cmd_vel_raw` (Twist), `ultrasonic/range`, `esp32/link_ok`; publishes `cmd_vel` at `rate_hz` (50)
+  and `safety/state` (String). Logic in `gate.py: gate_command()`; priority: LINK_DOWN → RANGE_STALE →
+  RANGE_INVALID → CMD_STALE → OBSTACLE (forward blocked, reverse/steer allowed) → SLOW (linear taper) → OK.
+- Params (live-settable): `stop_distance` 0.4, `slow_distance` 1.0, `range_timeout` 0.3, `cmd_timeout` 0.5.
+- Bench-verified 2026-11-13 against the live ESP32 (all six states, 50 Hz output, clean exit).
+
 ### honebot_hardware — `esp32_bridge` node
-- Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10).
+- Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10),
+  `cmd_rate_hz` (50), `cmd_timeout` (0.3), `send_commands` (true), and Ackermann params `wheelbase` (0.33),
+  `max_steer_angle` (0.45 rad), `max_speed` (5.0 m/s), `min_speed_for_steer` (0.3), `steer_reversed`,
+  `throttle_reversed`. **The Ackermann numbers are placeholders until a chassis exists.**
 - Publishes `/ultrasonic/range` (`sensor_msgs/Range`, ULTRASOUND, FOV 0.26 rad, 0.02–4.0 m,
-  **`+inf` = no echo per REP 117**) and `/esp32/link_ok` (`std_msgs/Bool`).
+  **`+inf` = no echo per REP 117**), `/esp32/link_ok` (Bool), `/esp32/failsafe` (Bool, from `S` lines),
+  `/esp32/actuators` (Vector3: x = throttle, y = steer, what was sent).
+- Subscribes `cmd_vel` (Twist) → `ackermann.twist_to_ackermann()` → sends `C,<thr>,<steer>` at 50 Hz;
+  sends neutral when `cmd_vel` is older than `cmd_timeout`; sends one neutral on exit.
 - Sends heartbeat `H\n` at 10 Hz. Non-blocking reads on a 100 Hz timer; auto-reconnects if USB is unplugged;
   ignores non-protocol lines (ESP32 boot messages). Catches `ExternalShutdownException` for clean SIGTERM exit.
 - Run: `ros2 launch honebot_hardware esp32.launch.py [port:=/dev/ttyACM0]`.
 
+### honebot_bringup
+- `bringup.launch.py` args: `port`, `stop_distance`, `slow_distance`, `foxglove` (true → port 8765).
+- `teleop_joy.launch.py` args: `joy_config` (xbox), `joy_dev`; output remapped to `/cmd_vel_raw`.
+- `systemd/honebot.service`: install commands in the file header. Not installed yet (needs sudo).
+
 ### Serial protocol (USB, 115200 8N1, ASCII lines ending `\n`)
 | Direction | Message | Meaning |
 |---|---|---|
+| ESP32 → Pi | `V,<version>` | once at boot (firmware ≥ 2.0.0) |
 | ESP32 → Pi | `R,<distance_m>,<link_ok>` | e.g. `R,1.335,1`. distance `-1` = no echo. link_ok = heartbeat seen within 500 ms |
-| Pi → ESP32 | `H` | heartbeat |
-| (planned) Pi → ESP32 | `C,<throttle>,<steer>` | normalized −1..1 commands; see Phase 2 |
+| ESP32 → Pi | `S,<failsafe>,<throttle>,<steer>` | 10 Hz (firmware ≥ 2.0.0). failsafe 1 = outputs forced neutral; actual outputs −1..1 |
+| Pi → ESP32 | `H` | heartbeat, 10 Hz |
+| Pi → ESP32 | `C,<throttle>,<steer>` | normalized −1..1, 50 Hz. Ignored by firmware 1.x |
 
-### ESP32 firmware (`esp32_ultrasonic.ino`)
+### ESP32 firmware (`esp32_ultrasonic.ino`) — source is v2.0.0, **the flashed ESP32 still runs v1**
 - Pings every **60 ms** (~16.7 Hz; 50 ms caused ~33% dropouts — datasheet asks ≥ 60 ms), echo timeout 25 ms.
 - Watchdog: `linkOk = heartbeat within WATCHDOG_MS (500)`; LED on GPIO 2 mirrors it.
-  This is the hook where motors will be forced to neutral.
+- v2.0.0 (written 2026-11-13, **passes a host g++ syntax check with Arduino stubs but has NOT been compiled
+  with arduino-cli or flashed**): LEDC 50 Hz servo pulses on GPIO 25 (throttle) / 26 (steer), 1000–2000 µs;
+  `C` parsing with validation; fail-safe neutral when link lost, no `C` for 200 ms, or within the 2 s arming
+  window; `THROTTLE_LIMIT` 0.5 and 2.0/s rate limit as bench caps; `S` status at 10 Hz; `V` banner.
+  First compile on the Mac may surface core-3.x API differences — fix there, the logic is straightforward.
 - `handleLine()` is the place to add new commands.
 
-## 6. Verified results (2026-11-12)
+## 6. Verified results
+
+### 2026-11-13 (on the Pi, live ESP32 with v1 firmware)
+- 28/28 unit tests pass (6 control, 12 gate, 10 ackermann); 4 packages build.
+- Safety gate bench test with the real bridge and `ros2 topic pub /cmd_vel_raw`: OK passes 1.0 m/s through;
+  `stop_distance` raised above the 1.36 m reading → OBSTACLE (linear 0, angular kept); slow zone scaled
+  1.0 → 0.60 m/s as predicted; killing the publisher → CMD_STALE; killing the bridge → LINK_DOWN.
+  Output rate 50.0 Hz. Transitions logged.
+- Full `bringup.launch.py`: three nodes up, Foxglove listening on 0.0.0.0:8765, Twist (2.5 m/s, 1.0 rad/s)
+  reached the bridge as throttle 0.5 / steer 0.292 (= atan(0.33·1/2.5)/0.45) at 50 Hz, neutral after the
+  controller stopped, gate and foxglove exit cleanly on SIGINT. Bridge exits ~5 s later (CP2102 close delay).
+
+### 2026-11-12
 - Firmware compiles (20% flash, 6% RAM) and is flashed.
 - On the Mac: heartbeat → `link_ok` 1, stop heartbeat → 0 within 0.5 s.
 - Accuracy: sensor on the floor facing a ~2.4 m ceiling read 2.392 m, stdev 1 mm, 0% dropouts over 5 s.
@@ -158,6 +213,16 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - Old SSH sessions don't see new `dialout` membership or newly built packages → open a new session.
 - HC-SR04 Echo is 5 V → voltage divider required for the ESP32.
 - ROS CLI tools (`ros2 topic echo/hz`) can take several seconds to discover topics right after start on the Pi.
+- **Closing the ESP32 serial port blocks ~5 s** (both the old and new bridge). The CP2102 does not answer the
+  cp210x driver's tx-empty query, so close() waits for the 5 s USB control timeout (`closing_wait` is 30 s,
+  not the cause). Harmless (the ESP32 fails safe on its own) but makes `ros2 launch` shutdown slow. Fix needs
+  sudo: `sudo apt install setserial` + the udev rule in `honebot_hardware/udev/` (or one-off
+  `sudo setserial /dev/ttyUSB0 closing_wait none`).
+- `ros2 launch ... --print` lists conditional nodes regardless of `IfCondition`; it is only a parse check.
+- `pkill -f <pattern>` from a script kills the script itself if the pattern appears in the command line; anchor
+  on the interpreter (`pkill -f '^/usr/bin/python3 .*esp32_bridge'`).
+- An ad-hoc pyserial script sending `H` at 20 Hz never got `link_ok=1`, while the bridge node did immediately.
+  Unexplained; trust the bridge, and test link behaviour through it.
 
 ## 8. Plan for the rest of the build
 
@@ -175,7 +240,7 @@ place, which the Phase 6 refactor must handle.
 - `git init` (branch `main`) with `.gitignore` for `build/ install/ log/`; initial commit made.
 - Still to do by the owner: push to a **private** GitHub repo as a backup.
 
-### Phase 1 — obstacle safety stop (bench, uses existing hardware)
+### Phase 1 — obstacle safety stop — DONE 2026-11-13 (bench-verified; turtlesim demo not yet run by the owner)
 - New package `honebot_safety`, node `safety_gate`. Subscribes `/cmd_vel_raw` (controller intent),
   `/ultrasonic/range`, `/esp32/link_ok`; publishes `/cmd_vel` at a fixed rate (`rate_hz`, 50).
 - Pure function `gate.py: gate_command(...)` decides, in priority order:
@@ -190,7 +255,7 @@ place, which the Phase 6 refactor must handle.
   and the gate's output to `/turtle2/cmd_vel`. Bench test: hand over the sensor → chasing turtle freezes;
   unplug USB → freezes; kill the follower → freezes.
 
-### Phase 2 — motor/steering control on the ESP32 (needs ESC + servo; a bare servo is enough to start)
+### Phase 2 — motor/steering control — SOFTWARE DONE 2026-11-13, firmware unflashed, no hardware yet
 - Firmware: parse `C,<throttle>,<steer>` (−1..1); output 50 Hz servo pulses (1000–2000 µs, 1500 neutral)
   with the ESP32 LEDC peripheral (**core 3.x API: `ledcAttach(pin, 50, 16)` / `ledcWrite(pin, duty)`**)
   on `THROTTLE_PIN` and `STEER_PIN`. **Neutral throttle whenever `linkOk` is false or no `C` for
@@ -207,7 +272,7 @@ place, which the Phase 6 refactor must handle.
   arduino-cli is installed on the Pi (open decision 4). Consider micro-ROS later only if the line protocol
   becomes limiting.
 
-### Phase 3 — remote monitoring and auto-start
+### Phase 3 — remote monitoring and auto-start — LAUNCH DONE 2026-11-13; systemd/udev await owner sudo
 - New package `honebot_bringup` with `bringup.launch.py`: ESP32 bridge + safety gate + `foxglove_bridge`
   (`foxglove:=true`, port 8765). Foxglove desktop app on the Mac connects to `ws://honebot.local:8765`.
 - `systemd/honebot.service` kept in the repo; owner installs it with `sudo` (commands in the README).
@@ -244,6 +309,16 @@ place, which the Phase 6 refactor must handle.
   add speed-dependent follow distance, and log everything with `ros2 bag`.
 - A single HC-SR04 (~4 m, 16 Hz, narrow) is only a low-speed safety layer; consider additional/longer-range
   sensors for higher speed.
+
+### Immediate next steps (in order)
+1. **Owner (Mac):** `arduino-cli compile` firmware v2.0.0; fix any core-3.x compile errors; flash; on the Pi run
+   `ros2 launch honebot_hardware esp32.launch.py` and check the log shows `ESP32 firmware version 2.0.0`,
+   `/esp32/failsafe` goes false once `/cmd_vel` is fed (e.g. via bringup + `ros2 topic pub /cmd_vel_raw ...`).
+2. **Owner (Pi, sudo):** install `setserial` + udev rule; install `honebot.service`; verify `journalctl -u honebot -f`.
+3. **Owner:** run the turtlesim demo with `use_safety:=true` on the HDMI console and do the hand-over-sensor test.
+4. **Owner:** push the repo to a private GitHub remote.
+5. Buy a steering servo (and ESC/chassis); bench-test `C` commands on a stand with `THROTTLE_LIMIT` low.
+6. Then Phase 4 (USB webcam) or Phase 6 refactor (`follow_command_relative`), whichever hardware arrives first.
 
 ### Open decisions for the owner
 1. Chassis model (drives ESC, servo, size, top speed).
