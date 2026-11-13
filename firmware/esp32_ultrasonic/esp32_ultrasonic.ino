@@ -61,9 +61,10 @@ const int STEER_TRIM_US = 0;               // adjust so the wheels are straight 
 const bool STEER_REVERSED = false;
 const bool THROTTLE_REVERSED = false;
 
-// Bench safety: cap and rate-limit channel A here too, independent of the Pi.
-// NOTE: in differential-drive mode only channel A (left) is capped/ramped; set
-// current/speed limits in the VESC for both wheels - that is the real limiter.
+// Bench safety, independent of the Pi: cap and rate-limit the drive channels.
+// Differential drive: BOTH channels are wheel throttles -> both capped/ramped.
+// Ackermann: only channel A is a throttle; channel B (steering) is passed through.
+const bool DIFF_DRIVE = true;              // false for an RC car (A = throttle, B = steering)
 const float THROTTLE_LIMIT = 0.5f;         // raise toward 1.0 once the robot behaves
 const float THROTTLE_RATE_PER_S = 2.0f;    // max change in normalised throttle per second
 
@@ -161,6 +162,13 @@ void readSerial() {
 }
 
 // --- control --------------------------------------------------------------
+float rampToward(float current, float target, float maxStep) {
+  float delta = target - current;
+  if (delta > maxStep) delta = maxStep;
+  if (delta < -maxStep) delta = -maxStep;
+  return current + delta;
+}
+
 void updateOutputs(unsigned long now) {
   float dt = (now - lastLoopMs) * 0.001f;
   lastLoopMs = now;
@@ -173,13 +181,13 @@ void updateOutputs(unsigned long now) {
     outThrottle = 0.0f;                    // drop to neutral immediately, no ramp
     outSteer = 0.0f;
   } else {
-    float target = constrain(cmdThrottle, -THROTTLE_LIMIT, THROTTLE_LIMIT);
     float maxStep = THROTTLE_RATE_PER_S * dt;
-    float delta = target - outThrottle;
-    if (delta > maxStep) delta = maxStep;
-    if (delta < -maxStep) delta = -maxStep;
-    outThrottle += delta;
-    outSteer = cmdSteer;                   // steering is not rate-limited
+    outThrottle = rampToward(outThrottle, constrain(cmdThrottle, -THROTTLE_LIMIT, THROTTLE_LIMIT), maxStep);
+    if (DIFF_DRIVE) {
+      outSteer = rampToward(outSteer, constrain(cmdSteer, -THROTTLE_LIMIT, THROTTLE_LIMIT), maxStep);
+    } else {
+      outSteer = cmdSteer;                 // steering is not rate-limited
+    }
   }
   applyOutputs();
 }

@@ -5,9 +5,9 @@
 An autonomous ground robot that **follows the owner while they skateboard and films their tricks**.
 
 Hard requirements that shape every decision:
-- **Speed.** A skater moves 15–25 km/h with sudden stops and turns. The base must be fast: either a
-  car-like (Ackermann) RC chassis or, **as decided 2026-11-13, a custom differential-drive robot built on
-  electric-skateboard hub-motor wheels + VESC** (see `docs/robot_design.md`). Slow hobby-robot kits are out.
+- **Speed.** Owner target (2026-11-13): **12–15 mph (19–24 km/h)** with sudden stops and turns. Decided base: a
+  **small custom differential-drive robot** (two belt-driven longboard wheels + caster, printed frame), see
+  `docs/robot_design.md`. **Lightweight, agile, backpack-sized and cheap** are explicit requirements.
 - **Robust following.** Vision alone at Pi-CPU frame rates is too slow and fragile to *steer* on. The plan is
   **UWB (ultra-wideband) ranging** for following (tag on the skater, anchors on the robot) and **vision only
   to aim/frame the camera**.
@@ -33,7 +33,7 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **Decided: custom 3D-printed diff-drive robot** (2 × 90 mm e-skate hub-motor wheels on a truck hanger, Flipsky Dual FSESC 4.20 Plus via PPM, **10S1P** pack, 2020 extrusion frame, printed body + caster). **Must fit in a backpack: ≤ 40 × 30 × 15 cm, 4–5 kg, lightweight and agile over everything else** (owner, 2026-11-13). Nothing bought yet. Design: `docs/robot_design.md` |
+| Chassis | **Decided: small custom 3D-printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × 45 A RC-car ESCs on servo PWM, 3S 5000 mAh, printed frame + caster. ≈ 2.5 kg, backpack-sized, 12–15 mph target, ≈ $150–200 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Camera, gimbal | **Not chosen yet** (USB webcam suggested to start vision work) |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left VESC / throttle), channel B GPIO 26 (right VESC / steering) |
@@ -282,10 +282,12 @@ place, which the Phase 6 refactor must handle.
   unplug USB → freezes; kill the follower → freezes.
 
 ### Phase 2 — drivetrain control — SOFTWARE DONE 2026-11-13 (diff + ackermann), firmware unflashed, no hardware yet
-**Chassis decision 2026-11-13: custom diff-drive robot (`docs/robot_design.md`).** Concretely for Phase 2:
-hub-motor wheels + Flipsky Dual FSESC; ESP32 channel A/B → left/right VESC PPM inputs; bridge `drive_mode: diff`;
-follower `ackermann: false`. Build the bare "mule" first, verify PPM fail-safe and low-speed driving via the
-gamepad, then speed/caster tests, then the printed body. The Ackermann text below stays valid for an RC car.
+**Chassis decision 2026-11-13 (budget revision): small custom diff-drive robot (`docs/robot_design.md`).**
+Concretely for Phase 2: 2 × 5010 outrunners with belts to longboard wheels, 2 × RC-car brushless ESCs on the
+ESP32's channels A/B (servo PWM, fail-safe neutral on both; firmware `DIFF_DRIVE = true`), 3S LiPo; bridge
+`drive_mode: diff`, follower `ackermann: false`. Build one drive module first, then the bare frame, then the body.
+Owner constraints: backpack-sized, light, 12–15 mph, far cheaper than an RC car. The Ackermann text below stays
+valid only for the tricycle variant or an RC car.
 - Firmware: parse `C,<throttle>,<steer>` (−1..1); output 50 Hz servo pulses (1000–2000 µs, 1500 neutral)
   with the ESP32 LEDC peripheral (**core 3.x API: `ledcAttach(pin, 50, 16)` / `ledcWrite(pin, duty)`**)
   on `THROTTLE_PIN` and `STEER_PIN`. **Neutral throttle whenever `linkOk` is false or no `C` for
