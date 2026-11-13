@@ -1,0 +1,14 @@
+# colcon outputs (regenerate with: colcon build --symlink-install)
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# editors / OS
+.vscode/
+*.swp
+.DS_Store
