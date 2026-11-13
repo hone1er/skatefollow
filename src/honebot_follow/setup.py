@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'follower = honebot_follow.follower:main',
+            'pose_to_target = honebot_follow.pose_to_target:main',
         ],
     },
 )

@@ -291,7 +291,16 @@ place, which the Phase 6 refactor must handle.
   faster but its software is best supported on Raspberry Pi OS; on Ubuntu expect to build drivers.
 - Gimbal control from bearing (later, hardware-dependent).
 
-### Phase 6 — UWB following
+### Phase 6 — UWB following — CONTROLLER REFACTOR DONE 2026-11-13 (unit-tested; on-screen run of relative:=true NOT yet done)
+- `control.follow_command_relative(distance, bearing, gains)` is now the core; `follow_command` wraps it.
+  `FollowGains.ackermann=True` creeps forward at `creep_speed` instead of turning in place.
+- `follower` node: `target_topic` (PointStamped, robot frame) switches it to relative mode and publishes to
+  `cmd_vel_topic` (default `cmd_vel_raw`). `spawn_follower` now defaults to **False**; the launch sets it.
+- `pose_to_target` node = simulated UWB for turtlesim. `turtle_follow.launch.py relative:=true [ackermann:=true]`.
+- `honebot_bringup/launch/record.launch.py` records a bag to `~/bags/`.
+- Owner also verified the turtlesim demo with the gate on the HDMI screen (2026-11-13). Running GUI from SSH:
+  owner is now in group `video`; use `sg video -c "exec bash -c 'source ... && QT_QPA_PLATFORM=linuxfb ros2 launch ...'"`
+  (sg strips LD_LIBRARY_PATH and uses /bin/sh, hence the bash wrapper and re-sourcing).
 - UWB tag on the skater, 2+ anchors on the robot → range and bearing (or relative x, y) to the skater.
 - Node `uwb_node` publishing the target relative to the robot (e.g. `geometry_msgs/PointStamped` in
   `base_link`).
