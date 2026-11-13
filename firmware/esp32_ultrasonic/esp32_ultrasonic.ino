@@ -10,7 +10,10 @@
 //                     failsafe = 1 while outputs are forced to neutral
 //                     throttle/steer = what is actually being output (-1..1)
 //   Pi -> ESP32 :  H                             heartbeat, ~10x per second
-//                  C,<throttle>,<steer>          normalised -1..1, ~50x per second
+//                  C,<a>,<b>                     normalised -1..1, ~50x per second.
+//                     Two output channels. Differential drive (the custom robot):
+//                     a = left wheel ESC, b = right wheel ESC. Ackermann car:
+//                     a = throttle ESC, b = steering servo. The Pi decides (drive_mode).
 //
 // Fail-safe (throttle neutral, steering centred) whenever ANY of:
 //   - no heartbeat for WATCHDOG_MS
@@ -24,8 +27,10 @@
 //   HC-SR04 Trig -> GPIO 5
 //   HC-SR04 Echo -> 1k resistor -> GPIO 18, and GPIO 18 -> 2k resistor -> GND
 //                  (divider drops the 5 V echo to ~3.3 V)
-//   ESC signal      -> GPIO 25 (THROTTLE_PIN); ESC GND -> ESP32 GND
-//   Steering servo  -> GPIO 26 (STEER_PIN);    servo powered by the ESC's BEC, not the ESP32
+//   Channel A (left ESC / throttle)  -> GPIO 25 (THROTTLE_PIN); ESC GND -> ESP32 GND
+//   Channel B (right ESC / steering) -> GPIO 26 (STEER_PIN)
+//   VESC-based ESCs accept this 50 Hz 1000-2000 us signal on their PPM input.
+//   Both channels are forced to 1500 us (neutral) in fail-safe.
 //
 // Requires the esp32 Arduino core 3.x (ledcAttach / ledcWrite by pin).
 
@@ -56,8 +61,10 @@ const int STEER_TRIM_US = 0;               // adjust so the wheels are straight 
 const bool STEER_REVERSED = false;
 const bool THROTTLE_REVERSED = false;
 
-// Bench safety: cap and rate-limit throttle here too, independent of the Pi.
-const float THROTTLE_LIMIT = 0.5f;         // raise toward 1.0 once the car behaves
+// Bench safety: cap and rate-limit channel A here too, independent of the Pi.
+// NOTE: in differential-drive mode only channel A (left) is capped/ramped; set
+// current/speed limits in the VESC for both wheels - that is the real limiter.
+const float THROTTLE_LIMIT = 0.5f;         // raise toward 1.0 once the robot behaves
 const float THROTTLE_RATE_PER_S = 2.0f;    // max change in normalised throttle per second
 
 unsigned long lastHeartbeatMs = 0;

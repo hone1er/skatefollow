@@ -5,8 +5,9 @@
 An autonomous ground robot that **follows the owner while they skateboard and films their tricks**.
 
 Hard requirements that shape every decision:
-- **Speed.** A skater moves 15–25 km/h with sudden stops and turns. The base must be a fast, car-like
-  (Ackermann) chassis, not a slow differential-drive kit.
+- **Speed.** A skater moves 15–25 km/h with sudden stops and turns. The base must be fast: either a
+  car-like (Ackermann) RC chassis or, **as decided 2026-11-13, a custom differential-drive robot built on
+  electric-skateboard hub-motor wheels + VESC** (see `docs/robot_design.md`). Slow hobby-robot kits are out.
 - **Robust following.** Vision alone at Pi-CPU frame rates is too slow and fragile to *steer* on. The plan is
   **UWB (ultra-wideband) ranging** for following (tag on the skater, anchors on the robot) and **vision only
   to aim/frame the camera**.
@@ -32,10 +33,10 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis (1/10 brushless RC car + ESC + steering servo) | **Not chosen yet** |
-| UWB modules (e.g. DWM3000 / ESP32+DW3000 boards) | **Not chosen yet** |
+| Chassis | **Decided: custom 3D-printed diff-drive robot** (2 × 90 mm e-skate hub-motor wheels on a truck hanger, Flipsky Dual FSESC 4.20 Plus via PPM, 10S pack, 2020 extrusion frame, printed body + caster). Nothing bought yet. Design: `docs/robot_design.md` |
+| UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Camera, gimbal | **Not chosen yet** (USB webcam suggested to start vision work) |
-| ESC + steering servo signal pins | **Firmware ready, nothing wired**: throttle GPIO 25, steer GPIO 26 |
+| ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left VESC / throttle), channel B GPIO 26 (right VESC / steering) |
 | Wireless kill switch (2nd ESP32 over ESP-NOW) | Planned |
 
 ### Wiring (ESP32 ↔ HC-SR04) — verified working
@@ -98,24 +99,35 @@ honebot_ws/
 └── src/
     ├── honebot_follow/               ament_python — follow-me controller
     │   ├── honebot_follow/control.py     pure math, no ROS (unit-tested)
-    │   ├── honebot_follow/follower.py    ROS node, currently drives turtlesim
-    │   ├── launch/turtle_follow.launch.py   use_safety:=true routes through the gate + ESP32
-    │   └── test/test_control.py          6 pytest tests
+    │   ├── honebot_follow/follower.py    ROS node: turtlesim poses or a relative /target
+    │   ├── honebot_follow/pose_to_target.py   simulated UWB from turtlesim poses
+    │   ├── launch/turtle_follow.launch.py   use_safety / relative / ackermann options
+    │   └── test/test_control.py          14 pytest tests
     ├── honebot_safety/               ament_python — safety gate
     │   ├── honebot_safety/gate.py        pure gate logic (unit-tested)
     │   ├── honebot_safety/safety_gate.py ROS node
     │   ├── launch/safety_gate.launch.py
     │   └── test/test_gate.py             12 pytest tests
     ├── honebot_hardware/             ament_python — Pi ↔ ESP32 serial bridge
-    │   ├── honebot_hardware/esp32_bridge.py
+    │   ├── honebot_hardware/esp32_bridge.py   drive_mode: diff (default) | ackermann
+    │   ├── honebot_hardware/diffdrive.py  pure Twist→(left,right) (unit-tested)
     │   ├── honebot_hardware/ackermann.py  pure Twist→throttle/steer (unit-tested)
     │   ├── launch/esp32.launch.py
     │   ├── udev/99-honebot-esp32.rules    /dev/esp32 symlink + closing_wait fix (owner installs)
-    │   └── test/test_ackermann.py        10 pytest tests
+    │   └── test/                          17 pytest tests
+    ├── honebot_uwb/                  ament_python — UWB → relative target
+    │   ├── honebot_uwb/localize.py       two-anchor trilateration, AoA, range filter (unit-tested)
+    │   ├── honebot_uwb/uwb_node.py       serial `U,`/`A,` lines → /target PointStamped
+    │   ├── launch/uwb.launch.py
+    │   └── test/test_localize.py         11 pytest tests
     └── honebot_bringup/              ament_python — top-level launch + systemd
         ├── launch/bringup.launch.py      esp32 bridge + safety gate + foxglove_bridge
         ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
+        ├── launch/record.launch.py       ros2 bag record -a → ~/bags/
         └── systemd/honebot.service       auto-start unit (owner installs with sudo)
+docs/
+├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
+└── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
 ```
 Command flow: `controller → /cmd_vel_raw → safety_gate → /cmd_vel → esp32_bridge → ESP32`.
 
@@ -150,9 +162,11 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 
 ### honebot_hardware — `esp32_bridge` node
 - Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10),
-  `cmd_rate_hz` (50), `cmd_timeout` (0.3), `send_commands` (true), and Ackermann params `wheelbase` (0.33),
-  `max_steer_angle` (0.45 rad), `max_speed` (5.0 m/s), `min_speed_for_steer` (0.3), `steer_reversed`,
-  `throttle_reversed`. **The Ackermann numbers are placeholders until a chassis exists.**
+  `cmd_rate_hz` (50), `cmd_timeout` (0.3), `send_commands` (true), **`drive_mode` (`diff` default |
+  `ackermann`)**; diff params `track_width` (0.40), `max_wheel_speed` (7.0 m/s), `left_reversed`,
+  `right_reversed`; Ackermann params `wheelbase` (0.33), `max_steer_angle` (0.45 rad), `max_speed` (5.0),
+  `min_speed_for_steer` (0.3), `steer_reversed`, `throttle_reversed`. **All numbers are placeholders until the
+  drivetrain exists.** The `C` line is `C,<left>,<right>` in diff mode, `C,<throttle>,<steer>` in ackermann.
 - Publishes `/ultrasonic/range` (`sensor_msgs/Range`, ULTRASOUND, FOV 0.26 rad, 0.02–4.0 m,
   **`+inf` = no echo per REP 117**), `/esp32/link_ok` (Bool), `/esp32/failsafe` (Bool, from `S` lines),
   `/esp32/actuators` (Vector3: x = throttle, y = steer, what was sent).
@@ -161,6 +175,13 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - Sends heartbeat `H\n` at 10 Hz. Non-blocking reads on a 100 Hz timer; auto-reconnects if USB is unplugged;
   ignores non-protocol lines (ESP32 boot messages). Catches `ExternalShutdownException` for clean SIGTERM exit.
 - Run: `ros2 launch honebot_hardware esp32.launch.py [port:=/dev/ttyACM0]`.
+
+### honebot_uwb — `uwb_node`
+- Reads `U,<r_left>,<r_right>` (two-anchor) or `A,<range>,<bearing_deg>` (angle-of-arrival) lines from a UWB
+  board on `port` (`/dev/ttyUSB1`); filters (median-3 + EMA); publishes `target` (PointStamped, base_link)
+  and `uwb/ranges`. Params: `baseline` (0.30), `anchor_x`, `max_range` (30), `filter_alpha`, `bearing_sign`.
+  No fix → nothing published → follower's `target_timeout` stops the robot. **No UWB hardware yet; the
+  firmware on the UWB board must print one of the two line formats.**
 
 ### honebot_bringup
 - `bringup.launch.py` args: `port`, `stop_distance`, `slow_distance`, `foxglove` (true → port 8765).
@@ -174,7 +195,7 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 | ESP32 → Pi | `R,<distance_m>,<link_ok>` | e.g. `R,1.335,1`. distance `-1` = no echo. link_ok = heartbeat seen within 500 ms |
 | ESP32 → Pi | `S,<failsafe>,<throttle>,<steer>` | 10 Hz (firmware ≥ 2.0.0). failsafe 1 = outputs forced neutral; actual outputs −1..1 |
 | Pi → ESP32 | `H` | heartbeat, 10 Hz |
-| Pi → ESP32 | `C,<throttle>,<steer>` | normalized −1..1, 50 Hz. Ignored by firmware 1.x |
+| Pi → ESP32 | `C,<a>,<b>` | normalized −1..1, 50 Hz. diff mode: a = left, b = right wheel ESC; ackermann: a = throttle, b = steer. Ignored by firmware 1.x |
 
 ### ESP32 firmware (`esp32_ultrasonic.ino`) — source is v2.0.0, **the flashed ESP32 still runs v1**
 - Pings every **60 ms** (~16.7 Hz; 50 ms caused ~33% dropouts — datasheet asks ≥ 60 ms), echo timeout 25 ms.
@@ -204,6 +225,11 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - Accuracy: sensor on the floor facing a ~2.4 m ceiling read 2.392 m, stdev 1 mm, 0% dropouts over 5 s.
 - On the Pi: `/ultrasonic/range` ≈ 1.33 m steady at **16.7 Hz**, `/esp32/link_ok` true; bridge exits cleanly.
 - Both packages build on the Pi; 6/6 follower tests pass.
+
+### 2026-11-13 (later)
+- 54/54 unit tests (14 control, 12 gate, 17 hardware, 11 uwb); 5 packages build.
+- `turtle_follow.launch.py relative:=true ackermann:=true` on the HDMI screen: turtle2 chased turtle1 through
+  the gate via pose_to_target → /target → follower → /cmd_vel_raw; target sat at 1.49 m straight ahead.
 
 ## 7. Gotchas already hit (don't repeat)
 - Ubuntu Core has no apt → reinstalled Ubuntu Server 24.04.
@@ -255,7 +281,11 @@ place, which the Phase 6 refactor must handle.
   and the gate's output to `/turtle2/cmd_vel`. Bench test: hand over the sensor → chasing turtle freezes;
   unplug USB → freezes; kill the follower → freezes.
 
-### Phase 2 — motor/steering control — SOFTWARE DONE 2026-11-13, firmware unflashed, no hardware yet
+### Phase 2 — drivetrain control — SOFTWARE DONE 2026-11-13 (diff + ackermann), firmware unflashed, no hardware yet
+**Chassis decision 2026-11-13: custom diff-drive robot (`docs/robot_design.md`).** Concretely for Phase 2:
+hub-motor wheels + Flipsky Dual FSESC; ESP32 channel A/B → left/right VESC PPM inputs; bridge `drive_mode: diff`;
+follower `ackermann: false`. Build the bare "mule" first, verify PPM fail-safe and low-speed driving via the
+gamepad, then speed/caster tests, then the printed body. The Ackermann text below stays valid for an RC car.
 - Firmware: parse `C,<throttle>,<steer>` (−1..1); output 50 Hz servo pulses (1000–2000 µs, 1500 neutral)
   with the ESP32 LEDC peripheral (**core 3.x API: `ledcAttach(pin, 50, 16)` / `ledcWrite(pin, duty)`**)
   on `THROTTLE_PIN` and `STEER_PIN`. **Neutral throttle whenever `linkOk` is false or no `C` for
@@ -320,6 +350,9 @@ place, which the Phase 6 refactor must handle.
   sensors for higher speed.
 
 ### Immediate next steps (in order)
+0. **Owner:** read `docs/robot_design.md`; answer its open points (printer bed/material); order the mule parts
+   (hub-motor kit when in stock, Dual FSESC 4.20 Plus, 10S pack + charger, extrusion, Pololu regulator) and the
+   UWB AoA anchor + tag.
 1. **Owner (Mac):** `arduino-cli compile` firmware v2.0.0; fix any core-3.x compile errors; flash; on the Pi run
    `ros2 launch honebot_hardware esp32.launch.py` and check the log shows `ESP32 firmware version 2.0.0`,
    `/esp32/failsafe` goes false once `/cmd_vel` is fed (e.g. via bringup + `ros2 topic pub /cmd_vel_raw ...`).

@@ -30,10 +30,13 @@ Nothing publishes straight to `/cmd_vel`. The gate stops the robot on: ESP32 lin
 range, silent controller, obstacle closer than `stop_distance` (0.4 m; slows from `slow_distance` 1.0 m).
 The ESP32 independently goes to neutral if it misses heartbeats (500 ms) or commands (200 ms).
 
-## Turtlesim demo (HDMI console for the sim window, SSH for teleop)
+## Turtlesim demo (sim window on the HDMI screen, teleop over SSH)
+From an SSH session (you are in the `video` group), this draws straight on the HDMI framebuffer:
 ```bash
-QT_QPA_PLATFORM=linuxfb ros2 launch honebot_follow turtle_follow.launch.py           # with ESP32 + gate
-QT_QPA_PLATFORM=linuxfb ros2 launch honebot_follow turtle_follow.launch.py use_safety:=false   # sim only
+sg video -c "exec bash -c 'source /opt/ros/jazzy/setup.bash && source ~/honebot_ws/install/setup.bash && QT_QPA_PLATFORM=linuxfb ros2 launch honebot_follow turtle_follow.launch.py'"
+```
+Options: `use_safety:=false` (no ESP32 needed), `relative:=true` (simulated-UWB pipeline), `ackermann:=true`.
+```bash
 ros2 run turtlesim turtle_teleop_key                                                 # second terminal
 ```
 Cover the ultrasonic sensor with your hand: the chasing turtle freezes. Unplug the ESP32: it freezes.
@@ -43,6 +46,10 @@ Cover the ultrasonic sensor with your hand: the chasing turtle freezes. Unplug t
 ros2 launch honebot_bringup teleop_joy.launch.py            # xbox layout; joy_config:=ps5 etc.
 ```
 Hold the enable button and use the left stick. Letting go stops the robot (CMD_STALE).
+
+## Hardware
+The chassis is a custom diff-drive robot: `docs/robot_design.md` (design + BOM with prices/links).
+UWB, camera, power and radio research: `docs/hardware_plan.md`. UWB node: `ros2 launch honebot_uwb uwb.launch.py`.
 
 ## Firmware (Mac)
 ```bash

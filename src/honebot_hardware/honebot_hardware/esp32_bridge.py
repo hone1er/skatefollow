@@ -10,8 +10,10 @@ Pi -> ESP32 (sent):
   H                  heartbeat, heartbeat_hz (10)
   C,<thr>,<steer>    normalised -1..1 actuator command, cmd_rate_hz (50), from cmd_vel
 
-Subscribes cmd_vel (geometry_msgs/Twist) and converts it with ackermann.py
-using the wheelbase / max_steer_angle / max_speed parameters. If cmd_vel is
+Subscribes cmd_vel (geometry_msgs/Twist) and converts it either with
+diffdrive.py (drive_mode 'diff': C,<left>,<right>, the custom two-wheel robot)
+or ackermann.py (drive_mode 'ackermann': C,<throttle>,<steer>, an RC car).
+The ESP32 just outputs two servo/ESC pulse channels either way. If cmd_vel is
 older than cmd_timeout the bridge sends neutral. If the bridge dies entirely
 the ESP32's own 200 ms command watchdog goes to neutral. Also publishes
 esp32/actuators (geometry_msgs/Vector3: x = throttle, y = steer) for tuning.
@@ -30,6 +32,7 @@ from sensor_msgs.msg import Range
 from std_msgs.msg import Bool
 
 from honebot_hardware.ackermann import AckermannParams, twist_to_ackermann
+from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive
 
 
 class Esp32Bridge(Node):
@@ -42,6 +45,16 @@ class Esp32Bridge(Node):
         cmd_rate_hz = self.declare_parameter('cmd_rate_hz', 50.0).value
         self.cmd_timeout = self.declare_parameter('cmd_timeout', 0.3).value
         self.send_commands = self.declare_parameter('send_commands', True).value
+        self.drive_mode = self.declare_parameter('drive_mode', 'diff').value
+        if self.drive_mode not in ('diff', 'ackermann'):
+            self.get_logger().error(f"drive_mode must be 'diff' or 'ackermann', not {self.drive_mode!r}; using 'diff'")
+            self.drive_mode = 'diff'
+        self.diff = DiffDriveParams(
+            track_width=self.declare_parameter('track_width', 0.40).value,
+            max_wheel_speed=self.declare_parameter('max_wheel_speed', 7.0).value,
+            left_reversed=self.declare_parameter('left_reversed', False).value,
+            right_reversed=self.declare_parameter('right_reversed', False).value,
+        )
         self.ack = AckermannParams(
             wheelbase=self.declare_parameter('wheelbase', 0.33).value,
             max_steer_angle=self.declare_parameter('max_steer_angle', 0.45).value,
@@ -71,6 +84,8 @@ class Esp32Bridge(Node):
         self.create_timer(1.0 / cmd_rate_hz, self._send_cmd)
         self.create_timer(1.0, self._ensure_open)
         self._ensure_open()
+        self.get_logger().info(f'drive_mode = {self.drive_mode} '
+                               f'(C line = {"left,right" if self.drive_mode == "diff" else "throttle,steer"})')
 
     # --- serial connection -----------------------------------------------
     def _ensure_open(self):
@@ -113,7 +128,10 @@ class Esp32Bridge(Node):
             age = (self.get_clock().now() - self.cmd_stamp).nanoseconds * 1e-9
             fresh = age <= self.cmd_timeout
         if fresh:
-            throttle, steer = twist_to_ackermann(self.cmd.linear.x, self.cmd.angular.z, self.ack)
+            if self.drive_mode == 'diff':
+                throttle, steer = twist_to_diffdrive(self.cmd.linear.x, self.cmd.angular.z, self.diff)
+            else:
+                throttle, steer = twist_to_ackermann(self.cmd.linear.x, self.cmd.angular.z, self.ack)
             if self._warned_stale:
                 self.get_logger().info('cmd_vel is back; sending commands')
                 self._warned_stale = False
