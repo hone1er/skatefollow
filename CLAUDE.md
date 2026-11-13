@@ -33,7 +33,7 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **Decided: custom 3D-printed diff-drive robot** (2 × 90 mm e-skate hub-motor wheels on a truck hanger, Flipsky Dual FSESC 4.20 Plus via PPM, 10S pack, 2020 extrusion frame, printed body + caster). Nothing bought yet. Design: `docs/robot_design.md` |
+| Chassis | **Decided: custom 3D-printed diff-drive robot** (2 × 90 mm e-skate hub-motor wheels on a truck hanger, Flipsky Dual FSESC 4.20 Plus via PPM, **10S1P** pack, 2020 extrusion frame, printed body + caster). **Must fit in a backpack: ≤ 40 × 30 × 15 cm, 4–5 kg, lightweight and agile over everything else** (owner, 2026-11-13). Nothing bought yet. Design: `docs/robot_design.md` |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Camera, gimbal | **Not chosen yet** (USB webcam suggested to start vision work) |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left VESC / throttle), channel B GPIO 26 (right VESC / steering) |
