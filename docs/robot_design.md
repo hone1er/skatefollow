@@ -100,7 +100,7 @@ listed material prints natively.
 | 608 bearings ×8, M8 axle bolt/rod, M3/M4 hardware, heat-set inserts | — | ~$20 | |
 | 5 V 5 A buck for the Pi 5 (9–36 V in) | 1 | **~$15–20** | [UCTRONICS 2-pack $39](https://www.newegg.com/p/0Y3-0680-00150); any 5 V/5 A module with ≥ 15 V input works on 3S (12.6 V full). Feed the Pi via GPIO 5 V pins. |
 | ESP32 DevKit (kill-switch handheld; you already own the robot's) | 1–2 | $6–16 | 3-pack ~$16 |
-| Filament: 1 kg PETG/ASA + a little TPU | — | ~$25 | Free if you already have it |
+| Filament: ~0.5 kg PAHT-CF (frame, mounts, fork), ~0.7 kg PETG (body), a little TPU | — | $0 | Owner has these on hand (see §2 Printing) |
 | **Subtotal** | | **≈ $150–200** (filament owned) | |
 
 ### Battery and charger (≈ $80–120, reusable)
