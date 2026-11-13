@@ -14,7 +14,7 @@ Hard requirements that shape every decision:
 - **Safety first.** A 1/10-scale car at 25 km/h can hurt someone. Every layer must fail safe to "stop":
   ESP32 watchdog, obstacle stop, stale-target stop, wireless kill switch, RC manual override. Test in empty
   lots; public streets/sidewalks may not be legal.
-- **Good footage.** Camera (action cam/phone or Pi camera) on a 3-axis gimbal, recording while following.
+- **Good footage.** The owner's GoPro on a damped fixed mount, recording while following; later, vision to improve framing.
 
 ## 2. Owner and working style
 
@@ -30,14 +30,16 @@ Hard requirements that shape every decision:
 | Item | Status |
 |---|---|
 | Raspberry Pi 5, 8 GB RAM, 64 GB SD (~47 GB free) | In use, the main computer |
+| 3D printer: Bambu Lab H2C (~325 × 320 × 320 mm, hardened nozzle); filaments PLA, PETG, PAHT-CF, PPS-CF available | Owner has access; frame prints in one piece |
+| GoPro | Owned; fixed printed mount, no gimbal |
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **Decided: small custom 3D-printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × 45 A RC-car ESCs on servo PWM, 3S 5000 mAh, printed frame + caster. ≈ 2.5 kg, backpack-sized, 12–15 mph target, ≈ $150–200 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` |
+| Chassis | **Decided: small custom printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × AM32 ESCs (bidirectional mode) on the ESP32 servo channels, 3S 5000 mAh, PAHT-CF frame + PETG body. ≈ 2.5 kg, backpack-sized, 12–15 mph, ≈ $150–200 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
-| Camera, gimbal | **Not chosen yet** (USB webcam suggested to start vision work) |
-| ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left VESC / throttle), channel B GPIO 26 (right VESC / steering) |
-| Wireless kill switch (2nd ESP32 over ESP-NOW) | Planned |
+| Vision camera (Phase 5) | Optional: GoPro in USB-webcam mode or a Logitech C920 |
+| ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe |
+| Wireless kill switch (2nd ESP32 over ESP-NOW) | Planned (Phase 7); no RC radio planned, gamepad for manual driving |
 
 ### Wiring (ESP32 ↔ HC-SR04) — verified working
 | HC-SR04 | ESP32 |
@@ -294,12 +296,12 @@ valid only for the tricycle variant or an RC car.
   > 200 ms.** Clamp and rate-limit throttle on the ESP32 too. ESC arming: hold neutral ~2 s at boot.
   Emit `S,<failsafe>` lines so the Pi can see when the ESP32 has forced neutral, and a `V,<version>`
   banner at boot so the running firmware can be identified. Keep the `R` line format unchanged.
-- Optional RC receiver input on the ESP32 for manual override plus a kill channel (RC always wins).
 - Pi side: `honebot_hardware/ackermann.py` (pure, tested): Twist (v, ω) → normalized throttle/steer using
   `wheelbase`, `max_steer_angle`, `max_speed`; `δ = atan(L·ω/max(|v|, v_min_steer))`. The bridge
   subscribes `/cmd_vel`, converts, and sends `C` lines at ≤ 50 Hz; sends neutral if `/cmd_vel` is older
   than `cmd_timeout`. Publishes `/esp32/failsafe` (Bool) from the `S` lines.
-- Gamepad teleop via `joy` + `teleop_twist_joy` (already installed) → `/cmd_vel_raw` → gate → bridge.
+- Gamepad teleop via `joy` + `teleop_twist_joy` (already installed) → `/cmd_vel_raw` → gate → bridge is the
+  manual-driving path (no RC radio).
 - Test on a stand with wheels off the ground first. Firmware is compiled/flashed from the Mac unless
   arduino-cli is installed on the Pi (open decision 4). Consider micro-ROS later only if the line protocol
   becomes limiting.
@@ -312,10 +314,9 @@ valid only for the tricycle variant or an RC car.
 - Static IP / DHCP reservation for the Pi (router setting, owner).
 
 ### Phase 4 — camera and recording
-- Start with a USB webcam (`ros-jazzy-usb-cam` or `v4l2_camera`; neither installed yet → `sudo apt`).
-  Pi Camera Module 3 on Ubuntu + Pi 5 needs Raspberry Pi's libcamera fork + `camera_ros`; harder — defer.
-- Recording: `ros2 bag record` for sensor data (debugging/tuning); for footage, record video directly
-  (or the action cam records on its own and the robot just keeps it framed).
+- Footage: the GoPro records on its own; the robot only keeps the skater framed. No ROS camera needed for that.
+- For Phase 5 vision: a USB webcam or the GoPro in USB-webcam mode, read with OpenCV (`cv2.VideoCapture`) in a
+  small node (no `usb_cam` apt install needed; cv_bridge is present). `ros2 bag record` for sensor data.
 
 ### Phase 5 — person detection to aim the camera
 - Small detector (YOLO nano class, via ONNX Runtime / NCNN on CPU) publishing the target's bearing and box.
@@ -352,21 +353,21 @@ valid only for the tricycle variant or an RC car.
   sensors for higher speed.
 
 ### Immediate next steps (in order)
-0. **Owner:** read `docs/robot_design.md`; answer its open points (printer bed/material); order the mule parts
-   (hub-motor kit when in stock, Dual FSESC 4.20 Plus, 10S pack + charger, extrusion, Pololu regulator) and the
-   UWB AoA anchor + tag.
+0. **Owner:** read `docs/robot_design.md` and `docs/hardware_plan.md`; order: 2 × 5010 360KV motors, 2 × AM32
+   ESCs + USB linker, GT2 pulleys/belts, longboard wheels, 608 bearings, 3S 5000 mAh + charger, 5 V 5 A buck,
+   ESP32 3-pack, UWB AoA anchor + tag. Measure the backpack.
 1. **Owner (Mac):** `arduino-cli compile` firmware v2.0.0; fix any core-3.x compile errors; flash; on the Pi run
    `ros2 launch honebot_hardware esp32.launch.py` and check the log shows `ESP32 firmware version 2.0.0`,
    `/esp32/failsafe` goes false once `/cmd_vel` is fed (e.g. via bringup + `ros2 topic pub /cmd_vel_raw ...`).
 2. **Owner (Pi, sudo):** install `setserial` + udev rule; install `honebot.service`; verify `journalctl -u honebot -f`.
 3. **Owner:** run the turtlesim demo with `use_safety:=true` on the HDMI console and do the hand-over-sensor test.
 4. **Owner:** push the repo to a private GitHub remote.
-5. Buy a steering servo (and ESC/chassis); bench-test `C` commands on a stand with `THROTTLE_LIMIT` low.
+5. Configure the ESCs (bidirectional), build one drive module, bench-test `C` commands with `THROTTLE_LIMIT` low.
 6. Then Phase 4 (USB webcam) or Phase 6 refactor (`follow_command_relative`), whichever hardware arrives first.
 
-### Open decisions for the owner
-1. Chassis model (drives ESC, servo, size, top speed).
-2. UWB module family.
-3. Filming approach: action cam on a gimbal vs Pi camera.
-4. Whether to install arduino-cli on the Pi for in-place flashing (recommended: lets firmware be compiled
-   and flashed where the ESP32 lives; no `sudo` needed if installed under `~/bin`).
+### Decisions made (2026-11-13) and still open
+- Chassis: custom printed diff-drive robot (`docs/robot_design.md`). ESCs: AM32 in bidirectional mode.
+- UWB: Makerfabs MaUWB_AOA Gen2, one anchor + one tag, to buy.
+- Filming: owner's GoPro on a fixed damped mount; no gimbal.
+- Still open: install arduino-cli on the Pi for in-place flashing (recommended; no `sudo` if under `~/bin`);
+  backpack inner dimensions; which longboard wheels (pulley-mountable core).
