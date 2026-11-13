@@ -164,38 +164,59 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 Each phase ends with a concrete test. Keep `control.py`-style pure logic separate from ROS plumbing so it can
 be unit-tested and reused when inputs change from turtlesim → UWB.
 
-### Phase 0 — housekeeping (do first)
-- `git init` in `~/honebot_ws` with a `.gitignore` for `build/ install/ log/`; commit current state.
-  Suggest the owner push to a private GitHub repo as a backup.
-- Optional: `honebot_bringup` package for top-level launch files.
+**Plan review (2026-11-13):** the original plan was sound; these changes were made for a better chance of
+success: (a) the safety gate also stops when the *controller* goes silent and publishes at a fixed rate;
+(b) the Twist→throttle/steer conversion lives inside the ESP32 bridge as a pure tested module instead of a
+separate node, avoiding a custom message type; (c) `foxglove_bridge`, `joy` and `teleop_twist_joy` were found
+already installed, so Phase 3 shrinks to a bringup launch + systemd unit; (d) an Ackermann car cannot turn in
+place, which the Phase 6 refactor must handle.
+
+### Phase 0 — housekeeping — DONE 2026-11-13
+- `git init` (branch `main`) with `.gitignore` for `build/ install/ log/`; initial commit made.
+- Still to do by the owner: push to a **private** GitHub repo as a backup.
 
 ### Phase 1 — obstacle safety stop (bench, uses existing hardware)
-- New node `safety_gate` (in a new `honebot_safety` package or in `honebot_follow`): subscribes to the
-  controller's raw command (`/cmd_vel_raw`), `/ultrasonic/range`, `/esp32/link_ok`; publishes `/cmd_vel`.
-  Forces zero linear velocity when `range < stop_distance` (e.g. 0.4 m, param), when range data is stale
-  (> 0.3 s), or when link_ok is false. Allows turning in place. Logs state transitions.
-- Remap the turtlesim follower through it. Test: hand over the sensor → chasing turtle freezes; unplug
-  USB → freezes.
-- Unit-test the gate logic as pure functions.
+- New package `honebot_safety`, node `safety_gate`. Subscribes `/cmd_vel_raw` (controller intent),
+  `/ultrasonic/range`, `/esp32/link_ok`; publishes `/cmd_vel` at a fixed rate (`rate_hz`, 50).
+- Pure function `gate.py: gate_command(...)` decides, in priority order:
+  1. ESP32 link down → **stop** (zero linear and angular).
+  2. Range stale (> `range_timeout`, 0.3 s) or never received → **stop**.
+  3. Controller command stale (> `cmd_timeout`, 0.5 s) or never received → **stop**.
+  4. Range < `stop_distance` (0.4 m) → forward speed forced to 0 (reverse and steering still allowed).
+  5. Range < `slow_distance` (1.0 m) → forward speed scaled linearly down toward 0 at `stop_distance`.
+  6. Otherwise pass the command through. `+inf` range = clear (REP 117); NaN = invalid → stop.
+- Logs every state transition with the reason. Unit tests for every rule.
+- `turtle_follow.launch.py` gains `use_safety:=true` which remaps the follower's output to `/cmd_vel_raw`
+  and the gate's output to `/turtle2/cmd_vel`. Bench test: hand over the sensor → chasing turtle freezes;
+  unplug USB → freezes; kill the follower → freezes.
 
 ### Phase 2 — motor/steering control on the ESP32 (needs ESC + servo; a bare servo is enough to start)
-- Extend firmware: parse `C,<throttle>,<steer>` (−1..1), output 50 Hz servo PWM (1000–2000 µs, 1500 neutral)
-  with the ESP32 LEDC peripheral on two GPIOs. **Neutral throttle whenever linkOk is false or no `C` for
-  > 200 ms.** Clamp and rate-limit throttle on the ESP32 too. ESC arming sequence (neutral for ~2 s at boot).
+- Firmware: parse `C,<throttle>,<steer>` (−1..1); output 50 Hz servo pulses (1000–2000 µs, 1500 neutral)
+  with the ESP32 LEDC peripheral (**core 3.x API: `ledcAttach(pin, 50, 16)` / `ledcWrite(pin, duty)`**)
+  on `THROTTLE_PIN` and `STEER_PIN`. **Neutral throttle whenever `linkOk` is false or no `C` for
+  > 200 ms.** Clamp and rate-limit throttle on the ESP32 too. ESC arming: hold neutral ~2 s at boot.
+  Emit `S,<failsafe>` lines so the Pi can see when the ESP32 has forced neutral, and a `V,<version>`
+  banner at boot so the running firmware can be identified. Keep the `R` line format unchanged.
 - Optional RC receiver input on the ESP32 for manual override plus a kill channel (RC always wins).
-- Pi side: a `cmd_vel_to_ackermann` node mapping Twist (v, ω) → throttle/steer using wheelbase and max steer
-  angle (`δ = atan(L·ω/v)`), plus `/esp32/cmd` sending. Gamepad teleop via `joy` + `teleop_twist_joy`.
-- Test on a stand with wheels off the ground first. Consider micro-ROS later only if the serial protocol
-  becomes limiting; the line protocol is easy to debug.
+- Pi side: `honebot_hardware/ackermann.py` (pure, tested): Twist (v, ω) → normalized throttle/steer using
+  `wheelbase`, `max_steer_angle`, `max_speed`; `δ = atan(L·ω/max(|v|, v_min_steer))`. The bridge
+  subscribes `/cmd_vel`, converts, and sends `C` lines at ≤ 50 Hz; sends neutral if `/cmd_vel` is older
+  than `cmd_timeout`. Publishes `/esp32/failsafe` (Bool) from the `S` lines.
+- Gamepad teleop via `joy` + `teleop_twist_joy` (already installed) → `/cmd_vel_raw` → gate → bridge.
+- Test on a stand with wheels off the ground first. Firmware is compiled/flashed from the Mac unless
+  arduino-cli is installed on the Pi (open decision 4). Consider micro-ROS later only if the line protocol
+  becomes limiting.
 
 ### Phase 3 — remote monitoring and auto-start
-- `ros-jazzy-foxglove-bridge` on the Pi; Foxglove desktop app on the Mac (`ws://<pi-ip>:8765`).
-- systemd service that launches the bringup at boot (with clean SIGTERM shutdown already supported).
-- Static IP / DHCP reservation for the Pi.
+- New package `honebot_bringup` with `bringup.launch.py`: ESP32 bridge + safety gate + `foxglove_bridge`
+  (`foxglove:=true`, port 8765). Foxglove desktop app on the Mac connects to `ws://honebot.local:8765`.
+- `systemd/honebot.service` kept in the repo; owner installs it with `sudo` (commands in the README).
+  Clean SIGTERM shutdown is already supported by all nodes.
+- Static IP / DHCP reservation for the Pi (router setting, owner).
 
 ### Phase 4 — camera and recording
-- Start with a USB webcam (`ros-jazzy-usb-cam` or `v4l2_camera`). Pi Camera Module 3 on Ubuntu + Pi 5
-  needs Raspberry Pi's libcamera fork + `camera_ros`; harder — defer.
+- Start with a USB webcam (`ros-jazzy-usb-cam` or `v4l2_camera`; neither installed yet → `sudo apt`).
+  Pi Camera Module 3 on Ubuntu + Pi 5 needs Raspberry Pi's libcamera fork + `camera_ros`; harder — defer.
 - Recording: `ros2 bag record` for sensor data (debugging/tuning); for footage, record video directly
   (or the action cam records on its own and the robot just keeps it framed).
 
@@ -213,6 +234,8 @@ be unit-tested and reused when inputs change from turtlesim → UWB.
   add `follow_command_relative(distance, bearing, gains)` to `control.py` with tests; keep the turtlesim
   path working by converting poses to relative form. Choose a filming offset (e.g. 3 m behind, slightly
   to the side). Stale UWB → stop (same pattern as `leader_timeout`).
+- **Ackermann constraint:** the car cannot turn in place. Today's "leader behind → spin at zero speed" must
+  become "drive a slow forward arc at full steer" or "stop and wait" — decide and test in simulation first.
 - Optional: Gazebo (Harmonic) simulation of an Ackermann car on a PC/VM for tuning before real runs.
 
 ### Phase 7 — integration and field testing
@@ -226,4 +249,5 @@ be unit-tested and reused when inputs change from turtlesim → UWB.
 1. Chassis model (drives ESC, servo, size, top speed).
 2. UWB module family.
 3. Filming approach: action cam on a gimbal vs Pi camera.
-4. Whether to install arduino-cli on the Pi for in-place flashing.
+4. Whether to install arduino-cli on the Pi for in-place flashing (recommended: lets firmware be compiled
+   and flashed where the ESP32 lives; no `sudo` needed if installed under `~/bin`).
