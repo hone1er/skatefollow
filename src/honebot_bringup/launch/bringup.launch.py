@@ -3,10 +3,14 @@
     ros2 launch honebot_bringup bringup.launch.py
     ros2 launch honebot_bringup bringup.launch.py foxglove:=false
     ros2 launch honebot_bringup bringup.launch.py port:=/dev/ttyACM0 stop_distance:=0.6
+    ros2 launch honebot_bringup bringup.launch.py camera:=true [camera_source:=gopro record:=true]
 
 Data flow:  <controller> -> /cmd_vel_raw -> safety_gate -> /cmd_vel -> esp32_bridge -> ESP32
 The controller (follower, gamepad teleop, ...) is started separately so the
 safety layer is always up before anything that can produce motion.
+
+camera:=true adds camera_node + camera_aim (honebot_camera): GoPro video in, person detection,
+and the pan-servo command the bridge forwards to the ESP32 (P lines, GPIO 27).
 
 Foxglove (Mac): File > Open connection > ws://honebot.local:8765
 """
@@ -29,6 +33,14 @@ def generate_launch_description():
                               description='Gate: forward speed tapers below this (m)'),
         DeclareLaunchArgument('foxglove', default_value='true',
                               description='Start foxglove_bridge on port 8765'),
+        DeclareLaunchArgument('camera', default_value='false',
+                              description='Start camera_node + camera_aim (GoPro / webcam, pan servo)'),
+        DeclareLaunchArgument('camera_source', default_value='gopro',
+                              description="camera source: 'gopro', '/dev/videoN', URL or file"),
+        DeclareLaunchArgument('record', default_value='false',
+                              description='camera: tee the raw GoPro stream to ~/videos'),
+        DeclareLaunchArgument('model_path', default_value='~/models/yolov8n.onnx',
+                              description="camera: YOLO .onnx file (HOG if missing); '' = HOG detector"),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(
@@ -42,6 +54,16 @@ def generate_launch_description():
                 'stop_distance': LaunchConfiguration('stop_distance'),
                 'slow_distance': LaunchConfiguration('slow_distance'),
             }.items(),
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution(
+                [FindPackageShare('honebot_camera'), 'launch', 'camera.launch.py'])),
+            launch_arguments={
+                'source': LaunchConfiguration('camera_source'),
+                'record': LaunchConfiguration('record'),
+                'model_path': LaunchConfiguration('model_path'),
+            }.items(),
+            condition=IfCondition(LaunchConfiguration('camera')),
         ),
         Node(
             package='foxglove_bridge',

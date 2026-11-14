@@ -31,14 +31,15 @@ Hard requirements that shape every decision:
 |---|---|
 | Raspberry Pi 5, 8 GB RAM, 64 GB SD (~47 GB free) | In use, the main computer |
 | 3D printer: Bambu Lab H2C (~325 × 320 × 320 mm, hardened nozzle); filaments PLA, PETG, PAHT-CF, PPS-CF available | Owner has access; frame prints in one piece |
-| GoPro | Owned; fixed printed mount, no gimbal |
+| GoPro HERO9 Black | Owned; **printed pan mount on a servo** (owner printing it). Video-in over USB (webcam mode) + aiming software done 2026-11-13 (`honebot_camera`), **not yet tried with the camera**. See `docs/camera_plan.md` |
+| Camera pan servo | **To buy**: standard metal-gear servo (MG996R / DS3218), signal GPIO 27, own 5–6 V 3 A supply |
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
 | Chassis | **Decided: small custom printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × AM32 ESCs (bidirectional mode) on the ESP32 servo channels, 3S 5000 mAh, PAHT-CF frame + PETG body. ≈ 2.5 kg, backpack-sized, 12–15 mph, ≈ $150–260 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` (§2a = drive-module drawings) |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
-| Vision camera (Phase 5) | Optional: GoPro in USB-webcam mode or a Logitech C920 |
-| ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe |
+| Vision camera (Phase 5) | GoPro in USB-webcam mode (mode A: Pi records the 1080p30 stream, GoPro cannot record to SD meanwhile) or any USB webcam next to it (mode B: GoPro records natively). `source` parameter picks |
+| ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe. **Pan servo GPIO 27** (firmware 2.1.0, holds last value in fail-safe, centred at boot) |
 | Wireless kill switch (2nd ESP32 over ESP-NOW) | Planned (Phase 7); no RC radio planned, gamepad for manual driving |
 
 ### Wiring (ESP32 ↔ HC-SR04) — verified working
@@ -49,8 +50,13 @@ Hard requirements that shape every decision:
 | Trig | GPIO 5 |
 | Echo | 1 kΩ → GPIO 18, and 2 kΩ from GPIO 18 → GND (5 V → 3.3 V divider) |
 
-Onboard LED = GPIO 2 (used as the heartbeat/link indicator).
+Onboard LED = GPIO 2 (used as the heartbeat/link indicator). Pins used: 2, 5, 18, 25, 26, 27.
 The USB chip is a **CP2102 (bcdDevice 1.00, serial "0001")**: closing the port blocks ~5 s (see gotchas).
+
+### Wiring (pan servo ↔ ESP32, GoPro ↔ Pi) — planned, see `docs/camera_plan.md` §2
+Signal → GPIO 27; servo + → separate 5–6 V 3 A supply (bench: ESP32 VIN for a 9 g servo only); − → common GND;
+470–1000 µF across the servo supply. GoPro → Pi: one USB-C cable to a USB 3 port; it is a USB *network*
+device (Pi gets 172.2X.1YZ.50, camera .51) and needs the netplan file in `honebot_camera/netplan/` (sudo).
 
 ## 4. Systems and environment
 
@@ -95,9 +101,9 @@ The USB chip is a **CP2102 (bcdDevice 1.00, serial "0001")**: closing the port b
 
 ```
 honebot_ws/
-├── CLAUDE.md                         this file (handoff); README.md = quick run card
+├── CLAUDE.md                         this file (handoff); README.md = architecture + run card; each src/honebot_*/ and firmware/esp32_ultrasonic/ has its own README
 ├── firmware/
-│   └── esp32_ultrasonic/esp32_ultrasonic.ino   ESP32 firmware v2.0.0 (Arduino, core 3.x)
+│   └── esp32_ultrasonic/esp32_ultrasonic.ino   ESP32 firmware v2.1.0 (Arduino, core 3.x)
 └── src/
     ├── honebot_follow/               ament_python — follow-me controller
     │   ├── honebot_follow/control.py     pure math, no ROS (unit-tested)
@@ -122,15 +128,26 @@ honebot_ws/
     │   ├── honebot_uwb/uwb_node.py       serial `U,`/`A,` lines → /target PointStamped
     │   ├── launch/uwb.launch.py
     │   └── test/test_localize.py         11 pytest tests
+    ├── honebot_camera/               ament_python — GoPro/webcam in, person detection, pan aiming
+    │   ├── honebot_camera/gopro.py       find GoPro on its USB network link, HTTP webcam start/stop (CLI gopro_ctl)
+    │   ├── honebot_camera/detector.py    YOLOv8 ONNX decode/NMS/target selection (pure) + HOG/cv2.dnn/onnxruntime backends
+    │   ├── honebot_camera/aim.py         pixel→bearing, open-loop PanController (pure, unit-tested)
+    │   ├── honebot_camera/camera_node.py frames → detections → camera/target, JPEG preview, raw-stream recorder
+    │   ├── honebot_camera/camera_aim.py  camera/target (+UWB fallback) → camera/pan_cmd, pan_angle, bearing
+    │   ├── launch/camera.launch.py       source / record / model_path / aim options
+    │   ├── netplan/99-gopro-usb.yaml     DHCP on usb0/enx* without taking the GoPro's default route (owner installs)
+    │   └── test/                          19 pytest tests
     └── honebot_bringup/              ament_python — top-level launch + systemd
-        ├── launch/bringup.launch.py      esp32 bridge + safety gate + foxglove_bridge
+        ├── launch/bringup.launch.py      esp32 bridge + safety gate + foxglove_bridge [+ camera:=true]
         ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
         ├── launch/record.launch.py       ros2 bag record -a → ~/bags/
         └── systemd/honebot.service       auto-start unit (owner installs with sudo)
 docs/
 ├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
-└── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
+├── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
+└── camera_plan.md                    GoPro webcam vs native recording, pan servo wiring, netplan, detector model
 ```
+Camera flow: `camera_node → /camera/target → camera_aim → /camera/pan_cmd → esp32_bridge (P line) → ESP32 GPIO 27`.
 Command flow: `controller → /cmd_vel_raw → safety_gate → /cmd_vel → esp32_bridge → ESP32`.
 
 Build/test (on the Pi, from `~/honebot_ws`):
@@ -174,6 +191,8 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   `/esp32/actuators` (Vector3: x = throttle, y = steer, what was sent).
 - Subscribes `cmd_vel` (Twist) → `ackermann.twist_to_ackermann()` → sends `C,<thr>,<steer>` at 50 Hz;
   sends neutral when `cmd_vel` is older than `cmd_timeout`; sends one neutral on exit.
+- Subscribes `camera/pan_cmd` (Float32, −1..1) → sends `P,<pan>` at `pan_rate_hz` (20) once a value has
+  arrived; no timeout/neutral (not safety-relevant). `/esp32/actuators.z` = last pan sent.
 - Sends heartbeat `H\n` at 10 Hz. Non-blocking reads on a 100 Hz timer; auto-reconnects if USB is unplugged;
   ignores non-protocol lines (ESP32 boot messages). Catches `ExternalShutdownException` for clean SIGTERM exit.
 - Run: `ros2 launch honebot_hardware esp32.launch.py [port:=/dev/ttyACM0]`.
@@ -185,8 +204,32 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   No fix → nothing published → follower's `target_timeout` stops the robot. **No UWB hardware yet; the
   firmware on the UWB board must print one of the two line formats.**
 
+### honebot_camera — `camera_node` + `camera_aim` (written 2026-11-13; tested on a video file and with a fake detection, not yet with the GoPro)
+- `camera_node` params: `source` (`gopro` | `/dev/videoN` | URL | file, files loop), `hfov_deg` (87 = GoPro Linear,
+  118 = Wide), `proc_width` (640), `detector` (`auto`|`hog`|`onnx`|`ort`), `model_path`, `input_size` (320),
+  `conf_threshold`, `preview_hz` (5), `use_uwb_hint`, GoPro: `gopro_ip` (auto), `gopro_res` (1080), `gopro_fov`
+  (4 linear), `record` (false; tees the raw H.264 UDP stream to `record_dir` `~/videos/*.ts`, no re-encode).
+  Publishes `camera/target` (Vector3Stamped: x bearing rad +left, y elevation, z box-height fraction; only when
+  someone is seen), `camera/image/compressed` (JPEG with boxes, for Foxglove), `camera/status` (String, 1 Hz).
+  Subscribes `target` (UWB) + `camera/pan_angle` to pick the skater among several people.
+  Threads: grabber keeps only the newest frame; detector thread; rclpy spins in main. Low-latency FFmpeg
+  options via `OPENCV_FFMPEG_CAPTURE_OPTIONS` set before cv2 import.
+- `camera_aim` params (live-settable): `kp` 0.6, `deadband_deg` 1, `max_rate_deg_s` 150, `half_range_deg` 45,
+  `lost_timeout` 0.5, `recenter_timeout` 3, `recenter_rate_deg_s` 30, `pan_sign` ±1, `use_uwb_fallback`.
+  Open-loop incremental: pan += kp·error; lost → steer to UWB bearing; no UWB → recentre after 3 s.
+  Publishes `camera/pan_cmd` (Float32 −1..1, 20 Hz), `camera/pan_angle` (rad), `camera/bearing` (pan + image
+  bearing = skater bearing in robot frame, only while seen).
+- `gopro_ctl find|start [res fov]|stop|status` CLI for bench checks. GoPro HTTP: Open GoPro (`:8080/gopro/webcam/…`)
+  first, fallback HERO8/9 legacy `/gp/gpWebcam/START?res=1080`. Stream: `udp://0.0.0.0:8554` MPEG-TS.
+- No ffmpeg CLI on the Pi; OpenCV 4.6 (with FFmpeg) + numpy are. `python3-opencv` is the only apt dep.
+  **onnxruntime 1.32 is installed in the user site** (`pip install --user --break-system-packages`, 2026-11-14)
+  because OpenCV 4.6's `cv2.dnn` cannot run YOLOv8 ONNX files. **Default detector is now YOLOv8n** from
+  `~/models/yolov8n.onnx` (exported on the Pi in the `~/yolo` venv; `python3-venv` + `python3-pip` installed
+  2026-11-14), 10–11 det/s; launch files fall back to HOG if the file is missing.
+
 ### honebot_bringup
-- `bringup.launch.py` args: `port`, `stop_distance`, `slow_distance`, `foxglove` (true → port 8765).
+- `bringup.launch.py` args: `port`, `stop_distance`, `slow_distance`, `foxglove` (true → port 8765),
+  `camera` (false; adds `camera.launch.py`), `camera_source`, `record`, `model_path`.
 - `teleop_joy.launch.py` args: `joy_config` (xbox), `joy_dev`; output remapped to `/cmd_vel_raw`.
 - `systemd/honebot.service`: install commands in the file header. Not installed yet (needs sudo).
 
@@ -198,15 +241,16 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 | ESP32 → Pi | `S,<failsafe>,<throttle>,<steer>` | 10 Hz (firmware ≥ 2.0.0). failsafe 1 = outputs forced neutral; actual outputs −1..1 |
 | Pi → ESP32 | `H` | heartbeat, 10 Hz |
 | Pi → ESP32 | `C,<a>,<b>` | normalized −1..1, 50 Hz. diff mode: a = left, b = right wheel ESC; ackermann: a = throttle, b = steer. Ignored by firmware 1.x |
+| Pi → ESP32 | `P,<pan>` | camera pan servo −1..1 (+1 = full left), 20 Hz (firmware ≥ 2.1.0; ignored by older). Slew-limited on the ESP32, held in fail-safe, centred at boot |
 
-### ESP32 firmware (`esp32_ultrasonic.ino`) — source is v2.0.0, **the flashed ESP32 still runs v1**
+### ESP32 firmware (`esp32_ultrasonic.ino`) — source is v2.1.0; **a 2.x build is flashed** (verified 2026-11-13: `S` lines arrive, `/esp32/failsafe` publishes; exact version not yet read from the `V` banner)
 - Pings every **60 ms** (~16.7 Hz; 50 ms caused ~33% dropouts — datasheet asks ≥ 60 ms), echo timeout 25 ms.
 - Watchdog: `linkOk = heartbeat within WATCHDOG_MS (500)`; LED on GPIO 2 mirrors it.
-- v2.0.0 (written 2026-11-13, **passes a host g++ syntax check with Arduino stubs but has NOT been compiled
-  with arduino-cli or flashed**): LEDC 50 Hz servo pulses on GPIO 25 (throttle) / 26 (steer), 1000–2000 µs;
+- v2.0.0 (written 2026-11-13; compiled and flashed by the owner, `S` lines verified): LEDC 50 Hz servo pulses on GPIO 25 (throttle) / 26 (steer), 1000–2000 µs;
   `C` parsing with validation; fail-safe neutral when link lost, no `C` for 200 ms, or within the 2 s arming
   window; `THROTTLE_LIMIT` 0.5 and 2.0/s rate limit as bench caps; `S` status at 10 Hz; `V` banner.
-  First compile on the Mac may surface core-3.x API differences — fix there, the logic is straightforward.
+- v2.1.0 (2026-11-13, host g++ syntax check only): `P,<pan>` → `PAN_PIN` GPIO 27, `PAN_RATE_PER_S` 3.0 slew,
+  `PAN_TRIM_US`, `PAN_REVERSED`; independent of the drive fail-safe. `S` line unchanged.
 - `handleLine()` is the place to add new commands.
 
 ## 6. Verified results
@@ -227,6 +271,27 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - Accuracy: sensor on the floor facing a ~2.4 m ceiling read 2.392 m, stdev 1 mm, 0% dropouts over 5 s.
 - On the Pi: `/ultrasonic/range` ≈ 1.33 m steady at **16.7 Hz**, `/esp32/link_ok` true; bridge exits cleanly.
 - Both packages build on the Pi; 6/6 follower tests pass.
+
+### 2026-11-13 (camera)
+- 73/73 unit tests (14 control, 12 gate, 17 hardware, 11 uwb, 19 camera); 6 packages build.
+  (`colcon test` lists `honebot_bringup` as "failed" only because it has no tests — pre-existing.)
+- `camera_node` on a synthetic looping 1280×720 clip: HOG detector **8–10 det/s** at 640 px wide, preview at the
+  set rate, status line OK, clean exit on SIGTERM after the thread-join fix.
+- `camera_aim` + real `esp32_bridge` (ESP32 on v1 firmware): a constant fake `camera/target` x = 0.3 rad drove
+  `pan_angle` to the 45° limit, `pan_cmd` 1.0, `/esp32/actuators.z` = 1.0 (P lines leaving the Pi),
+  `camera/bearing` = 1.085; after the publisher stopped, pan recentred to 0 within the expected 3 s + 1.5 s.
+
+### 2026-11-13 (GoPro live)
+- GoPro HERO9 over USB (netplan installed, camera 172.22.120.51): webcam start works once the `port=` parameter is
+  dropped; `camera_node` then publishes `/camera/image/compressed` at the preview rate (4.4 Hz measured) with the HOG
+  detector. ESP32 firmware 2.x confirmed flashed (`S` lines → `/esp32/failsafe`). Pan servo not yet tested.
+
+### 2026-11-14 (YOLO detector)
+- `yolov8n.onnx` (320 px, opset 12) exported on the Pi; onnxruntime backend on the live GoPro stream:
+  **10–11 det/s**, ~60 ms/inference standalone. On 40 live frames of an empty room HOG produced 6 false
+  positives, YOLOv8n 0. `make_detector('auto')` now falls back cv2.dnn → onnxruntime (4 new tests, 23 camera
+  tests pass). Launch defaults changed to `model_path:=~/models/yolov8n.onnx`. Odd-pose detection with a
+  person in frame NOT yet checked (nobody was in view).
 
 ### 2026-11-13 (later)
 - 54/54 unit tests (14 control, 12 gate, 17 hardware, 11 uwb); 5 packages build.
@@ -251,6 +316,16 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   on the interpreter (`pkill -f '^/usr/bin/python3 .*esp32_bridge'`).
 - An ad-hoc pyserial script sending `H` at 20 Hz never got `link_ok=1`, while the bridge node did immediately.
   Unexplained; trust the bridge, and test link behaviour through it.
+- Background jobs started from a **non-interactive** bash (scripts, Claude's shell) ignore SIGINT: `kill -INT`
+  on a `ros2 run … &` does nothing. Use `kill -TERM` on the node PID (all nodes handle SIGTERM cleanly).
+- A YOLO ONNX output can arrive as (1, 84, N) or (1, N, 84); `decode_yolov8` tells them apart by N > 256.
+- HERO9 (firmware HD9.01.01.72) returns HTTP 500 to `/gopro/webcam/start` if a `port=` parameter is present;
+  `opengopro_start_path` now omits it for the default 8554. `/gopro/webcam/status` 1 = idle, 2 = streaming.
+- **OpenCV 4.6 `cv2.dnn` loads a YOLOv8 ONNX file but asserts inside `forward()`** (`shape_utils.hpp:170`),
+  opset 11 and 12 alike. Use onnxruntime (`detector:=ort`, or `auto` which falls back by itself).
+- `python3 -I` hides user-site packages (onnxruntime); don't use `-I` for scripts that need them.
+- Only one process can own the GoPro UDP stream (port 8554); stop any running `camera_node` before starting
+  another, or the second one reads nothing.
 
 ## 8. Plan for the rest of the build
 
@@ -313,16 +388,21 @@ valid only for the tricycle variant or an RC car.
   Clean SIGTERM shutdown is already supported by all nodes.
 - Static IP / DHCP reservation for the Pi (router setting, owner).
 
-### Phase 4 — camera and recording
-- Footage: the GoPro records on its own; the robot only keeps the skater framed. No ROS camera needed for that.
-- For Phase 5 vision: a USB webcam or the GoPro in USB-webcam mode, read with OpenCV (`cv2.VideoCapture`) in a
-  small node (no `usb_cam` apt install needed; cv_bridge is present). `ros2 bag record` for sensor data.
+### Phase 4 — camera and recording — SOFTWARE DONE 2026-11-13 (`honebot_camera`), untested with the GoPro
+- Two ways to use the HERO9 (`docs/camera_plan.md` §1): **A** webcam mode over USB → Pi sees 1080p30 and can
+  record the same stream (`record:=true`, `.ts`, zero CPU) but the GoPro cannot record to SD; **B** GoPro records
+  natively and a small USB webcam on the same pan platform feeds the detector. Same software, `source` param.
+- `camera_node` reads `gopro` / `/dev/videoN` / URL / file with OpenCV (no `usb_cam`, no ffmpeg CLI needed).
+- Owner to do: install the netplan file (sudo), plug the GoPro in, `gopro_ctl find/start`, then
+  `camera.launch.py` and look at `/camera/image/compressed` in Foxglove.
 
-### Phase 5 — person detection to aim the camera
-- Small detector (YOLO nano class, via ONNX Runtime / NCNN on CPU) publishing the target's bearing and box.
-  CPU-only will be a few FPS — fine for aiming, not for steering. The Raspberry Pi AI HAT+ (Hailo) is
-  faster but its software is best supported on Raspberry Pi OS; on Ubuntu expect to build drivers.
-- Gimbal control from bearing (later, hardware-dependent).
+### Phase 5 — person detection to aim the camera — SOFTWARE DONE 2026-11-13, needs the servo + a model
+- Detector backends: HOG (default, no download, ~8–10 Hz), YOLOv8n/YOLO11n ONNX via cv2.dnn or onnxruntime
+  (export on the Mac, `docs/camera_plan.md` §5). Target choice uses the UWB bearing when available.
+- `camera_aim` → `P,<pan>` → ESP32 GPIO 27 pan servo (firmware 2.1.0). Open-loop incremental P control, slew
+  limits, UWB fallback, recentre. Tilt not planned. Hailo AI HAT+ only if CPU FPS proves too low.
+- Owner to do: buy the servo, flash firmware 2.1.0, bench-test with `ros2 topic pub /camera/pan_cmd`, set
+  `half_range_deg`/`pan_sign` from the measured travel, then run the full camera stack on the HDMI/Foxglove.
 
 ### Phase 6 — UWB following — CONTROLLER REFACTOR DONE 2026-11-13 (unit-tested; on-screen run of relative:=true NOT yet done)
 - `control.follow_command_relative(distance, bearing, gains)` is now the core; `follow_command` wraps it.
@@ -356,10 +436,14 @@ valid only for the tricycle variant or an RC car.
 0. **Owner:** read `docs/robot_design.md` and `docs/hardware_plan.md`; order: 2 × 5010 360KV motors, 2 × AM32
    ESCs + USB linker, GT2 pulleys/belts, longboard wheels, 608 bearings, 3S 5000 mAh + charger, 5 V 5 A buck,
    ESP32 3-pack, UWB AoA anchor + tag. Measure the backpack.
-1. **Owner (Mac):** `arduino-cli compile` firmware v2.0.0; fix any core-3.x compile errors; flash; on the Pi run
-   `ros2 launch honebot_hardware esp32.launch.py` and check the log shows `ESP32 firmware version 2.0.0`,
+1. **Owner (Mac):** `arduino-cli compile` firmware v2.1.0; fix any core-3.x compile errors; flash; on the Pi run
+   `ros2 launch honebot_hardware esp32.launch.py` and check the log shows `ESP32 firmware version 2.1.0`,
    `/esp32/failsafe` goes false once `/cmd_vel` is fed (e.g. via bringup + `ros2 topic pub /cmd_vel_raw ...`).
-2. **Owner (Pi, sudo):** install `setserial` + udev rule; install `honebot.service`; verify `journalctl -u honebot -f`.
+2. **Owner (Pi, sudo):** install `setserial` + udev rule; install `honebot.service`; verify `journalctl -u honebot -f`;
+   install `honebot_camera/netplan/99-gopro-usb.yaml` (`docs/camera_plan.md` §3).
+2b. **Owner (camera):** GoPro on, USB Connection = GoPro Connect, plug into the Pi, `ros2 run honebot_camera gopro_ctl find`
+   then `ros2 launch honebot_camera camera.launch.py aim:=false` → `/camera/image/compressed` in Foxglove shows
+   video and (standing in front of it) a box. Then wire a servo to GPIO 27 and run with `aim:=true`.
 3. **Owner:** run the turtlesim demo with `use_safety:=true` on the HDMI console and do the hand-over-sensor test.
 4. **Owner:** push the repo to a private GitHub remote.
 5. Configure the ESCs (bidirectional), build one drive module, bench-test `C` commands with `THROTTLE_LIMIT` low.
@@ -369,5 +453,8 @@ valid only for the tricycle variant or an RC car.
 - Chassis: custom printed diff-drive robot (`docs/robot_design.md`). ESCs: AM32 in bidirectional mode.
 - UWB: Makerfabs MaUWB_AOA Gen2, one anchor + one tag, to buy.
 - Filming: owner's GoPro on a fixed damped mount; no gimbal.
+- Camera (2026-11-13): HERO9 on a **pan servo** (GPIO 27), no tilt; GoPro webcam mode for development with
+  Pi-side recording; native GoPro recording + a small USB webcam for vision as the filming-quality option.
 - Still open: install arduino-cli on the Pi for in-place flashing (recommended; no `sudo` if under `~/bin`);
-  backpack inner dimensions; which longboard wheels (pulley-mountable core).
+  backpack inner dimensions; which longboard wheels (pulley-mountable core); servo model; whether the GoPro's
+  1080p30 webcam footage is good enough or mode B (second camera) is wanted.

@@ -1,0 +1,31 @@
+# GoPro over USB: the camera shows up as a USB network adapter (usb0 or enx...) and runs a DHCP
+# server that gives the Pi 172.2X.1YZ.50 (camera = .51). Ubuntu Server does not configure new
+# USB network interfaces by itself, so this file asks netplan to DHCP on them WITHOUT taking the
+# camera's default route or DNS (otherwise the Pi's internet would try to go through the GoPro).
+#
+# Install (on the Pi, needs sudo):
+#   sudo cp ~/honebot_ws/src/honebot_camera/netplan/99-gopro-usb.yaml /etc/netplan/
+#   sudo chmod 600 /etc/netplan/99-gopro-usb.yaml
+#   sudo netplan apply
+# Check (camera on, plugged into the Pi, USB Connection = GoPro Connect):
+#   ip -4 -brief addr          -> a usb0/enx* line with 172.2X.1YZ.50
+#   ros2 run honebot_camera gopro_ctl find
+network:
+  version: 2
+  ethernets:
+    gopro-rndis:
+      match:
+        name: "usb*"
+      dhcp4: true
+      dhcp4-overrides:
+        use-routes: false
+        use-dns: false
+      optional: true
+    gopro-ncm:
+      match:
+        name: "enx*"
+      dhcp4: true
+      dhcp4-overrides:
+        use-routes: false
+        use-dns: false
+      optional: true

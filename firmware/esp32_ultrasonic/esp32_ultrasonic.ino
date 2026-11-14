@@ -1,5 +1,5 @@
-// honebot ESP32 firmware: ultrasonic sensor, Pi heartbeat watchdog, and
-// throttle/steering servo outputs with fail-safe.
+// honebot ESP32 firmware: ultrasonic sensor, Pi heartbeat watchdog, throttle/steering
+// servo outputs with fail-safe, and a camera pan servo channel.
 //
 // Serial protocol (115200 baud, one line per message, '\n' terminated):
 //   ESP32 -> Pi :  V,<version>                  once at boot
@@ -14,6 +14,9 @@
 //                     Two output channels. Differential drive (the custom robot):
 //                     a = left wheel ESC, b = right wheel ESC. Ackermann car:
 //                     a = throttle ESC, b = steering servo. The Pi decides (drive_mode).
+//                  P,<pan>                       camera pan servo, normalised -1..1 (+1 = full left),
+//                     ~20x per second from camera_aim. Not safety-relevant: the servo holds the last
+//                     value in fail-safe and is centred at boot. Slew-limited (PAN_RATE_PER_S).
 //
 // Fail-safe (throttle neutral, steering centred) whenever ANY of:
 //   - no heartbeat for WATCHDOG_MS
@@ -29,6 +32,7 @@
 //                  (divider drops the 5 V echo to ~3.3 V)
 //   Channel A (left ESC / throttle)  -> GPIO 25 (THROTTLE_PIN); ESC GND -> ESP32 GND
 //   Channel B (right ESC / steering) -> GPIO 26 (STEER_PIN)
+//   Camera pan servo signal            -> GPIO 27 (PAN_PIN); servo + from a 5-6 V supply, GND common
 //   VESC-based ESCs accept this 50 Hz 1000-2000 us signal on their PPM input.
 //   Both channels are forced to 1500 us (neutral) in fail-safe.
 //
@@ -36,13 +40,14 @@
 
 #include <math.h>
 
-const char *FW_VERSION = "2.0.0";
+const char *FW_VERSION = "2.1.0";
 
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 18;
 const int LED_PIN = 2;                     // onboard LED on most DevKits
 const int THROTTLE_PIN = 25;
 const int STEER_PIN = 26;
+const int PAN_PIN = 27;                    // camera pan servo
 
 const unsigned long MEASURE_PERIOD_MS = 60;  // ~16 Hz; HC-SR04 datasheet asks for >= 60 ms between pings
 const unsigned long STATUS_PERIOD_MS = 100;
@@ -60,6 +65,9 @@ const int PULSE_MAX_US = 2000;
 const int STEER_TRIM_US = 0;               // adjust so the wheels are straight at steer = 0
 const bool STEER_REVERSED = false;
 const bool THROTTLE_REVERSED = false;
+const int PAN_TRIM_US = 0;                 // adjust so the camera looks straight ahead at pan = 0
+const bool PAN_REVERSED = false;           // or set pan_sign:=-1 on the Pi side
+const float PAN_RATE_PER_S = 3.0f;         // slew limit on the pan command (full travel in ~0.7 s)
 
 // Bench safety, independent of the Pi: cap and rate-limit the drive channels.
 // Differential drive: BOTH channels are wheel throttles -> both capped/ramped.
@@ -80,6 +88,8 @@ float cmdThrottle = 0.0f;                  // last command from the Pi
 float cmdSteer = 0.0f;
 float outThrottle = 0.0f;                  // what is actually being output
 float outSteer = 0.0f;
+float cmdPan = 0.0f;                       // camera pan: last command and what is output
+float outPan = 0.0f;
 
 char rxBuf[48];
 size_t rxLen = 0;
@@ -102,6 +112,7 @@ int normToUs(float norm, int trimUs, bool reversed) {
 void applyOutputs() {
   writePulseUs(THROTTLE_PIN, normToUs(outThrottle, 0, THROTTLE_REVERSED));
   writePulseUs(STEER_PIN, normToUs(outSteer, STEER_TRIM_US, STEER_REVERSED));
+  writePulseUs(PAN_PIN, normToUs(outPan, PAN_TRIM_US, PAN_REVERSED));
 }
 
 // --- sensor -----------------------------------------------------------------
@@ -133,6 +144,17 @@ bool parseCommand(const char *line, float *throttle, float *steer) {
   return true;
 }
 
+bool parsePan(const char *line, float *pan) {
+  // Expect "P,<float>"
+  if (line[0] != 'P' || line[1] != ',') return false;
+  char *end = nullptr;
+  float v = strtof(line + 2, &end);
+  if (end == line + 2 || *end != '\0') return false;
+  if (isnan(v) || isinf(v)) return false;
+  *pan = constrain(v, -1.0f, 1.0f);
+  return true;
+}
+
 void handleLine(const char *line) {
   if (strcmp(line, "H") == 0) {
     lastHeartbeatMs = millis();
@@ -143,6 +165,12 @@ void handleLine(const char *line) {
     cmdThrottle = t;
     cmdSteer = s;
     lastCmdMs = millis();
+    return;
+  }
+  float pan;
+  if (parsePan(line, &pan)) {
+    cmdPan = pan;
+    return;
   }
   // Unknown lines are ignored.
 }
@@ -189,6 +217,8 @@ void updateOutputs(unsigned long now) {
       outSteer = cmdSteer;                 // steering is not rate-limited
     }
   }
+  // Camera pan is independent of the drive fail-safe: it just follows the last command, slew-limited.
+  outPan = rampToward(outPan, cmdPan, PAN_RATE_PER_S * dt);
   applyOutputs();
 }
 
@@ -202,8 +232,10 @@ void setup() {
 
   ledcAttach(THROTTLE_PIN, SERVO_FREQ_HZ, SERVO_RES_BITS);
   ledcAttach(STEER_PIN, SERVO_FREQ_HZ, SERVO_RES_BITS);
+  ledcAttach(PAN_PIN, SERVO_FREQ_HZ, SERVO_RES_BITS);
   outThrottle = 0.0f;
   outSteer = 0.0f;
+  outPan = 0.0f;                           // camera straight ahead at boot
   applyOutputs();                          // neutral from the first moment
 
   lastLoopMs = millis();

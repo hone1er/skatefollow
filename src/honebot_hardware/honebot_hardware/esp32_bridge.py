@@ -9,6 +9,7 @@ ESP32 -> Pi (published):
 Pi -> ESP32 (sent):
   H                  heartbeat, heartbeat_hz (10)
   C,<thr>,<steer>    normalised -1..1 actuator command, cmd_rate_hz (50), from cmd_vel
+  P,<pan>            camera pan servo -1..1, pan_rate_hz (20), from camera/pan_cmd (camera_aim)
 
 Subscribes cmd_vel (geometry_msgs/Twist) and converts it either with
 diffdrive.py (drive_mode 'diff': C,<left>,<right>, the custom two-wheel robot)
@@ -16,7 +17,11 @@ or ackermann.py (drive_mode 'ackermann': C,<throttle>,<steer>, an RC car).
 The ESP32 just outputs two servo/ESC pulse channels either way. If cmd_vel is
 older than cmd_timeout the bridge sends neutral. If the bridge dies entirely
 the ESP32's own 200 ms command watchdog goes to neutral. Also publishes
-esp32/actuators (geometry_msgs/Vector3: x = throttle, y = steer) for tuning.
+esp32/actuators (geometry_msgs/Vector3: x = throttle, y = steer, z = pan) for tuning.
+
+The camera pan channel (std_msgs/Float32 on camera/pan_cmd, -1..1) is forwarded as
+`P,<pan>` whenever a value has been received; it is not safety-relevant, so no neutral on
+timeout (the firmware holds the last pan and centres only at boot). Firmware < 2.1 ignores it.
 
 Reconnects automatically if the USB cable is unplugged and plugged back in.
 """
@@ -29,7 +34,7 @@ from geometry_msgs.msg import Twist, Vector3
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Range
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 
 from honebot_hardware.ackermann import AckermannParams, twist_to_ackermann
 from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive
@@ -45,6 +50,7 @@ class Esp32Bridge(Node):
         cmd_rate_hz = self.declare_parameter('cmd_rate_hz', 50.0).value
         self.cmd_timeout = self.declare_parameter('cmd_timeout', 0.3).value
         self.send_commands = self.declare_parameter('send_commands', True).value
+        pan_rate_hz = self.declare_parameter('pan_rate_hz', 20.0).value
         self.drive_mode = self.declare_parameter('drive_mode', 'diff').value
         if self.drive_mode not in ('diff', 'ackermann'):
             self.get_logger().error(f"drive_mode must be 'diff' or 'ackermann', not {self.drive_mode!r}; using 'diff'")
@@ -69,6 +75,7 @@ class Esp32Bridge(Node):
         self.failsafe_pub = self.create_publisher(Bool, 'esp32/failsafe', 10)
         self.act_pub = self.create_publisher(Vector3, 'esp32/actuators', 10)
         self.create_subscription(Twist, 'cmd_vel', self._on_cmd, 10)
+        self.create_subscription(Float32, 'camera/pan_cmd', self._on_pan, 10)
 
         self.ser = None
         self.buf = b''
@@ -78,10 +85,13 @@ class Esp32Bridge(Node):
         self.cmd = None
         self.cmd_stamp = None
         self._warned_stale = False
+        self.pan = None               # last camera pan command, None until one arrives
+        self.pan_sent = None
 
         self.create_timer(0.01, self._poll)                 # read serial at 100 Hz
         self.create_timer(1.0 / heartbeat_hz, self._heartbeat)
         self.create_timer(1.0 / cmd_rate_hz, self._send_cmd)
+        self.create_timer(1.0 / pan_rate_hz, self._send_pan)
         self.create_timer(1.0, self._ensure_open)
         self._ensure_open()
         self.get_logger().info(f'drive_mode = {self.drive_mode} '
@@ -145,7 +155,24 @@ class Esp32Bridge(Node):
         except (serial.SerialException, OSError) as e:
             self._drop(e)
             return
-        self.act_pub.publish(Vector3(x=float(throttle), y=float(steer), z=0.0))
+        self.act_pub.publish(Vector3(x=float(throttle), y=float(steer),
+                                     z=float(self.pan_sent) if self.pan_sent is not None else 0.0))
+
+    # --- camera pan servo --------------------------------------------------
+    def _on_pan(self, msg: Float32):
+        v = float(msg.data)
+        if math.isfinite(v):
+            self.pan = max(-1.0, min(1.0, v))
+
+    def _send_pan(self):
+        if self.ser is None or not self.send_commands or self.pan is None:
+            return
+        try:
+            self.ser.write(f'P,{self.pan:.3f}\n'.encode('ascii'))
+        except (serial.SerialException, OSError) as e:
+            self._drop(e)
+            return
+        self.pan_sent = self.pan
 
     def _poll(self):
         if self.ser is None:
