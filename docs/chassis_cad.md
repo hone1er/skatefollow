@@ -1,38 +1,57 @@
-# honebot chassis CAD (Fusion 360 script) — design, checks, build notes (2026-11-16)
+# honebot chassis CAD (Fusion 360 script): design, checks, build notes (2026-11-16, 4-wheel skid steer)
 
 Files:
-- `cad/fusion/HonebotChassis/HonebotChassis.py` (+ `.manifest`): **Fusion 360 script that builds the whole robot**
-  (20 printed parts, reference hardware, keep-out volumes). It is the single geometry source.
-- `cad/check_design.py`: offline checker. It imports the same file without Fusion and checks clearances, holes,
-  assembly paths, the GoPro view, mass/CG, braking, structure, the sensor beam, wiring and printability. Output:
-  `cad/report/check_report.md` + `views.png` + `camera_views.png`.
+- `cad/fusion/HonebotChassis/HonebotChassis.py` (+ `.manifest`): **Fusion 360 script that builds the whole robot**:
+  15 printed parts on the robot (+ a bench-only 9 g servo adapter and a drill jig, both hidden), reference hardware and
+  keep-out volumes. It is the single geometry source.
+- `cad/check_design.py`: offline checker. It imports the same file without Fusion and checks:
+  - clearances, holes and assembly paths;
+  - the GoPro view;
+  - mass/CG, braking, pivot turns and structure;
+  - the sensor beam, wiring and printability.
+
+  Output: `cad/report/check_report.md` + `views.png` + `camera_views.png`.
 - `cad/tests/test_fusion_script.py`: runs the Fusion code path against a stand-in `adsk` API (Python errors, bad
   geometry such as zero-length cylinders or non-orthogonal boxes).
 
-> **Not yet run inside real Fusion 360.** It uses only well-documented API calls (TemporaryBRepManager boxes,
-> cylinders, booleans; `bRepBodies.add` in a direct-modelling design) and wraps every part in its own try/except,
-> so a problem skips one part and is named in the final message box instead of stopping the script.
-> **First run:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
+> **Run it:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> "built 72 of 72 parts" (owner confirmed the earlier 66-part version runs; the "Tools" group holds the hidden drill jig).
-> Every boolean is wrapped on its own: if one fails, the message box counts it instead of dropping the part. If any part fails, send the message text back.
-> Rounded corners use `TemporaryBRepManager.createSphere`; if a Fusion version lacks it, those corners are skipped and the
-> message box says how many.
+> **"built 75 of 75 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
+> the same API calls. If any part or boolean fails, the message box names it: send the text back.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
 
 ![views](../cad/report/views.png)
 
-## 1. What changed from `robot_design.md` and why
+## 1. What changed and why
 
-| Topic | Before (2026-11-13 plan) | Now | Why |
+### 2026-11-16 (later): caster → 4-wheel skid steer
+
+| Topic | Caster version | Now | Why |
 |---|---|---|---|
-| Wheel arrangement | Driven wheels **rear**, caster front | Driven wheels **front**, caster trails at the rear | Braking. Weight shifts forward when braking, onto the wheels that brake, and front-wheel braking is directionally stable (a rear-braked robot spins when its wheels slide). From 15 mph the checker gives **4.9 m vs 6.7 m** (good grip, μ 0.8) and **5.7 m vs 8.0 m** (dusty, μ 0.6). With the recommended 0.5 g software cap the front-drive robot needs ~6.3 m on any grip ≥ 0.57; the rear-drive version could not reach 0.5 g at all. Steering is unaffected (`base_link` = axle centre). |
-| Motors | generic 5010 360KV + GT2 belt, pulley on the shaft | **Reference motor MAD 5010 EEE V2.0 370KV** (published size, base and prop holes; "EEE" = the maker's weather-resistant industrial line). **Printed 28T HTD-3M pulley bolted to the bell's prop holes** → printed 56T on the wheel (2:1), **258 mm (86T) belt**. Motor sits on a **replaceable round plate** with a universal slotted pattern; a **pull screw** gives belt tension a positive stop | Generic 5010 listings disagree on pattern, shaft and weight, and none showed the ~25 mm of bare shaft a shaft-mounted pulley would need here. Bolting to the bell needs no shaft length. HTD-3M's round tooth prints better and skips less than GT2. |
-| Axle | One M8 × 300 rod through the frame | Two **M8 × 140 stub axles (12.9)** inserted **from outside** into a **captive nyloc** in the boss pocket. All-metal stack: head, 608, wheel spacer, 608, speed washer, outer sleeve, **collar 8.4 × 30 × 2**, inner sleeve through the boss (0.3 mm longer than the boss), nut | Leaves the centre free for a battery tunnel. Each side installs and comes off on its own, with one bolt turned from outside. The collar and nut locate the axle sideways (0.2–0.3 mm play) without clamping plastic. The sleeves carry the bending at the wall. |
-| Battery | Strapped on the plate | **Tunnel in the floor**, loaded from the front behind a bumper-door; two prongs hold it against the rear wall | Low CG, no strap, charging needs no tools (2 thumb screws). |
-| Camera | Damped mast above the axle | **Removable mast at the nose**, standard servo pan head, GoPro lens ahead of everything | With the lens ahead of the robot and high enough, nothing of the robot is in frame at ±45° pan, even in Wide 4:3 (see §3). |
-| Frame | One 330 × 260 plate | **Tub + tail module + lids + pods**, every part ≤ 222 mm | The 330 mm plate did not fit the 325 mm bed reliably; the tub (a box section) is much stiffer than a plate. |
-| Size / mass | ≈ 350 × 280 × 140 mm, ≈ 2.5 kg | **399 × 343 × 173 mm** (mast off; the tail hood is the top), 288 mm tall with the mast, **≈ 3.4 kg** (estimate) | Front drive needs the CG well behind the axle (pitch-over), which needs length. The 2026-11-16 strength review added the axle sleeves, the caster post and bearings, and thicker tail walls (+0.3 kg). Wheels off → 399 × 238 × 173 mm. **Measure your backpack** against this. |
+| Wheels | 2 driven front wheels + swivel caster at the rear (tail module) | **4 wheels, all driven**. Each side has one motor: motor → 28T:56T belt → front wheel; the front wheel's **double pulley** (56T + 36T) → **1:1 belt** (HTD 510-3M-09) → 36T on the rear wheel | Fewer, simpler parts: no caster fork, swivel bearings, M12 pivot, tail, hood or lap joint. The caster parts carried the lowest safety factors (1.5); they are gone. No shimmy. All four wheels brake. Diff-drive software is unchanged |
+| Frame | Tub + bolted tail + hood + lid + 2 pods | **One 300 mm tub**, both axles in it. **One shell** (lid + both motor pods, 4 screws). ESP32 cradle printed on the deck. UWB plate printed on the mast | Printed parts **20 → 15**. One lap joint and ~20 screws fewer |
+| Rear-belt tension | — | **608-2RS idler** on an M8 bolt in a vertical wall slot, pressing the 1:1 belt's upper run down at mid-span. The wheelbase (**200.5 mm**) is solved from the belt length; the slot covers 0.2–2.0 mm of take-up (belt and print tolerance) | Rear axle stays a fixed captive-nut stub axle like the front one |
+| Pulley fixing | M3 × 80 through the wheel core into nylocs | **Heat-set inserts in the pulleys**, M3 screws from the wheel's outer face | The 36T neck left no room for a nut; 16 nuts fewer |
+| Axle sleeves | 7075 turned 18 mm | **Stock steel tubes**: 12 × 2 inside 16 × 2 (E355, no lathe) | Buyable; SF 2.0 |
+| Size / mass | 399 × 343 × 173 mm, 3.4 kg | **343 × 343 × 147 mm** (mast off), 288 mm tall with the GoPro, **≈ 3.8 kg** (estimate) | Two more wheels, axles and belts (+0.4 kg); shorter (no tail) |
+| Stability | sideways tip 0.79 g, pitch-over 0.71 g | **sideways 1.75 g, pitch-over 0.89 g**, backward 1.65 g | Rectangle of 4 contacts instead of a triangle |
+
+Costs of skid steer, and how they are handled:
+- **Turning scrubs the tyres sideways.** Pivoting needs ~11 N per side, about 10 A per motor near standstill (30 A ESCs).
+  The ratio wheelbase/track = 0.72 (< 1 is required) keeps that low.
+- **Yaw rate is lower than the kinematic (vR − vL)/track**: set `track_width` in the bridge 1.2–1.6 × the geometric
+  0.277 m after a spin test, and expect a small turn dead-band.
+- **More tyre wear** on hard pivots: prefer arcs in the follower.
+
+### Earlier decisions that still hold
+
+| Topic | Decision | Why |
+|---|---|---|
+| Drive at the front | Front axle carries 65 % of the weight | Braking stability; the CG must stay behind the front axle (pitch-over) |
+| Motors | **Reference MAD 5010 EEE V2.0 370KV** (published size, base and prop holes). **Printed 28T HTD-3M pulley bolted to the bell's prop holes** → printed 56T (2:1), 258 mm belt. Replaceable round motor plate with a universal slotted pattern; **pull screw** gives belt tension a positive stop | Generic 5010 listings disagree on pattern and shaft; bolting to the bell needs no shaft length. HTD-3M prints better and skips less than GT2 |
+| Axles | **M8 × 140 stub axles (12.9) from outside into a captive nyloc**; all-metal stack: head, 608, wheel spacer, 608, speed washer, outer sleeve, collar 8.4 × 30 × 2, inner sleeve through the boss, nut | Each wheel comes off with one bolt. Located sideways without clamping plastic |
+| Battery | Floor tunnel, loaded from the front behind the bumper-door | Low CG, tool-free charging |
+| Camera | Removable mast at the nose, standard servo pan head | Nothing of the robot in frame at ±45° pan, even in Wide 4:3 |
 
 ### Drivetrain options checked (checker §6; 3S nominal, 90 mm wheels, needs ≥ 6.5 N at 15 mph)
 
@@ -47,7 +66,7 @@ Files:
 | Small servos / actuators | ~1 m/s | — | — | Not suitable for continuous wheel drive |
 
 Longevity measures for the chosen drive:
-- **Pod caps** over the motors' upper half and the motor pulleys. They keep off spray from above; they are open
+- **Shell pods** over the motors' upper half and the motor pulleys. They keep off spray from above; they are open
   toward the wheel, so grit thrown by the wheel can still reach the lower half.
 - The weather-resistant reference motor and sealed 608 bearings.
 - Belt slots for tensioning.
@@ -79,204 +98,175 @@ outboard bearing was evaluated and rejected: through a printed bracket it would 
 would carry <10 % of the load and could add stress through misalignment. The protections are the short overhang, the
 tension spec above, and the pull-screw stop, which keeps tension from creeping up.
 
-## 2. Layout (mm; x forward from the drive axle, y left, z up from the ground)
+**Rear (1:1) belt and idler.**
+- The loop is solved exactly: three pulleys, with tangent runs and wraps on the pitch line.
+- With the belt at its nominal 510 mm, the idler sits 10 mm below the straight run and takes up 1.0 mm.
+- Slot ends: 0.2 mm take-up (idler high) to 2.0 mm (idler low).
+- **Tension:** slide the idler down until the upper run between the idler and either pulley deflects ~1.5 mm under
+  2 N at its middle, then tighten the M8 nyloc.
+- The upper run passes 3–5 mm under the motor can at the nominal idler position. The checked can is the Ø62
+  envelope; the MAD motor is Ø56.
+- **The rear belt goes on together with the wheels** (it loops both wheel pulleys; see §7).
+
+## 2. Layout (mm; x forward from the front axle, y left, z up from the ground)
 
 | Item | Where | Notes |
 |---|---|---|
-| Drive wheels 90 × 52 | centre (0, ±138.5, 45) | track 277 mm |
-| Motors (≤ Ø62 × 33) | centre (−40, ±62…95, 96), outside the tub walls | 28T pulley bolted to the bell, belt plane y = ±102; **HTD-3M 258 mm (86T)** belt → 64.6 mm centres |
-| Caster 70 × 51 | pivot x = −223, wheel trails 25 mm | wheelbase 248 mm; swept circle r 65 mm is a checked keep-out. Swivels on 2 × 6001-2RS 58 mm apart in a post; M12 12.9 pivot |
-| Battery tunnel | x −141…4, |y| ≤ 26.5, z 32…62 | 3S 5000 hard case ≤ 145 × 50 × 30 |
-| Deck (removable) | z 79…82 | Pi 5 (USB end to the rear), two regulators beside the mast socket, 10 mm M3 grid |
-| Tail deck | z 115, under a raised PETG hood | **ESP32 in a printed slide-in cradle** (PCB in grooves 34 mm above the deck so the jumper plugs on its downward pins clear; USB end toward +y; plate has a 10 mm grid for the SunFounder board instead), 2 ESCs, fuse + distribution, XT60 arming plug in the rear wall |
-| HC-SR04 "eyes" | front, z 102, tilted up 12°, **mounted upside down** | ground return at 1.95 m (> `slow_distance` 1.0 m). Upside down, the 4-pin header points up, so the plug and wires rise behind the bracket (modelled keep-out) into the wall hole at z 131. The beam cone was checked clear of the brow, cheeks and bumper |
-| Mast + pan head | x 38; servo seat z 195 | GoPro centre z 260, lens z 266 / x 60, ahead of the bumper line |
-| UWB anchor | plate on 4 inserts in the pan-head front, z 151…192 | antenna faces forward, above the robot body; USB to the Pi (`uwb_node`, `/dev/ttyUSB1`) |
+| Wheels 90 × 52 | front (0, ±138.5, 45), rear (−200.5, ±138.5, 45) | track 277, wheelbase 200.5 |
+| Motors (≤ Ø62 × 33) | centre (−40, ±62…95, 96), outside the walls under the shell pods | 28T bolted to the bell, belt plane y ±102; **HTD-3M 258 mm** → 64.6 mm centres |
+| Rear belt | plane y ±84, 36T:36T | **HTD 510-3M-09**; 608 idler at x −100.2, z 60.7–70.3 slot |
+| Battery tunnel | x −141…4, \|y\| ≤ 26.5, z 32…62 | 3S 5000 hard case ≤ 145 × 50 × 30 |
+| Fuse + distribution | under the deck, x −180…−146 (behind the battery) | 20 A blade fuse, XT30/Wago; XT60 arming plug in the rear wall |
+| Deck (removable) | z 79…82 | Pi 5 (USB end to the rear), 2 regulators beside the mast socket, 2 ESCs zip-tied at the rear, **ESP32 slide-in cradle printed on** (x −195, PCB 30 mm above the deck so the jumper plugs on its downward pins clear), 10 mm M3 grid |
+| HC-SR04 "eyes" | front, z 102, tilted up 12°, mounted upside down | ground return at 1.95 m (> `slow_distance` 1.0 m); plug rises behind the bracket into the wall hole at z 131 |
+| Mast + pan head + UWB plate | x 38; servo seat z 195 | GoPro centre z 260, lens z 266 / x 60. UWB anchor on the front plate (z 151–192), antenna forward |
 
-Power below the deck, signals above it. The battery lead and ESC phase wires run in the side channels (|y| 30…58,
-under the deck, through Ø12 holes in the axle bridge beam), then up through the rear-corner deck slots and through
-the rear-wall window to the tail. Signal cables (GoPro USB-C and servo + UWB inside the hollow mast, ESP32 USB,
-HC-SR04) run over the deck. The mast has an **open rear channel** (and the socket an open rear slot): mast cables
-are laid in, not threaded, and lift out with the mast. Servo and UWB cables drop from under the pan head into the
-channel; the GoPro USB-C makes a service loop around the pan axis. Every route ends at its real connector,
-including the regulator inputs from the tail fuse and the servo's 6 V. Lengths are in the report §9: cut about 30 % longer.
+Power below the deck, signals above it:
+- The battery lead runs back along the side channel (|y| ≈ 45, through Ø12 holes in the front bridge beam) to the
+  fuse block behind the battery.
+- Motor phase wires enter through grommets in the walls and run to the ESCs through the deck's cable passes.
+- Signal cables run over the deck: GoPro USB-C, servo and UWB inside the hollow mast; ESP32 USB; HC-SR04.
+- The mast has an open rear channel, so its cables lift out with it.
+- Lengths are in report §9; cut them about 30 % longer.
 
 ## 3. Checks (all pass; full numbers in `cad/report/check_report.md`)
 
-- **Clearances**: every non-mated pair is checked: 0.5 mm static, and 3 mm against anything moving or swept:
-  - wheels, pulleys, belt loops
-  - caster swivel, GoPro pan sweep
-  - USB, ESP32 jumper and HC-SR04 plug space
-  - hex-key access to every motor-plate bolt
-
-  Mated pairs must not interpenetrate (> 0.3 mm), except a few declared simplifications (bolts through solid wheels).
-- **Holes**: every hole runs through its part for the required depth with ≥ max(1.5 mm, d/2, ≤ 3 mm) of wall, and
-  ≥ 1.5 mm surface-to-surface between neighbours. **Fastener schedule:** report §11. Every thread in a printed part
-  is a heat-set insert, never tapped plastic.
-- **Assembly / service**: these slide out along their exit direction without hitting anything that stays:
-  - mast, lid, hood, deck (with Pi)
-  - bumper-door, battery
-  - pods, wheels, motors
-- **Camera**: robot sampled every 3 mm and projected into the GoPro frame for pan −45…+45°. Modes: Wide 4:3/16:9,
-  SuperView and Linear, 5° margin, rectilinear and fisheye models. **0 points in frame.** Allowed down-tilt: **16° in
-  Wide 4:3**, ≥ 30° in the other modes.
+- **Clearances:**
+  - 0.5 mm between static parts; 3 mm against anything moving or swept (wheels, pulleys, both belt loops, idlers,
+    GoPro pan sweep, USB/jumper/HC-SR04 plug spaces, hex-key access to the motor-plate bolts).
+  - Mated pairs must not interpenetrate.
+- **Holes:**
+  - Wall around every hole, and spacing between neighbours, are checked.
+  - Every thread in plastic is a heat-set insert.
+  - The fastener schedule is in report §11.
+- **Assembly / service:** these slide out along their exit paths: mast, shell, deck, bumper-door, battery, each
+  wheel with its pulley, each axle bolt, each motor module.
+- **Camera:** 0 robot points in frame for pan ±45° in every mode (5° margin). Allowed down-tilt is in the report.
   ![camera](../cad/report/camera_views.png)
-- **Street → driveway** (assumed profile: up to 20° slope change, lips up to 10 mm). The skids of the previous
-  version (11° approach) are gone; the rounded bumper nose now sets the approach angle.
+- **Street → driveway** (up to a 20° slope change, lips up to 10 mm):
 
   | Angle | Clears |
   |---|---|
   | Approach | 21° |
-  | Breakover | 26° |
-  | Gutter | 23° |
-  | Departure | 45° |
+  | Departure | 36° |
+  | Breakover | 30° |
+  | Gutter | 22° |
 
-  Floor 28 mm, caster legs 22 mm. A driven 90 mm wheel climbs a ~10 mm lip from standstill. Treat lips as slow-down
-  events.
-- **Stability**: 74 % of the weight is on the drive wheels.
-  - **Sideways tip:** needs 0.79 g. That is close to the sliding limit, so the follower should cap lateral
-    acceleration (~0.5 g: v²/R).
-  - **Forward pitch-over:** starts at **0.71 g**. If it pitches, the rounded bumper touches down at 22°, before the
-    35° tip point, so it can't flip.
-  - Do the firmware decel-ramp change in §8.
-- **Retention**: each drive axle is located sideways by the collar and the captive nut, and the caster crown by the
-  bolt head and the 24 mm washer. No load path relies on plastic being clamped. Bolt insertion is checked too: the
-  axle bolts slide out from outside, and the caster assembly drops out downward once the top nut is off.
-- **Structure at the worst road event.** The event is a wheel hitting a 6 mm crack at 15 mph: ~920 N on a drive
-  wheel, ~840 N on the caster. It uses an assumed urethane contact stiffness of 50 N/mm; the 10 mm lip case at 3 m/s
-  is lower. Every item has a safety factor ≥ 1.5:
+  - Floor at 28 mm. A driven wheel climbs a ~10 mm lip from standstill; treat lips as slow-down events.
+- **Stability:**
+  - Sideways tip at 1.75 g (it slides first).
+  - Forward pitch-over under braking at 0.89 g; the bumper touches down at 22° if it does pitch.
+  - Stopping from 15 mph: 4.5 m at μ 0.8, 5.5 m at μ 0.6.
+  - Keep the firmware decel ramp (§8) at ~0.5 g anyway.
+- **Structure at the worst road event:** a wheel hits a 6 mm crack at 15 mph, ~910 N (urethane stiffness 50 N/mm
+  assumed: measure it, §8).
 
   | Item | Safety factor |
   |---|---|
-  | Axle sleeve | 3.8 |
-  | M8 at the root | 8.3 |
-  | M8 inside the wheel | 7.8 (needs the wheel's 12 × 8 bearing spacer) |
-  | Axle boss bearing | 1.8 |
-  | 6001 swivel bearings vs static rating | 1.5 |
-  | Pivot post | 2.6 |
-  | Fork legs, fore-aft / sideways | 6.9 / 1.6 |
-  | Fork crown | 7.8 |
-  | Tail rib | 1.8 |
-  | Tail-to-tub M5 lap | 1.5 |
+  | Axle sleeve (nested steel tubes) | 2.0 |
+  | M8 at the root / inside the wheel | 14.7 / 7.9 |
+  | Axle boss bearing (PAHT-CF) | 1.6 |
+  | Boss root | 6.7 |
+  | Idler slot / 608 static | 63 / 45 |
   | Motor shaft | 3.7 |
+  | Pivot-turn current (10 A vs 30 A) | 3.1 |
+  | Pulley wall under the 36T teeth (4.7 mm vs 3 mm) | 2.3 |
   | Mast first mode | 118 Hz |
-
-  What the review changed to get there (each was below 1.5 or failing before):
-  - **Axle:** a 7075 sleeve and a longer boss.
-  - **Caster:**
-    - 6001 bearings 56 mm apart in a post; the 24 mm-apart 608s were at a factor of 0.5.
-    - 13 mm legs; 9 mm was at 0.9.
-    - The fork now prints **on its side**.
-    - The M12 head is locked in the crown, so no nut hangs where the wheel passes under the pivot.
-    - Steel sleeves make every clamp metal-to-metal.
-  - **Tail:** 6 mm walls, M5 inserts, 4 per side on two posts; it was at 0.7.
-- **Wiring**: every route ends at its real connector and avoids solids. Mast cables lay into an open channel.
-- **Printability**: every printed part fits 300 mm.
+- **Wiring:** all 12 routes end at their connectors and avoid solids.
+- **Printability:** every printed part fits 300 mm. The tub and the shell are 300 mm long; the H2C bed is
+  325 × 320 mm.
 
 ## 4. Printing
 
 | Part | Qty | Material | Orientation / supports |
 |---|---|---|---|
-| tub | 1 | PAHT-CF, 5–6 walls, 40 % infill, dry filament | Floor on the bed (bottom edges are 2.5 mm chamfers, no elephant foot). Supports: under the axle bridge beam, top of the battery opening and of the rear tail window. Heat-set inserts after printing. |
-| tail | 1 | PAHT-CF | Upright, skirt down; tree supports under the deck plate and around the pivot post. |
-| caster_fork | 1 | PAHT-CF | **On its side** (one leg's outer face on the bed): layers run along the legs and across the crown. |
+| tub | 1 | PAHT-CF, 5–6 walls, 40 % infill, dry filament | Floor on the bed (300 × 140 fits straight). Supports under both axle bridge beams and the battery opening top. Inserts after printing |
+| shell (lid + pods) | 1 | PETG, bright colour | Flat top down; supports inside the pods |
 | motor_plate_L/R | 2 | PAHT-CF | Flat, counterbores up |
-| wheel_pulley_L/R, motor_pulley_L/R | 2 + 2 | PAHT-CF, 0.4 nozzle, 0.12 mm layers | Axis vertical. **Tooth form is approximate** (round 1.14 mm grooves). For best belt life, regenerate the 56T/28T HTD-3M tooth profile with a pulley generator (e.g. the OpenSCAD "Parametric Pulley" by droftarts, HTD 3 mm) and keep these parts' hubs, flanges and bolt holes. Motor pulley: drill the centre bore to fit the shaft (5 mm on the MAD motor, 8 mm deep). |
-| mast | 1 | PAHT-CF | Lying on its side; supports under the flange and pan head |
-| deck | 1 | PETG (or PAHT-CF) | Flat |
-| bumper_door | 1 | PETG (TPU skin optional) | Back face on the bed (prongs up) |
-| pod_L/R, lid, tail_lid (hood) | 2+1+1 | PETG, bright colour | Pods and hood: open side down. Lid: flat face down. |
-| us_bracket, uwb_plate, pan_buckle, esp32_cradle | 1 each | PETG | Back face / plate down |
-| servo9g_adapter | 1 | PETG | Bench only (hidden in Fusion) |
+| wheel_pulley_FL/FR (56T + 36T), wheel_pulley_RL/RR (36T), motor_pulley_L/R (28T) | 4 + 2 | PAHT-CF, 0.4 nozzle, 0.12 mm layers | Axis vertical. Tooth form is approximate (round grooves); for best belt life regenerate the HTD-3M teeth with a pulley generator and keep hubs, flanges and holes. Motor pulley: drill the centre bore to the shaft |
+| mast (with UWB plate) | 1 | PAHT-CF | Lying on its side; supports under the flange, head and plate |
+| deck (with ESP32 cradle) | 1 | PETG (or PAHT-CF) | Flat, cradle up |
+| bumper_door | 1 | PETG (TPU skin optional) | Back face on the bed |
+| us_bracket, pan_buckle | 1 each | PETG | Plate down |
+| servo9g_adapter, pulley_drill_jig | 1 each | PETG | Bench only / tool (hidden in Fusion) |
 
-Tolerances are deliberately loose: M3/M4/M5/M8 through-holes 3.4/4.5/5.5/8.5 mm, M3/M4/M5 heat-set holes 4.0/5.6/6.4 mm
-(check your insert's chart), bearing seats +0.2 mm with retaining compound, 0.3 mm per side slip fits, ≥ 3 mm next to
-anything that moves. Change any of these in `PARAMS` and re-run both scripts. Visible edges are rounded: lids, pods,
-hood, bumper, pan head and the tub/tail corners.
+Tolerances are loose on purpose: through-holes M3/M4/M5/M8 3.4/4.5/5.5/8.5 mm; heat-set holes M3/M4 4.0/5.6 mm
+(check your insert's chart); 0.3 mm per side slip fits; ≥ 3 mm next to anything that moves. Change them in `PARAMS`
+and re-run both scripts.
 
 ## 5. Data quality: what is verified and what to measure
 
-**Verified (fixed holes/pockets):** Raspberry Pi 5 85 × 56, M2.5 on 58 × 49 (3.5 mm from the non-USB end) ·
-GoPro HERO9 71.0 × 55.0 × 33.6 mm, 158 g · Pololu D36V50Fx 25.4 × 25.4 × 9.5 mm · MG996R body 40.7 × 19.7 × 42.9,
-ears 54 mm · HTD-3M pitch diameters · goBILDA 5203 data (used only to reject it).
+**Verified:** Raspberry Pi 5 holes · GoPro HERO9 71.0 × 55.0 × 33.6 mm, 158 g · Pololu D36V50Fx 25.4 mm square ·
+MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stock items.
 
-**Measure before printing (you own these):**
-1. HC-SR04: transducer centre distance (model 26 mm, windows Ø18) and PCB outline. Also the beam test below.
-2. ESP32 DevKit width (`esp_w`, 28.5 mm) and length (`esp_l`, 55 mm): the cradle grooves are cut to the width.
-   Also check which way the pins point (down, as modelled). If you use the SunFounder extension board instead, measure
-   its outline and holes; it bolts to the cradle plate's 10 mm grid.
-3. HC-SR04 header: confirm the 4 pins lie in the board plane off one long edge (common version). The sensor is
-   mounted upside down so the plug points up.
-4. 9 g servo: body length/width, ear hole spacing (adapter slots cover 26–30 mm), shaft offset from the body centre
-   (`sg90_shaft_off`, 5.9 mm).
-5. GoPro lens centre relative to the body (`gopro_lens_dy/dz`). It only shifts the view check slightly.
+**Measure before printing (you own these):** HC-SR04 transducer spacing and header; ESP32 DevKit width/length
+(`esp_w` 28.5, `esp_l` 55); 9 g servo; GoPro lens offset.
 
-**Measure on arrival (then update PARAMS and re-run):** motor: body length (≤ 33 mm), prop holes (pulley needs 4 × M3
-on D12; MAD 5010 EEE lists D12 and D18), shaft stub above the bell (≤ 9 mm, else drill the pulley through), M3 thread
-depth in the bell (screw length); ESC size (≤ 48 × 28 × 14); wheel bearing inset (sets the sleeve length), that the
-wheel has a 12 × 8 mm spacer between its bearings, and core material at Ø35 for the 4 pulley bolts; urethane contact
-stiffness (press the wheel onto a 10 mm square bar: N per mm) to replace the 50 N/mm assumption; battery size (≤ 145 × 50 × 30),
-UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear height (`servo_ear_z`).
+**Measure on arrival (update PARAMS, re-run):**
+- Motor: body length (≤ 33), prop holes (4 × M3 on D12), shaft stub height, M3 thread depth in the bell.
+- ESC size: ≤ 48 × 27 × 14.
+- Wheels:
+  - bearing inset (sets the outer sleeve length);
+  - a 12 × 8 spacer between the bearings;
+  - solid core at Ø35 for the 4 pulley screws;
+  - **urethane stiffness** (§8).
+- Battery size; UWB anchor board size and holes.
 
 ## 6. Bill of materials (hardware not printed)
 
 | Item | Qty | Notes |
 |---|---|---|
-| **MAD 5010 EEE V2.0 370KV** (reference), or any 5010-class 300–400 KV motor ≤ Ø62 × 33 with M3 base holes on 16–30 mm and **4 × M3 prop holes on D12** | 2 | Price not retrieved — check (industrial line, likely more than generic $20 motors). Generic 5010s fit the plate, but only use one with D12 prop holes. |
-| M3 × 12 low-head (DIN 7984) screws | 8 | motor pulley → bell |
-| HTD-3M **258 mm (86T)** 9 mm closed belt | 2 (+1 spare) | 255 or 261 mm also fit the ±4 mm slots |
-| AM32 ESC 30–40 A, 2–4S, PWM input, bidirectional | 2 | + USB linker. Set: bidirectional, sine start-up on, LVC 3.3 V/cell |
-| 90 × 52 longboard wheels (4-pack) with a 12 × 8 bearing spacer + one 70 × ~51 wheel for the caster | 1 + 1 | Core must take 4 × M3 on Ø35 |
-| 6001-2RS bearings (12 × 28 × 8) | 2 | caster swivel |
-| M8 × 140 hex bolt **12.9** + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 2 | stub axles (bolt from outside, nyloc captive inside) |
-| Axle sleeves 18 × 8.2 mm: inner 30.3 mm + outer (cut to measure, ~40 mm), and a collar washer 8.4 × 30 × 2 | 2 sets | 7075-T6 (SF 3.8) turned from 18 mm bar. **No lathe?** Nest stock tubes 12 × 2 inside 16 × 2 (E355 steel or stainless): set `axle_sleeve_d` = 16 and re-run; the checker then gives SF ≈ 1.9. |
-| M12 × 90 hex bolt 12.9, steel sleeve 18 × 12.2 × 5.5, washer 12.5 × 24 × 2, speed washer 12.2 × 16 × 1.5, steel spacer 16 × 12.2 (~48 mm), washer + PTFE/spring washer + M12 nyloc | 1 | caster pivot (metal only; the 24 mm washer captures the crown) |
-| M8 × 80 12.9 + nyloc, 2 × steel sleeve 12 × 8.2 × 13 | 1 | caster wheel axle (sleeves through the fork legs) |
-| M3 × 80 bolts + nylocs | 8 | wheel pulley through the core (stack ≈ 69.5 mm + washer + nut) |
-| Heat-set inserts M3 × 5.7 (~35), M4 × 8.1 (~8), M5 × 9.5 (8) | | |
-| M5 × 16 (8, tail lap), M3/M4 screws, M3 × 25 (2, belt pull screws), 2 × M4 thumb screws (mast), 2 × M4 thumb screws (door) | | |
-| Pololu D36V50F5 (5 V 5.5 A, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | zip-tied on the deck slots |
-| XT60 pigtails, 20 A blade fuse holder, panel XT60 used as an arming plug | | pull the plug = everything off |
-| MG996R or DS3218 servo, 470–1000 µF cap | 1 | |
-| Right-angle USB-A cables (USB-C for the GoPro, micro-USB for the ESP32) | 2 | 25 mm plug space behind the Pi |
+| **MAD 5010 EEE V2.0 370KV** (reference), or a 5010-class 300–400 KV motor ≤ Ø62 × 33 with M3 base holes on 16–30 mm and **4 × M3 prop holes on D12** | 2 | Buy one generic 5010 first only if its listing gives all of these; measure, set PARAMS, re-run |
+| M3 × 12 low-head (DIN 7984) | 8 | motor pulley → bell |
+| HTD-3M **258 mm (86T)** × 9 mm closed belt | 2 (+1) | motor → front wheel |
+| HTD-3M **510 mm (170T)** × 9 mm closed belt, e.g. Gates 510-3M-09 | 2 (+1) | front → rear wheel, 1:1 |
+| 608-2RS + M8 × 50 bolt + 18.5 mm spacer + washer + M8 nyloc | 2 | rear-belt idlers |
+| AM32 ESC 30–40 A, 2–4S, PWM input, bidirectional | 2 | + USB linker; bidirectional, sine start-up, LVC 3.3 V/cell |
+| 90 × 52 longboard wheels (4-pack) with 12 × 8 bearing spacers + 8 × 608-2RS | 1 | solid core at Ø35 |
+| M8 × 140 hex bolt 12.9 + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 4 | stub axles |
+| Axle stack per wheel: steel tubes **16 × 2** (inner 30.3 mm through the boss + outer cut to measure) over **12 × 2** (full length), collar washer 8.4 × 30 × 2 | 4 sets | E355 or stainless stock tube, cut and deburred |
+| M3 × 55–60 socket screws | 16 | wheel outer face → inserts in the pulleys (≥ 5 mm into the insert, must not bottom in the 8 mm hole) |
+| Heat-set inserts M3 × 5.7 (~40), M4 × 8.1 (~6) | | |
+| M3 screws (shell 4, deck 4, motor plates 6, belt pull 2 × M3 × 25, HC-SR04 2), M4 thumb screws (mast 2, door 2) | | |
+| Pololu D36V50F5 (5 V, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | |
+| XT60 pigtails, 20 A blade fuse holder, panel XT60 as arming plug | | pull the plug = everything off |
+| MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
+| Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
 | 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
 
 ## 7. Assembly order
 
-1. Inserts into tub, tail, motor plates, mast, ESP32 cradle. 6001s into the tail post.
-2. Motor → plate (screw heads in the counterbores); 28T pulley → bell (4 × M3 low head) → plate into the wall
-   pocket, 3 × M3 from inside, loose; pull screw through its boss into the plate tab, loose.
-3. Each side: drop the M8 nyloc into the boss pocket from inside the tub (battery out, or before the deck goes in).
-   Then from outside: inner sleeve into the boss, collar, outer sleeve, speed washer, wheel with its pulley, washer,
-   M8 × 140 bolt. Turn the bolt from outside until the stack is solid. The pocket stops the nut turning.
-4. Belt on; turn the pull screw until the belt passes the 2 N / 1 mm check (§1); tighten the three plate screws.
-5. ESP32 cradle: bolt it to the tail deck from below (4 × M3) **before** the tail goes on; the ESP32 slides into the
-   grooves from the −y end.
-6. Tail onto the tub (8 × M5 sideways + 2 × M4 through the lip). Caster from below: M12 head into the crown pocket,
-   18 mm sleeve, 24 mm washer, speed washer, lower 6001, 16 mm spacer, upper 6001, washer, PTFE + spring washer,
-   nyloc on top of the post. Snug, not tight: it is the shimmy damper.
-7. Wiring in the side channels, deck with Pi/regulators in, lid, mast (2 thumb screws), GoPro, hood.
-8. Battery in from the front, lead end last (the XT60 stays at the door, then is tucked up past the prongs),
-   bumper-door on, 2 thumb screws.
+1. Inserts into the tub (shell, deck, motor-plate, door, HC-SR04, mast), motor plates and pulleys.
+2. Motor → plate; 28T pulley → bell; plate into the wall pocket, 3 × M3 from inside, loose; pull screw loose.
+3. Idlers: M8 bolt from inside the tub (head inside), spacer, 608, washer, nyloc; leave it at the top of the slot.
+4. Each axle: drop the M8 nyloc into its boss pocket from inside the tub; inner sleeve into the boss from outside, then
+   the collar.
+5. **Per side, wheels and rear belt together:** screw each pulley to its wheel (4 × M3 from the outer face). Loop the
+   510 mm belt around both 36T pulleys. Then fit both wheels onto their axle stacks at once (outer sleeve, speed
+   washer, wheel, washer, M8 × 140 from outside; turn until solid). Motor belt over the 28T and the 56T.
+6. Tension: motor belt with the pull screw (2 N → ~1 mm at mid-span), then the three plate screws; rear belt with the
+   idler (2 N → ~1.5 mm), then its nyloc.
+7. Fuse block below the deck; wiring in the side channels; deck with the Pi, regulators, ESCs and ESP32; shell
+   (4 screws); mast (2 thumb screws); GoPro.
+8. Battery in from the front, bumper-door on (2 thumb screws).
+
+Removing a wheel: take the wheel bolt out. The front wheel slides off once the motor belt is off its 56T. Both
+wheels on a side come off together if the rear belt must come off.
 
 ## 8. Tests before and after building
 
-- **Wheel stiffness (now, 5 minutes):** press a longboard wheel onto a 10 mm square bar on a kitchen scale and
-  read how many newtons each mm of compression takes. Replace `K_LIP` in `cad/check_design.py` and re-run; the
-  structural table scales with its square root.
-- **HC-SR04 beam (now, no printing):** hold the sensor (upside down) at 100 mm height tilted 12° up on an empty floor or
-  pavement, with `ros2 launch honebot_hardware esp32.launch.py` running. `/ultrasonic/range` should read `inf` or
-  more than 1.9 m. If it reads 0.5–1.5 m, it sees the ground: tilt more (`us_tilt_deg`).
-- **GoPro view (after printing the mast):** Wide 4:3, `camera.launch.py aim:=false`, then
-  `ros2 topic pub /camera/pan_cmd std_msgs/Float32 "data: 1.0"` and `-1.0`. Look at `/camera/image/compressed` in
-  Foxglove: no robot part may be in frame.
-- **Shimmy:** at walking pace and then jogging, push on the tail. If the caster oscillates, tighten the pivot
-  friction washer one flat at a time.
-- **Firmware follow-up (safety):** the ESP32 currently drops to neutral instantly on fail-safe. With AM32
-  "brake on stop" that is a full-strength stop, above the 0.71 g pitch-over limit. Ramp the speed command to
-  zero at about 0.5 g instead (≈ 0.7 of full throttle per second at 15 mph). If your AM32 build has a brake
-  strength setting, lower it too. The rounded bumper nose is the backstop, not the plan. Also cap the follower's
-  lateral acceleration at ~0.5 g (sideways tip is at 0.79 g).
+- **Wheel stiffness (5 minutes, now):** press a longboard wheel onto a 10 mm square bar on a kitchen scale. Read how
+  many newtons each mm of compression takes, set `K_LIP` in `cad/check_design.py` and re-run. The structural
+  forces scale with its square root.
+- **HC-SR04 beam (now):** hold the sensor upside down at 100 mm, tilted 12° up, over empty floor.
+  `/ultrasonic/range` should read `inf` or > 1.9 m; if it reads 0.5–1.5 m, tilt more (`us_tilt_deg`).
+- **GoPro view (after printing the mast):** Wide 4:3, pan to ±1.0 with `ros2 topic pub /camera/pan_cmd …`; no robot
+  part in frame.
+- **Spin test (first drive, wheels on the ground):** command a slow pivot (`angular.z` 1.0 rad/s), measure the real
+  yaw rate (phone compass/gyro app or a bag of `/cmd_vel` vs a video), and set the bridge's `track_width` so the two
+  agree. Check the ESC current/temperature after 10 s of pivoting.
+- **Firmware follow-up (safety):** the ESP32 drops to neutral instantly on fail-safe. With AM32 brake-on-stop that
+  is a full-strength stop, close to the 0.89 g pitch-over limit. Ramp the command to zero at ~0.5 g instead.
 
 ## Prior art consulted
 

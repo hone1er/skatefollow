@@ -578,7 +578,7 @@ def mass_props(M, report):
     report.append("| part | group | mass (g) | CG x, y, z (mm) |\n|---|---|---|---|")
     for n, g, mm, c, v in sorted(rows, key=lambda r: -r[2]):
         report.append("| %s | %s | %.0f | %.0f, %.0f, %.0f |" % (n, g, 1000 * mm, c[0], c[1], c[2]))
-    report.append("\n**Total %.2f kg, CG at x = %.0f, y = %.1f, z = %.0f mm** (x from the drive axle, + forward).\n" %
+    report.append("\n**Total %.2f kg, CG at x = %.0f, y = %.1f, z = %.0f mm** (x from the front axle, + forward).\n" %
                   (tot, cg[0], cg[1], cg[2]))
     return tot, cg
 
@@ -929,7 +929,7 @@ def routes(M, report):
             fails += 1
         report.append("| %s | %.0f | %d %s | **%s** |" % (name, L, int(hit.sum()), ("(" + ", ".join(sorted(who)) + ")") if who else "",
                                                        "OK" if ok else "FAIL"))
-    report.append("\nAdd ~30 %% for slack and service loops when cutting wires. Power runs under the deck in the side "
+    report.append("\nAdd ~30 % for slack and service loops when cutting wires. Power runs under the deck in the side "
                   "channels, signal cables over the deck.\n")
     return fails
 

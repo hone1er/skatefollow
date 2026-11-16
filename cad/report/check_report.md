@@ -315,7 +315,7 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | pi_standoff_2 | hardware | 2 | -77, -25, 85 |
 | pi_standoff_3 | hardware | 2 | -77, 24, 85 |
 
-**Total 3.81 kg, CG at x = -70, y = 0.0, z = 79 mm** (x from the drive axle, + forward).
+**Total 3.81 kg, CG at x = -70, y = 0.0, z = 79 mm** (x from the front axle, + forward).
 
 ## 5. Stability, traction, braking
 
@@ -424,7 +424,7 @@ Centre lines sampled every 1 mm; a route fails if it passes through printed mate
 | Pi 5 V from reg L | 127 | 0  | **OK** |
 | HC-SR04 | 336 | 0  | **OK** |
 
-Add ~30 %% for slack and service loops when cutting wires. Power runs under the deck in the side channels, signal cables over the deck.
+Add ~30 % for slack and service loops when cutting wires. Power runs under the deck in the side channels, signal cables over the deck.
 
 ## 10. Printability and envelope
 

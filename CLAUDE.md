@@ -6,7 +6,7 @@ An autonomous ground robot that **follows the owner while they skateboard and fi
 
 Hard requirements that shape every decision:
 - **Speed.** Owner target (2026-11-13): **12–15 mph (19–24 km/h)** with sudden stops and turns. Decided base: a
-  **small custom differential-drive robot** (two belt-driven longboard wheels + caster, printed frame), see
+  **small custom differential-drive robot** (four belt-driven longboard wheels, skid steer, printed frame), see
   `docs/robot_design.md`. **Lightweight, agile, backpack-sized and cheap** are explicit requirements.
 - **Robust following.** Vision alone at Pi-CPU frame rates is too slow and fragile to *steer* on. The plan is
   **UWB (ultra-wideband) ranging** for following (tag on the skater, anchors on the robot) and **vision only
@@ -36,7 +36,7 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **CAD done 2026-11-16** (`cad/`, `docs/chassis_cad.md`): **drive wheels FRONT, caster REAR**, 2 × 5010-class outrunners (reference MAD 5010 EEE V2.0 370KV) on replaceable slotted plates, printed 28T HTD-3M pulleys bolted to the bells → printed 56T (2:1, 258 mm belt, pull-screw tensioner) to 90 mm longboard wheels, M8 12.9 stub axles in 18 mm 7075 sleeves, caster on 2 × 6001 in a post (M12 pivot), ESP32 in a printed cradle under a tail hood, HC-SR04 mounted upside down, 2 × AM32 ESCs (bidirectional), 3S 5000 in a front-loading floor tunnel, PAHT-CF tub + tail, PETG lids/pods, removable camera mast at the nose. ≈ 3.4 kg, 399 × 343 × 173 mm (mast off), ~21 mph no-load (cap in software); all offline checks pass incl. driveway angles ≥ 21° and a lip-impact strength review. Fusion script: the earlier 66-part version ran in the owner's Fusion; the current 72-part version not yet. Nothing bought yet. Older plan + AM32 setup: `docs/robot_design.md` |
+| Chassis | **CAD done 2026-11-16, now a 4-wheel skid steer** (`cad/`, `docs/chassis_cad.md`): 4 × 90 mm longboard wheels, all driven; per side one 5010-class outrunner (reference MAD 5010 EEE V2.0 370KV) on a replaceable slotted plate, printed 28T HTD-3M pulley bolted to the bell → 56T on the front wheel (2:1, 258 mm belt, pull-screw tensioner); the front wheel's double pulley drives the rear wheel 1:1 (36T:36T, HTD 510-3M-09, 608 idler in a wall slot). Wheelbase 200.5 mm, track 277 mm. M8 12.9 stub axles from outside into captive nylocs, nested stock steel tubes 16×2 / 12×2. One-piece 300 mm PAHT-CF tub (both axles, battery tunnel), one PETG shell (lid + motor pods), deck with printed ESP32 cradle, 2 × AM32 ESCs on the deck, HC-SR04 upside down, removable camera mast with the UWB plate. 15 printed parts. ≈ 3.8 kg, 343 × 343 × 147 mm (mast off), ~21 mph no-load (cap in software); all offline checks pass. Fusion script: the caster version (72 parts) ran in the owner's Fusion; the 4WD version (75 parts) not yet. Nothing bought yet. Older plan + AM32 setup: `docs/robot_design.md` |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Vision camera (Phase 5) | GoPro in USB-webcam mode (mode A: Pi records the 1080p30 stream, GoPro cannot record to SD meanwhile) or any USB webcam next to it (mode B: GoPro records natively). `source` parameter picks |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe. **Pan servo GPIO 27** (firmware 2.1.0, holds last value in fail-safe, centred at boot) |
@@ -461,17 +461,19 @@ valid only for the tricycle variant or an RC car.
 
 ### CAD (2026-11-16)
 - Edit `PARAMS` in `cad/fusion/HonebotChassis/HonebotChassis.py`, then on any machine with numpy + matplotlib:
-  `python3 cad/check_design.py` (≈ 1 min; exit code 0 = all checks pass) and `python3 cad/tests/test_fusion_script.py`.
-- Software implications: robot frame origin = drive-axle midpoint (front); track ≈ 0.276 m; wheelbase 0.248 m.
-  Forward pitch-over at ≈ 0.71 g; sideways tip at 0.79 g → cap lateral accel ~0.5 g in the follower; **firmware must ramp to zero at ≈ 0.5 g on fail-safe instead of instant neutral**
-  (bumper skids are the passive backstop). Stop distance ≈ 5.3–5.6 m from 15 mph → speed-dependent follow distance.
+  `python3 cad/check_design.py` (≈ 4 min; exit code 0 = all checks pass) and `python3 cad/tests/test_fusion_script.py`.
+- Software implications: robot frame origin = **front**-axle midpoint; track 0.277 m; wheelbase 0.2005 m (4-wheel skid
+  steer). Skid steer scrubs when turning: the real yaw rate is below (vR − vL)/track → set the bridge's `track_width`
+  1.2–1.6 × 0.277 after a spin test; pivoting costs ~10 A per motor. Forward pitch-over at ≈ 0.89 g; sideways tip at
+  1.75 g. **Firmware should still ramp to zero at ≈ 0.5 g on fail-safe instead of instant neutral**. Stop distance
+  ≈ 4.5–5.5 m from 15 mph → speed-dependent follow distance.
 - HC-SR04 now tilted 12° up at 102 mm height (ground return ≈ 1.95 m).
 
 ### Immediate next steps (in order)
 0. **Owner:** read `docs/chassis_cad.md` (current design + BOM; `docs/robot_design.md` §1/§3 for the AM32 setup) and
    `docs/hardware_plan.md`; order per the chassis_cad.md BOM: 2 × MAD 5010 EEE 370KV (or 5010 with M3 prop holes on
-   D12), 2 × AM32 ESCs + USB linker, 2 × HTD-3M 258 mm 9 mm belts, 90 mm longboard wheels + 70 mm caster wheel,
-   2 × 6001-2RS, M8/M12 12.9 bolts, 7075 sleeves, heat-set inserts, 3S 5000 mAh + charger, Pololu 5 V/6 V regulators,
+   D12), 2 × AM32 ESCs + USB linker, 2 × HTD-3M 258 mm + 2 × 510 mm 9 mm belts, a 4-pack of 90 mm longboard wheels,
+   2 × 608-2RS idlers, 4 × M8 × 140 12.9 bolts, 16×2 and 12×2 steel tube, heat-set inserts, 3S 5000 mAh + charger, Pololu 5 V/6 V regulators,
    ESP32 3-pack, UWB AoA anchor + tag. Measure the backpack.
 1. **Owner (Mac):** `arduino-cli compile` firmware v2.1.0; fix any core-3.x compile errors; flash; on the Pi run
    `ros2 launch honebot_hardware esp32.launch.py` and check the log shows `ESP32 firmware version 2.1.0`,
