@@ -131,12 +131,13 @@ honebot_ws/
     ├── honebot_camera/               ament_python — GoPro/webcam in, person detection, pan aiming
     │   ├── honebot_camera/gopro.py       find GoPro on its USB network link, HTTP webcam start/stop (CLI gopro_ctl)
     │   ├── honebot_camera/detector.py    YOLOv8 ONNX decode/NMS/target selection (pure) + HOG/cv2.dnn/onnxruntime backends
+    │   ├── honebot_camera/track.py       plausibility filters + robot-frame Kalman single-target tracker (pure, unit-tested)
     │   ├── honebot_camera/aim.py         pixel→bearing, open-loop PanController (pure, unit-tested)
     │   ├── honebot_camera/camera_node.py frames → detections → camera/target, JPEG preview, raw-stream recorder
     │   ├── honebot_camera/camera_aim.py  camera/target (+UWB fallback) → camera/pan_cmd, pan_angle, bearing
     │   ├── launch/camera.launch.py       source / record / model_path / aim options
     │   ├── netplan/99-gopro-usb.yaml     DHCP on usb0/enx* without taking the GoPro's default route (owner installs)
-    │   └── test/                          19 pytest tests
+    │   └── test/                          42 pytest tests
     └── honebot_bringup/              ament_python — top-level launch + systemd
         ├── launch/bringup.launch.py      esp32 bridge + safety gate + foxglove_bridge [+ camera:=true]
         ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
@@ -211,7 +212,12 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   (4 linear), `record` (false; tees the raw H.264 UDP stream to `record_dir` `~/videos/*.ts`, no re-encode).
   Publishes `camera/target` (Vector3Stamped: x bearing rad +left, y elevation, z box-height fraction; only when
   someone is seen), `camera/image/compressed` (JPEG with boxes, for Foxglove), `camera/status` (String, 1 Hz).
-  Subscribes `target` (UWB) + `camera/pan_angle` to pick the skater among several people.
+  Subscribes `target` (UWB) + `camera/pan_angle`. **Detections pass through `track.py`** (2026-11-14):
+  plausibility filters (`min_aspect` 0.6, `max_aspect` 6, `min_height_frac` 0.05, `min_bottom_y_norm` −0.3,
+  size vs UWB distance `size_tol_low/high` 0.4/2.5), then a robot-frame Kalman tracker (`track_confirm_hits` 3,
+  `track_coast_time` 1.0, gate `track_gate_min/max_deg` 6/25 at `track_n_sigma` 3, `track_meas_std_deg` 1,
+  `track_accel_std_deg_s2` 90, `track_hint_gate_deg` 15), all live-settable. `camera/target` only when the
+  confirmed track matched this cycle; status shows `seen=k/n track=...`.
   Threads: grabber keeps only the newest frame; detector thread; rclpy spins in main. Low-latency FFmpeg
   options via `OPENCV_FFMPEG_CAPTURE_OPTIONS` set before cv2 import.
 - `camera_aim` params (live-settable): `kp` 0.6, `deadband_deg` 1, `max_rate_deg_s` 150, `half_range_deg` 45,
@@ -292,6 +298,17 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   positives, YOLOv8n 0. `make_detector('auto')` now falls back cv2.dnn → onnxruntime (4 new tests, 23 camera
   tests pass). Launch defaults changed to `model_path:=~/models/yolov8n.onnx`. Odd-pose detection with a
   person in frame NOT yet checked (nobody was in view).
+- Tracker (`track.py`, 19 tests; 42 camera tests, 96 total) integrated into `camera_node` and run live on the
+  GoPro at 7–12 det/s: empty room stayed `track=none` for minutes (no phantom on the jacket/purifier); with the
+  owner briefly in view the track confirmed and coasted with the prediction marker on them during a missed
+  frame. Live `ros2 param set` of tracker/plausibility params works. **Recall measured live** with two different
+  people walking in and out of view (standing mid-room, very close, face filling the frame): `seen=` 7/7, 6/6,
+  12/12, 11/11 while in view (`track=locked`), 0/8 and 0/11 with nobody in view (`track=none`). Odd poses
+  (crouch, jump, on the board) still to be tried outdoors.
+- **Fixed: `camera_node` exited with code 1 on Ctrl-C/SIGINT** and left the GoPro in webcam mode. Cause:
+  `FrameGrabber`/`UdpTee` (Thread subclasses) stored their stop flag as `self._stop`, which shadows
+  `threading.Thread._stop()` that `join()` calls → `TypeError: 'Event' object is not callable`. Renamed to
+  `_stop_evt`; SIGINT now exits 0 and logs `webcam stopped`.
 
 ### 2026-11-13 (later)
 - 54/54 unit tests (14 control, 12 gate, 17 hardware, 11 uwb); 5 packages build.
@@ -324,6 +341,11 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - **OpenCV 4.6 `cv2.dnn` loads a YOLOv8 ONNX file but asserts inside `forward()`** (`shape_utils.hpp:170`),
   opset 11 and 12 alike. Use onnxruntime (`detector:=ort`, or `auto` which falls back by itself).
 - `python3 -I` hides user-site packages (onnxruntime); don't use `-I` for scripts that need them.
+- **Never name an attribute `_stop` on a `threading.Thread` subclass**: `Thread.join()` calls `self._stop()`.
+- `pgrep -f camera_node` matches the `ros2 run … camera_node` wrapper too (lower pid, first in the list);
+  signal the node itself, i.e. the process whose cmdline starts with `/usr/bin/python3 …/install/…/camera_node`.
+  Sending SIGINT/SIGTERM to the wrapper or to `ros2 launch` started from a non-interactive shell can orphan
+  the node.
 - Only one process can own the GoPro UDP stream (port 8554); stop any running `camera_node` before starting
   another, or the second one reads nothing.
 

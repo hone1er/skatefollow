@@ -134,7 +134,7 @@ Every package follows the same three-layer pattern. Learn it once and every pack
 
 | Layer | What it contains | Example | Tested by |
 |---|---|---|---|
-| **Pure module** | A `@dataclass` of tunables plus plain functions/classes. No `rclpy`, no I/O, no clocks, no globals. Takes numbers, returns numbers. | `honebot_safety/gate.py` → `gate_command(...)` | `pytest` in `test/` (73 tests across the workspace) |
+| **Pure module** | A `@dataclass` of tunables plus plain functions/classes. No `rclpy`, no I/O, no clocks, no globals. Takes numbers, returns numbers. | `honebot_safety/gate.py` → `gate_command(...)` | `pytest` in `test/` (96 tests across the workspace) |
 | **ROS node** | A `Node` subclass that declares parameters into the dataclass, subscribes, stores "last message + timestamp", runs a fixed-rate timer that calls the pure function, publishes. Plumbing only. | `honebot_safety/safety_gate.py` | Bench tests with `ros2 topic pub/echo/hz` (recorded in `CLAUDE.md` §6) |
 | **Launch** | Wiring: which nodes, which parameters, which remappings, which optional branches. | `launch/safety_gate.launch.py`, `honebot_bringup/launch/bringup.launch.py` | `ros2 launch … --print` parse check, then running it |
 
@@ -154,7 +154,7 @@ Pure-module map:
 | `honebot_safety` | `gate.py` | `gate_command(linear, angular, range, ages…, GateParams)` |
 | `honebot_hardware` | `diffdrive.py`, `ackermann.py` | `twist_to_diffdrive`, `twist_to_ackermann` |
 | `honebot_uwb` | `localize.py` | `two_anchor_position`, `aoa_position`, `RangeFilter` |
-| `honebot_camera` | `aim.py`, `detector.py`, top half of `gopro.py` | `PanController`, `decode_yolov8`, `select_target`, `find_gopro_in` |
+| `honebot_camera` | `aim.py`, `detector.py`, `track.py`, top half of `gopro.py` | `PanController`, `decode_yolov8`, `TargetTracker`, `plausible`, `find_gopro_in` |
 
 ---
 
@@ -294,8 +294,14 @@ missing. On this Pi, OpenCV 4.6 cannot run the YOLO file, so `auto` falls back t
 failed warm-up frame; it runs at 10–11 detections/s. All of the geometry (letterboxing, decoding the raw
 YOLO tensor, NMS, target selection) is numpy-only and unit-tested without a model.
 
-Picking *which* person is the skater uses, in order: the box nearest where UWB says they should appear,
-the box nearest last frame's target, else the biggest box.
+Detections never drive the servo directly. `track.py` first drops implausible boxes (aspect ratio, size,
+floating in the top of the frame, wrong size for the UWB distance), then runs a single-target tracker in
+the **robot frame**: a two-state Kalman filter on bearing and bearing rate predicts where the skater will
+be, the nearest plausible detection inside a covariance-sized gate is associated, a new target must be
+seen on several consecutive cycles before it is trusted, and a trusted target is coasted through missed
+detections for up to a second. This is what stops a one-frame false positive from grabbing the camera and
+keeps the lock through a pose the detector misses. A new track is seeded on the detection nearest the UWB
+bearing, else the biggest box.
 
 `camera_aim` drives an **open-loop** servo (no position feedback), so the controller is incremental:
 `pan += kp · (bearing of the target from the camera axis)`. When the target is centred the error is zero

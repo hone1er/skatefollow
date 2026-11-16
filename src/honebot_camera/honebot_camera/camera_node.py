@@ -7,9 +7,16 @@ Publishes
                                                               (bigger = closer). Only when someone is seen.
     camera/image/compressed   sensor_msgs/CompressedImage    JPEG preview with boxes, preview_hz (Foxglove)
     camera/status             std_msgs/String                1 Hz: source, fps, detections, record file
-Subscribes (both optional, used to pick the skater among several people)
-    target                    geometry_msgs/PointStamped     UWB target in base_link (from uwb_node)
-    camera/pan_angle          std_msgs/Float32               current pan (rad) from camera_aim
+Subscribes (both optional)
+    target                    geometry_msgs/PointStamped     UWB target in base_link (from uwb_node): seeds the
+                                                              track on the right person and sizes the boxes
+    camera/pan_angle          std_msgs/Float32               current pan (rad) from camera_aim; needed to track
+                                                              in the robot frame while the camera pans
+
+Detections go through track.py before anything is published: implausible boxes are dropped, a new target
+needs a few consecutive hits, and a confirmed target is predicted through missed frames. camera/target is
+published only on cycles where the confirmed track was matched to a detection (so its silence still means
+"not seen", which camera_aim relies on), with the filtered bearing rather than the raw box centre.
 
 Sources (parameter `source`):
     'gopro'            find the camera on its USB network link, start webcam mode over HTTP, read the
@@ -30,17 +37,19 @@ import threading
 import time
 from datetime import datetime
 
-import numpy as np
 import rclpy
 from geometry_msgs.msg import PointStamped, Vector3Stamped
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32, String
 
-from honebot_camera.aim import bearing_to_x_norm, pixel_to_bearing, pixel_to_elevation, vfov_from_hfov
-from honebot_camera.detector import make_detector, select_target
+from honebot_camera.aim import pixel_to_bearing, pixel_to_elevation, vfov_from_hfov
+from honebot_camera.detector import make_detector
 from honebot_camera.gopro import GOPRO_UDP_PORT, GoProControl, find_gopro, stream_url
+from honebot_camera.track import (Candidate, PlausibilityParams, TargetTracker, TrackParams, expected_height_frac,
+                                  plausible, tracked_image_bearing)
 
 # Low-latency FFmpeg options for OpenCV's capture; must be in the environment before the capture opens.
 os.environ.setdefault('OPENCV_FFMPEG_CAPTURE_OPTIONS',
@@ -62,11 +71,11 @@ class UdpTee(threading.Thread):
         self.path = path
         self.bytes = 0
         self.log = logger
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()   # not _stop: Thread.join() calls a private _stop()
 
     def run(self):
         with open(self.path, 'ab') as f:
-            while not self._stop.is_set():
+            while not self._stop_evt.is_set():
                 try:
                     data, _ = self.sock.recvfrom(65536)
                 except socket.timeout:
@@ -82,7 +91,7 @@ class UdpTee(threading.Thread):
         self.sock.close()
 
     def stop(self):
-        self._stop.set()
+        self._stop_evt.set()
 
 
 class FrameGrabber(threading.Thread):
@@ -98,18 +107,18 @@ class FrameGrabber(threading.Thread):
         self.seq = 0
         self.frames_in = 0
         self.connected = False
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()   # not _stop: Thread.join() calls a private _stop()
 
     def run(self):
         cap = None
         failures = 0
-        while not self._stop.is_set():
+        while not self._stop_evt.is_set():
             if cap is None:
                 cap = self.open_fn()
                 if cap is None or not cap.isOpened():
                     cap = None
                     self.connected = False
-                    self._stop.wait(2.0)
+                    self._stop_evt.wait(2.0)
                     continue
                 self.connected = True
                 failures = 0
@@ -143,7 +152,7 @@ class FrameGrabber(threading.Thread):
             return self.frame, self.seq
 
     def stop(self):
-        self._stop.set()
+        self._stop_evt.set()
 
 
 class CameraNode(Node):
@@ -160,9 +169,30 @@ class CameraNode(Node):
         self.conf = float(p('conf_threshold', 0.4).value)
         self.preview_hz = float(p('preview_hz', 5.0).value)       # 0 disables the JPEG preview
         self.jpeg_quality = int(p('jpeg_quality', 60).value)
-        self.gate_frac = float(p('select_gate', 0.25).value)      # of frame width, for hint/previous matching
         self.use_uwb_hint = p('use_uwb_hint', True).value
         self.uwb_timeout = float(p('uwb_timeout', 0.5).value)
+        # Tracking (track.py); all live-settable, e.g. ros2 param set /camera_node track_confirm_hits 2
+        self.track_params = TrackParams(
+            confirm_hits=int(p('track_confirm_hits', 3).value),
+            coast_time=float(p('track_coast_time', 1.0).value),
+            gate_min=math.radians(float(p('track_gate_min_deg', 6.0).value)),
+            gate_max=math.radians(float(p('track_gate_max_deg', 25.0).value)),
+            n_sigma=float(p('track_n_sigma', 3.0).value),
+            meas_std=math.radians(float(p('track_meas_std_deg', 1.0).value)),
+            accel_std=math.radians(float(p('track_accel_std_deg_s2', 90.0).value)),
+            hint_gate=math.radians(float(p('track_hint_gate_deg', 15.0).value)),
+        )
+        self.plaus = PlausibilityParams(
+            min_aspect=float(p('min_aspect', 0.6).value),
+            max_aspect=float(p('max_aspect', 6.0).value),
+            min_height_frac=float(p('min_height_frac', 0.05).value),
+            min_bottom_y_norm=float(p('min_bottom_y_norm', -0.3).value),
+            person_height_m=float(p('person_height_m', 1.7).value),
+            size_tol_low=float(p('size_tol_low', 0.4).value),
+            size_tol_high=float(p('size_tol_high', 2.5).value),
+        )
+        self.tracker = TargetTracker(self.track_params)
+        self.add_on_set_parameters_callback(self._on_params)
         # GoPro specifics
         self.gopro_ip = p('gopro_ip', '').value                    # empty = auto-detect
         self.gopro_res = int(p('gopro_res', 1080).value)
@@ -178,9 +208,10 @@ class CameraNode(Node):
         self.create_subscription(Float32, 'camera/pan_angle', self._on_pan, 10)
 
         self.uwb_bearing = None
+        self.uwb_dist = None
         self.uwb_stamp = None
         self.pan_angle = 0.0
-        self.prev_cx = None
+        self.track_text = 'none'
         self.tee = None
         self.gopro = None
         self.record_path = None
@@ -188,6 +219,7 @@ class CameraNode(Node):
         self.det_time_acc = 0.0
         self.det_fps = 0.0
         self.last_n_dets = 0
+        self.seen_count = 0          # cycles this second where the confirmed track matched a detection
         self.last_preview = 0.0
         self.have_target = False
 
@@ -209,7 +241,7 @@ class CameraNode(Node):
         self.grabber = FrameGrabber(self._open_source, self.get_logger(),
                                     loop_file=os.path.isfile(self.source))
         self.grabber.start()
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()   # not _stop: Thread.join() calls a private _stop()
         self.worker = threading.Thread(target=self._detect_loop, daemon=True, name='detector')
         self.worker.start()
         self.create_timer(1.0, self._status)
@@ -264,28 +296,48 @@ class CameraNode(Node):
                 url = stream_url('127.0.0.1', self.gopro_port + 1)
         return cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 
-    # --- hints ----------------------------------------------------------------------------
+    # --- parameters, hints -----------------------------------------------------------------
+    _TRACK_PARAMS = {    # ROS name -> (dataclass attribute, converter)
+        'track_confirm_hits': ('confirm_hits', int),
+        'track_coast_time': ('coast_time', float),
+        'track_gate_min_deg': ('gate_min', math.radians),
+        'track_gate_max_deg': ('gate_max', math.radians),
+        'track_n_sigma': ('n_sigma', float),
+        'track_meas_std_deg': ('meas_std', math.radians),
+        'track_accel_std_deg_s2': ('accel_std', math.radians),
+        'track_hint_gate_deg': ('hint_gate', math.radians),
+    }
+
+    def _on_params(self, params):
+        for prm in params:
+            if prm.name in self._TRACK_PARAMS:
+                attr, conv = self._TRACK_PARAMS[prm.name]
+                setattr(self.track_params, attr, conv(prm.value))
+            elif hasattr(self.plaus, prm.name):
+                setattr(self.plaus, prm.name, float(prm.value))
+            elif prm.name == 'use_uwb_hint':
+                self.use_uwb_hint = bool(prm.value)
+            else:
+                continue
+            self.get_logger().info(f'{prm.name} = {prm.value}')
+        return SetParametersResult(successful=True)
+
     def _on_uwb(self, msg: PointStamped):
         self.uwb_bearing = math.atan2(msg.point.y, msg.point.x)
+        self.uwb_dist = math.hypot(msg.point.x, msg.point.y)
         self.uwb_stamp = time.monotonic()
 
     def _on_pan(self, msg: Float32):
         self.pan_angle = float(msg.data)
 
-    def _hint_cx(self, width):
-        if not self.use_uwb_hint or self.uwb_stamp is None:
-            return None
-        if time.monotonic() - self.uwb_stamp > self.uwb_timeout:
-            return None
-        cam_bearing = self.uwb_bearing - self.pan_angle       # where UWB says the skater is, camera frame
-        if abs(cam_bearing) >= self.hfov / 2.0:
-            return None                                       # outside the image: no useful hint
-        return (bearing_to_x_norm(cam_bearing, self.hfov) + 1.0) * 0.5 * width
+    def _uwb_fresh(self):
+        return (self.use_uwb_hint and self.uwb_stamp is not None
+                and time.monotonic() - self.uwb_stamp <= self.uwb_timeout)
 
     # --- detection loop -----------------------------------------------------------------
     def _detect_loop(self):
         seq = 0
-        while not self._stop.is_set() and rclpy.ok():
+        while not self._stop_evt.is_set() and rclpy.ok():
             frame, seq = self.grabber.latest(seq)
             if frame is None:
                 time.sleep(0.005)
@@ -293,6 +345,8 @@ class CameraNode(Node):
             try:
                 self._process(frame)
             except Exception as e:  # keep the node alive; log once per second at most
+                if not rclpy.ok():
+                    break               # context torn down under us during shutdown: not an error
                 self.get_logger().error(f'detection error: {e}', throttle_duration_sec=1.0)
 
     def _process(self, frame):
@@ -307,36 +361,68 @@ class CameraNode(Node):
         self.det_time_acc += dt
         self.last_n_dets = len(dets)
 
-        gate = self.gate_frac * w
-        target = select_target(dets, self.prev_cx, self._hint_cx(w), gate)
+        # 1. Plausibility: drop boxes that cannot be a person (and, with UWB, not a person at that distance).
+        uwb_fresh = self._uwb_fresh()
+        exp_h = expected_height_frac(self.uwb_dist, self.hfov, w, h, self.plaus.person_height_m) if uwb_fresh else None
+        pan = self.pan_angle                       # sampled once so every box in this frame uses the same pan
+        plausible_dets, rejected = [], []
+        for d in dets:
+            (plausible_dets if plausible(d, w, h, self.plaus, exp_h) else rejected).append(d)
+        # 2. Track in the robot frame: robot bearing = commanded pan + where the box sits in the image.
+        cands = [Candidate(pan + pixel_to_bearing(2.0 * d.cx / w - 1.0, self.hfov), d) for d in plausible_dets]
+        hint = self.uwb_bearing if uwb_fresh else None
+        state = self.tracker.update(time.monotonic(), cands, hint)
+
+        target = None
+        if state is None:
+            self.track_text = 'none'
+        elif not state.confirmed:
+            self.track_text = f'acquiring {state.hits}/{self.track_params.confirm_hits}'
+        elif state.matched:
+            self.track_text = 'locked'
+            target = state.det
+        else:
+            self.track_text = f'coasting {state.coast:.1f}s'
         self.have_target = target is not None
         if target is not None:
-            self.prev_cx = target.cx
-            x_norm = 2.0 * target.cx / w - 1.0
+            self.seen_count += 1
+
+        if target is not None:
+            # Filtered bearing (less box jitter than the raw centre); elevation and size from the matched box.
             y_norm = 2.0 * target.cy / h - 1.0
             vfov = vfov_from_hfov(self.hfov, w, h)
             msg = Vector3Stamped()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = self.frame_id
-            msg.vector.x = pixel_to_bearing(x_norm, self.hfov)
+            msg.vector.x = tracked_image_bearing(state, pan)
             msg.vector.y = pixel_to_elevation(y_norm, vfov)
             msg.vector.z = target.height / h
             self.target_pub.publish(msg)
 
         if self.preview_hz > 0 and time.monotonic() - self.last_preview >= 1.0 / self.preview_hz:
             self.last_preview = time.monotonic()
-            self._publish_preview(frame, dets, target)
+            pred_x = None
+            if state is not None and state.confirmed:
+                xn = -math.tan(state.bearing - pan) / math.tan(self.hfov / 2.0)   # inverse of pixel_to_bearing
+                pred_x = int((xn + 1.0) * 0.5 * w)
+            self._publish_preview(frame, plausible_dets, rejected, target, pred_x)
 
-    def _publish_preview(self, frame, dets, target):
+    def _publish_preview(self, frame, dets, rejected, target, pred_x=None):
+        """green = tracked target, orange = other plausible people, grey = rejected as implausible,
+        white circle = where the track predicts the target (visible while coasting)."""
         img = frame.copy()
+        h, w = img.shape[:2]
+        for d in rejected:
+            cv2.rectangle(img, (int(d.x1), int(d.y1)), (int(d.x2), int(d.y2)), (128, 128, 128), 1)
         for d in dets:
             color = (0, 255, 0) if d is target else (0, 160, 255)
             cv2.rectangle(img, (int(d.x1), int(d.y1)), (int(d.x2), int(d.y2)), color, 2)
             cv2.putText(img, f'{d.score:.2f}', (int(d.x1), max(12, int(d.y1) - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
-        h, w = img.shape[:2]
+        if pred_x is not None and 0 <= pred_x < w:
+            cv2.circle(img, (pred_x, h // 2), 8, (255, 255, 255), 2)
         cv2.line(img, (w // 2, 0), (w // 2, h), (255, 255, 255), 1)
-        cv2.putText(img, f'{self.det_fps:.1f} det/s  pan {math.degrees(self.pan_angle):+.0f} deg',
+        cv2.putText(img, f'{self.det_fps:.1f} det/s  pan {math.degrees(self.pan_angle):+.0f} deg  {self.track_text}',
                     (6, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         ok, buf = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
         if not ok:
@@ -354,20 +440,23 @@ class CameraNode(Node):
             self.det_fps = self.det_count / max(self.det_time_acc, 1e-6) if self.det_time_acc else 0.0
             self.det_fps = min(self.det_fps, float(self.det_count))   # bounded by frames actually processed
         n = self.det_count
+        seen = self.seen_count
         self.det_count = 0
+        self.seen_count = 0
         self.det_time_acc = 0.0
         rec = ''
         if self.tee is not None:
             rec = f' rec={os.path.basename(self.record_path)} {self.tee.bytes / 1e6:.1f}MB'
         s = (f'source={self.source} {"connected" if self.grabber.connected else "NO VIDEO"} '
              f'frames_in={self.grabber.frames_in} det/s={n} people={self.last_n_dets} '
-             f'target={"yes" if self.have_target else "no"} detector={self.detector.name}{rec}')
+             f'seen={seen}/{n} track={self.track_text} '
+             f'detector={self.detector.name}{rec}')
         self.grabber.frames_in = 0
         self.status_pub.publish(String(data=s))
         self.get_logger().info(s, throttle_duration_sec=10.0)
 
     def shutdown(self):
-        self._stop.set()
+        self._stop_evt.set()
         self.grabber.stop()
         if self.tee is not None:
             self.tee.stop()

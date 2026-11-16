@@ -23,12 +23,13 @@ GoPro ──USB network, HTTP control, MPEG-TS over UDP──┐
 |---|---|
 | `honebot_camera/camera_node.py` | Node `camera_node`: source handling, `FrameGrabber` thread, detector thread, `UdpTee` recorder, preview, status. |
 | `honebot_camera/detector.py` | Pure numpy: `Detection`, `letterbox_params`, `decode_yolov8`, `nms`, `select_target`. Backends (need cv2): `HogPersonDetector`, `OnnxPersonDetector`, `OrtPersonDetector`, `make_detector`. |
+| `honebot_camera/track.py` | Pure: `plausible()` box filters, `BearingKF` (bearing + rate Kalman filter), `TargetTracker` (confirm / associate / coast). |
 | `honebot_camera/aim.py` | Pure: pixel ↔ bearing (pinhole), `AimGains`, `PanController`. |
 | `honebot_camera/camera_aim.py` | Node `camera_aim`: wraps `PanController` at 20 Hz, live parameters. |
 | `honebot_camera/gopro.py` | Finding the GoPro on its USB link, HTTP webcam start/stop (Open GoPro, then legacy fallback), stream URL. `gopro_ctl` CLI. |
 | `launch/camera.launch.py` | Both nodes; `source`, `record`, `model_path`, `aim`, lens and servo arguments. |
 | `netplan/99-gopro-usb.yaml` | Makes Ubuntu DHCP on the GoPro's USB interface without taking its default route (sudo install). |
-| `test/` | 19 tests: aim 7, detector 7, gopro 5. |
+| `test/` | 42 tests: aim 7, detector 11, gopro 5, track 19. |
 
 ## camera_node: threads and why
 
@@ -40,18 +41,40 @@ GoPro ──USB network, HTTP control, MPEG-TS over UDP──┐
 | `UdpTee` (only with `record`) | receives the GoPro's UDP packets, appends them to a `.ts` file, forwards them to a local port OpenCV reads | Byte-level tee = recording with zero CPU and no re-encode |
 
 Shutdown joins all threads before `rclpy.shutdown()`; tearing OpenCV down under a live capture crashed the
-process otherwise.
+process otherwise. The thread classes keep their stop flag in `_stop_evt`, never `_stop`: `Thread.join()`
+calls a private `_stop()` method, and shadowing it made every shutdown fail with exit code 1 (fixed
+2026-11-14).
 
 ### Sources
 `source` is `gopro` (find the camera, start webcam mode over HTTP, read `udp://0.0.0.0:8554`), a V4L2 index or
 `/dev/videoN`, any URL FFmpeg opens, or a file (loops, for bench tests). Low-latency FFmpeg flags are set via
 `OPENCV_FFMPEG_CAPTURE_OPTIONS` **before** `cv2` is imported, which is why the import is below the `os.environ` line.
 
-### Picking the skater (`select_target`)
-Among all detected people: the one nearest where UWB says the skater should be in the image (if within
-`select_gate` × frame width), else nearest last frame's target, else the biggest box. UWB bearing is converted
-into the camera frame by subtracting the current pan angle, which is why `camera_node` subscribes to
-`/camera/pan_angle`.
+### From detections to one target (`track.py`)
+A detector only says where people are in *this* frame. Two things go wrong if that is used directly: a
+one-frame false positive becomes the target instantly, and a missed detection (odd pose mid-trick) drops the
+target so the next frame picks whoever is biggest. So every detector cycle goes through three stages:
+
+1. **Plausibility** (`plausible`): aspect ratio within `min_aspect`..`max_aspect` (0.6..6, permissive enough
+   for crouching and mid-trick, strict enough for poles and benches), height at least `min_height_frac` of the
+   frame, bottom edge below `min_bottom_y_norm` (nothing stands in the top third of a level camera; a jump is
+   still fine), and, when UWB is fresh, box height within `size_tol_low`..`size_tol_high` of what a
+   `person_height_m` person at the UWB distance would measure. Rejected boxes are drawn grey in the preview.
+2. **Association in the robot frame.** Each plausible box becomes a robot-frame bearing (commanded pan +
+   image bearing), so the camera panning does not look like the skater moving. A 2-state Kalman filter
+   (bearing, rate; `track_meas_std_deg`, `track_accel_std_deg_s2`) predicts where the target should be; the
+   nearest candidate inside the gate is taken. The gate is `track_n_sigma` × innovation std, clamped to
+   `track_gate_min_deg`..`track_gate_max_deg`, so it widens while coasting but never beyond the cap.
+3. **Life cycle.** A new track needs `track_confirm_hits` consecutive hits (one miss resets it; flicker never
+   confirms). A confirmed track survives misses for `track_coast_time` seconds, then is dropped and acquisition
+   restarts, seeded by the candidate nearest the UWB bearing (within `track_hint_gate_deg`), else the biggest.
+
+`camera/target` is published only on cycles where the **confirmed** track matched a detection, carrying the
+filtered bearing instead of the raw box centre, so `camera_aim`'s "silence means not seen" contract is kept.
+The status line shows `seen=<matched>/<processed>` per second and `track=none|acquiring k/N|locked|coasting Xs`;
+the preview draws the prediction as a white circle while coasting. All tracker and plausibility parameters are
+live-settable (`ros2 param set /camera_node track_confirm_hits 2`). `detector.select_target` remains as the
+simple per-frame picker but is no longer used by the node.
 
 ### Output geometry
 `x = pixel_to_bearing(x_norm, hfov)` = `atan(−x_norm · tan(hfov/2))`: a pinhole model, positive = left to match
@@ -95,6 +118,12 @@ published only while the detector sees someone, so a consumer can use its silenc
   same code works across firmware generations. The HERO9 rejects a `port=` parameter, hence the special case.
 - **Recording is a tee, not a re-encode.** The 1080p30 H.264 the camera already produces is written as-is;
   the Pi has no CPU to spare and no ffmpeg CLI installed.
+- **Track in the robot frame, publish in the camera frame.** The skater's motion is smooth in the robot
+  frame; in the image it is the sum of their motion and the servo's. Filtering in the robot frame keeps the
+  Kalman model honest, and `tracked_image_bearing` subtracts the pan again for `camera_aim`.
+- **Confirm before trusting, coast before giving up.** Phantoms flicker, people persist. Three hits in a row
+  costs ~0.3 s of latency on acquisition and buys immunity to single-frame false positives; one second of
+  coasting bridges the frames a detector loses during a trick without ever inventing a detection.
 
 ## Running and testing
 
@@ -106,5 +135,5 @@ ros2 launch honebot_camera camera.launch.py model_path:=~/models/yolov8n.onnx
 ros2 topic echo /camera/status
 colcon test --packages-select honebot_camera && colcon test-result --verbose
 ```
-Foxglove: Image panel on `/camera/image/compressed` (green = tracked, orange = other people, white line =
-image centre). Hardware notes, servo wiring and the model export command: `docs/camera_plan.md`.
+Foxglove: Image panel on `/camera/image/compressed` (green = tracked, orange = other plausible people, grey =
+rejected as implausible, white circle = predicted position while coasting, white line = image centre). Hardware notes, servo wiring and the model export command: `docs/camera_plan.md`.

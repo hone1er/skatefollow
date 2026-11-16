@@ -115,9 +115,12 @@ Mac (or `sudo apt install ffmpeg` on the Pi).
   Measured 2026-11-14 on 40 live frames of an empty room (jacket on a door, tall air purifier):
   HOG 6 false positives, YOLOv8n 0. A bigger input (`imgsz=416`, `input_size:=416`) helps distant skaters at
   the cost of a few det/s.
-- Which person is the skater: nearest to where **UWB** says they are (`/target` + current pan) → else
-  nearest to last frame's target → else the biggest box. Later the Raspberry Pi AI HAT+ (Hailo) can run
-  the same model at 30+ FPS if needed.
+- **Tracking (2026-11-14, `track.py`):** boxes are filtered for plausibility (aspect 0.6–6, ≥ 5 % of frame
+  height, bottom edge not in the top third, size consistent with the UWB distance when available), then a
+  robot-frame Kalman tracker needs 3 consecutive hits to confirm a target and coasts it through up to 1 s of
+  misses. A new track is seeded nearest the **UWB** bearing, else on the biggest box. Everything is a live
+  parameter (`track_*`, `min_aspect`, …; see the package README). Later the Raspberry Pi AI HAT+ (Hailo) can
+  run a bigger model at 30+ FPS if distant or mid-trick skaters are still missed.
 
 ## 6. What `camera/bearing` is for
 `camera_aim` publishes the skater's bearing in the robot frame (`pan + bearing in image`). When UWB is not
