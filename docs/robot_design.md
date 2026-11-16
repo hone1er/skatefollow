@@ -1,5 +1,19 @@
 # honebot custom chassis design (2026-11-13, budget revision)
 
+> **Update 2026-11-16 — the CAD design supersedes parts of this file.** See [`chassis_cad.md`](chassis_cad.md)
+> and the Fusion 360 script `cad/fusion/HonebotChassis/HonebotChassis.py`. Changed:
+> - **Drive wheels at the front, caster at the rear.** This gives better, stable braking.
+> - **Belt:** HTD-3M 9 mm (20T aluminium → printed 48T, 225 mm belt) instead of GT2.
+> - **Motor mount:** a replaceable slotted motor plate, so any 5010-class motor fits.
+> - **Axles:** two M8 × 140 12.9 stub axles instead of the M8 × 300 rod.
+> - **Battery:** in a floor tunnel loaded from the front.
+> - **Camera:** removable mast at the nose.
+> - **Frame:** printed as tub + tail module.
+> - **Size and mass:** ≈ 396 × 347 × 147 mm (mast off) and ≈ 3.0 kg, not 350 × 280 × 140 / 2.5 kg.
+>
+> Unchanged and still valid here: §1 power/speed reasoning, the AM32 ESC set-up in §3, battery/charger choice.
+> The layout sketches in §2/§2a and the frame-plate print row below describe the old design.
+
 Decision: **build a small, light, custom differential-drive robot** — two belt-driven longboard
 wheels, one caster, a 3D-printed frame and body. No RC car, no e-skate hub motors, no VESC.
 `hardware_plan.md` covers the electronics around it (UWB, camera, Pi power, kill switch).

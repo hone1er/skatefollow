@@ -36,7 +36,7 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **Decided: small custom printed diff-drive robot** — 2 × 5010 360KV outrunners, 2.4:1 GT2 belts to 90 mm longboard wheels, 2 × AM32 ESCs (bidirectional mode) on the ESP32 servo channels, 3S 5000 mAh, PAHT-CF frame + PETG body. ≈ 2.5 kg, backpack-sized, 12–15 mph, ≈ $150–260 + battery/charger. Nothing bought yet. Design + BOM: `docs/robot_design.md` (§2a = drive-module drawings) |
+| Chassis | **CAD done 2026-11-16** (`cad/`, `docs/chassis_cad.md`): **drive wheels FRONT, caster REAR**, 2 × 5010-class outrunners on replaceable slotted plates, HTD-3M 9 mm belts 20T→48T (225 mm belt) to 90 mm longboard wheels, M8 12.9 stub axles, 2 × AM32 ESCs (bidirectional), 3S 5000 in a front-loading floor tunnel, PAHT-CF tub + tail, PETG lids/pods, removable camera mast at the nose. ≈ 3.0 kg, 396 × 347 × 147 mm (mast off), 17.6 mph no-load. Fusion script **not yet run in real Fusion**. Nothing bought yet. Older plan + AM32 setup: `docs/robot_design.md` |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Vision camera (Phase 5) | GoPro in USB-webcam mode (mode A: Pi records the 1080p30 stream, GoPro cannot record to SD meanwhile) or any USB webcam next to it (mode B: GoPro records natively). `source` parameter picks |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe. **Pan servo GPIO 27** (firmware 2.1.0, holds last value in fail-safe, centred at boot) |
@@ -143,7 +143,12 @@ honebot_ws/
         ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
         ├── launch/record.launch.py       ros2 bag record -a → ~/bags/
         └── systemd/honebot.service       auto-start unit (owner installs with sudo)
+cad/                                  (repo root, not in honebot_ws/src)
+├── fusion/HonebotChassis/HonebotChassis.py   Fusion 360 script = single geometry source (PARAMS at the top)
+├── check_design.py                   offline checks (clearance, holes, assembly, GoPro view, CG/braking, loads) → cad/report/
+└── tests/test_fusion_script.py       runs the Fusion code path against a stub adsk API
 docs/
+├── chassis_cad.md                    CAD design decisions, checks, print table, measure list, BOM, assembly
 ├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
 ├── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
 └── camera_plan.md                    GoPro webcam vs native recording, pan servo wiring, netplan, detector model
@@ -453,6 +458,14 @@ valid only for the tricycle variant or an RC car.
   add speed-dependent follow distance, and log everything with `ros2 bag`.
 - A single HC-SR04 (~4 m, 16 Hz, narrow) is only a low-speed safety layer; consider additional/longer-range
   sensors for higher speed.
+
+### CAD (2026-11-16)
+- Edit `PARAMS` in `cad/fusion/HonebotChassis/HonebotChassis.py`, then on any machine with numpy + matplotlib:
+  `python3 cad/check_design.py` (≈ 1 min; exit code 0 = all checks pass) and `python3 cad/tests/test_fusion_script.py`.
+- Software implications: robot frame origin = drive-axle midpoint (front); track ≈ 0.276 m; wheelbase 0.248 m.
+  Forward pitch-over at ≈ 0.62 g: **firmware must ramp to zero at ≈ 0.5 g on fail-safe instead of instant neutral**
+  (bumper skids are the passive backstop). Stop distance ≈ 5.3–5.6 m from 15 mph → speed-dependent follow distance.
+- HC-SR04 now tilted 12° up at 102 mm height (ground return ≈ 1.95 m).
 
 ### Immediate next steps (in order)
 0. **Owner:** read `docs/robot_design.md` and `docs/hardware_plan.md`; order: 2 × 5010 360KV motors, 2 × AM32
