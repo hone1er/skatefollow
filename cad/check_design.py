@@ -607,6 +607,17 @@ def dynamics(M, report, mass, cg):
     report.append("- Forward pitch-over about the front axle needs **%.2f g** of braking, backward (hard launch) **%.2f g**. "
                   "If it does pitch forward, the bumper touches down after %.1f deg (the CG passes over the axle at "
                   "%.0f deg).\n" % (pitch_g, back_g, touch, tip_deg))
+    # pivot turn (skid steer): wheels scrub sideways; thrust per side F = mu W (wheelbase/2) / track
+    wb = -xr; trk = 2 * tw
+    mu_lat = 0.8
+    F_turn = mu_lat * mass * 9.81 * (wb / 2) / trk + 0.02 * mass * 9.81 / 2
+    T_motor = F_turn * (P["wheel_d"] / 2000) / (P["pul_w_t"] / P["pul_m_t"])
+    I_turn = T_motor / (9.55 / 370)
+    report.append("- **Turning in place** (skid steer): the wheels must scrub sideways. With grip mu 0.8 the robot needs "
+                  "**%.0f N per side** (thrust / traction = wheelbase / track = %.2f; under 1 means it can pivot), i.e. "
+                  "~%.2f N m and **~%.0f A per motor at near-zero rpm** (30 A ESC). The 52 mm wide contact patches add "
+                  "scrub torque on top. Yaw rate will be lower than (vR - vL) / track: tune `track_width` up (typically "
+                  "1.2-1.6 x the geometric %.0f mm) and expect a small turn dead-band.\n" % (F_turn, wb / trk, T_motor, I_turn, trk))
     rows = []
     for mu in (0.8, 0.6):
         a_fd = min(mu, pitch_g) * 9.81                             # 4WD: all wheels brake (traction or pitch limit)
@@ -619,13 +630,13 @@ def dynamics(M, report, mass, cg):
             rows.append((mu, v_mph, a_fd / 9.81, d_fd, a_rd / 9.81, d_rd))
     report.append("\nStopping distance = 0.25 s reaction (gate + ESC ramp) + v^2 / 2a, a limited by drive-wheel traction "
                   "(weight transfer included) and by pitch-over:\n")
-    report.append("| mu | speed (mph) | THIS layout (4WD): decel (g) | stop (m) | old 2WD + caster: decel (g) | stop (m) |\n|---|---|---|---|---|---|")
+    report.append("| mu | speed (mph) | THIS layout (4WD): decel (g) | stop (m) | front axle braking only: decel (g) | stop (m) |\n|---|---|---|---|---|---|")
     for r in rows:
         report.append("| %.1f | %d | %.2f | %.1f | %.2f | %.1f |" % r)
     report.append("\nThe follow distance must exceed the stopping distance at the current speed if the skater can stop "
                   "instantly (a fall). Recommended `follow_distance` >= the 'stop' column, e.g. speed-dependent "
                   "d = 1.5 m + 0.35 s x v + v^2 / (2 x 0.45 g).\n")
-    return {"lat_g": lat_g, "fx": fx, "pitch_g": pitch_g, "back_g": back_g, "rows": rows}
+    return {"lat_g": lat_g, "fx": fx, "pitch_g": pitch_g, "back_g": back_g, "rows": rows, "I_turn": I_turn, "wb_tr": wb / trk}
 
 
 def drivetrain(report, mass):
@@ -734,6 +745,10 @@ def structural(M, report, mass, cg, dyn):
     s_sh = F_sh * a_oh / (math.pi * P["motor_shaft_d"] ** 3 / 32)
     rows.append(("motor shaft bending (5 mm, %d mm overhang [M]); endurance ~250 MPa" % a_oh,
                  "belt %.0f N set + %.0f N pull" % (T0, Te), "%.0f MPa" % s_sh, 250 / s_sh))
+    rows.append(("turn in place: motor current vs 30 A ESC (wheelbase/track %.2f)" % dyn["wb_tr"], "mu 0.8 scrub",
+                 "%.0f A" % dyn["I_turn"], 30 / dyn["I_turn"]))
+    rows.append(("pulley tooth root to bore wall (need 3 mm)", "", "%.1f mm" % M.info["pulley_root_wall"],
+                 M.info["pulley_root_wall"] / 3.0 * 1.5))
     k_sh = 3 * 210e3 * (math.pi * P["motor_shaft_d"] ** 4 / 64) / a_oh ** 3
     report.append("")
     report.append("| item | load case | result | safety factor |\n|---|---|---|---|")

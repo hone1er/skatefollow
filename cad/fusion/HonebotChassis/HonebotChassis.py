@@ -44,13 +44,15 @@ PARAMS = {
     # reference motor: MAD 5010 EEE V2.0 370KV - O56 x 32.7, 5 mm shaft, base M3 on D25/D30, prop M3 on D12/D18
     # [V, retailer listings]; envelope below leaves margin. Any motor with M3 prop holes on D12 fits the pulley.
     "motor_env_d": 62.0, "motor_env_l": 33.0, "motor_shaft_d": 5.0, "motor_prop_pcd": 12.0,
-    "motor_dx": -40.0,                              # [D] motor centre 40 mm behind the axle
+    "motor_dx": -40.0,                              # [D] motor centre 40 mm behind the axle (can clears the idler-pressed 1:1 run)
     "pul_m_t": 28, "pul_w_t": 56, "belt_len": 258.0,   # [D] HTD-3M teeth (PD = 3*T/pi [V]); 258 mm = 86T belt
     "belt_t": 2.0, "belt_pretension_n": 30.0,           # [D] belt back thickness over the tooth tips; set tension
     "axle_sleeve_d": 16.0,                              # [D] stock tubes nested: 12 x 2 inside 16 x 2 (E355 steel)
     "axle_sleeve_E": 210e3, "axle_sleeve_yield": 355.0,
     # 4-wheel skid steer: rear axle, 1:1 belt from the front wheel pulley to the rear wheel, 608 idler tensioner
-    "wheelbase": 200.0, "pul_r_t": 28, "belt2_len": 486.0, "belt2_plane_y": 84.0, "idler_x": -100.0,
+    "pul_r_t": 36, "belt2_len": 510.0, "belt2_plane_y": 84.0,  # 1:1 front -> rear belt: HTD 510-3M-09 (170T, stock)
+    "belt2_take_up": 1.0,       # [D] belt length the idler takes up at mid-slot; slot covers 0.2 ... 2.0 mm
+    "idler_r": 11.0,            # 608-2RS outer radius
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
@@ -161,6 +163,63 @@ def belt_loop(c_big, r_big, c_small, r_small, t, y, w):
         half = obox(hc, big, big * 2, w + 2, (d[0], 0.0, d[1]), (pr[0], 0.0, pr[1]))
         ring_out = cyl((cx, y - w / 2, cz), (cx, y + w / 2, cz), r + t)
         ring_in = cyl((cx, y - w / 2 - 1, cz), (cx, y + w / 2 + 1, cz), r)
+        out.append(pdiff(ring_out, [ring_in, half]))
+    return out
+
+
+def belt_path(circles):
+    """Closed belt around circles [(cx, cz, rho)] listed in counter-clockwise travel order (x right, z up).
+    rho > 0: the belt wraps the circle (pulley); rho < 0: the belt's back runs over it (idler). Returns
+    (length, strands [(p_a, p_b, u, r)], arcs [(cx, cz, rho, th_in, dth)]) where r is the right-hand normal."""
+    n = len(circles)
+    strands, rr = [], []
+    for i in range(n):
+        (ax, az_, ra), (bx, bz, rb) = circles[i], circles[(i + 1) % n]
+        dx, dz = bx - ax, bz - az_
+        L = math.hypot(dx, dz)
+        psi = math.atan2(dz, dx) - math.acos(max(-1.0, min(1.0, (ra - rb) / L)))
+        r = (math.cos(psi), math.sin(psi)); u = (-r[1], r[0])
+        pa = (ax + ra * r[0], az_ + ra * r[1]); pb = (bx + rb * r[0], bz + rb * r[1])
+        strands.append((pa, pb, u, r)); rr.append(r)
+    length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b, _, _ in strands)
+    arcs = []
+    for i in range(n):
+        cx, cz, rho = circles[i]
+        r_in, r_out = rr[i - 1], rr[i]
+        t_in, t_out = math.atan2(r_in[1], r_in[0]), math.atan2(r_out[1], r_out[0])
+        d = ((t_out - t_in) if rho > 0 else (t_in - t_out)) % (2 * math.pi)
+        length += abs(rho) * d
+        arcs.append((cx, cz, rho, t_in, d))
+    return length, strands, arcs
+
+
+def belt_loop_n(circles, t, y, w):
+    """Solid belt loop for belt_path() circles given as (cx, cz, r_contact, sign): r_contact = pulley tip radius
+    (sign +1, belt outside it) or idler radius (sign -1, belt back on it). The belt is t thick."""
+    mid = [(cx, cz, sg * (rc + t / 2)) for cx, cz, rc, sg in circles]
+    _, strands, arcs = belt_path(mid)
+    out = []
+    for pa, pb, u, r in strands:
+        L = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
+        if L > 0.5:
+            out.append(obox(((pa[0] + pb[0]) / 2, y, (pa[1] + pb[1]) / 2), L + 0.6, t, w, (u[0], 0.0, u[1]), (r[0], 0.0, r[1])))
+    for (cx, cz, rho, t_in, d), (_, _, rc, sg) in zip(arcs, circles):
+        if d < math.radians(2):
+            continue
+        a0, a1 = t_in, t_in + (d if rho > 0 else -d)
+        sgn = 1 if rho > 0 else -1
+        p1 = (cx + rho * math.cos(a0), cz + rho * math.sin(a0)); p2 = (cx + rho * math.cos(a1), cz + rho * math.sin(a1))
+        am = t_in + (d / 2 if rho > 0 else -d / 2)
+        pm = (cx + rho * math.cos(am), cz + rho * math.sin(am))
+        e = (p2[0] - p1[0], p2[1] - p1[1]); el = math.hypot(*e); e = (e[0] / el, e[1] / el)
+        nn = (-e[1], e[0])
+        q = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+        sm = 1 if (pm[0] - q[0]) * nn[0] + (pm[1] - q[1]) * nn[1] > 0 else -1
+        big = 4 * (rc + t)
+        hc = (q[0] - sm * nn[0] * big / 2, y, q[1] - sm * nn[1] * big / 2)
+        half = obox(hc, big * 2, big, w + 2, (e[0], 0.0, e[1]), (nn[0], 0.0, nn[1]))
+        ring_out = cyl((cx, y - w / 2, cz), (cx, y + w / 2, cz), rc + t)
+        ring_in = cyl((cx, y - w / 2 - 1, cz), (cx, y + w / 2 + 1, cz), rc)
         out.append(pdiff(ring_out, [ring_in, half]))
     return out
 
@@ -315,8 +374,6 @@ def build_model(P=None):
     xf_in = x1 - P["front_t"]; xr_in = x0 + P["rear_t"]
     az = P["axle_z"]; wr = P["wheel_d"] / 2
     dz0, dz1 = P["deck_z0"], P["deck_z0"] + P["deck_t"]
-    xra = -P["wheelbase"]                      # rear axle x
-    AX = (("F", 0.0), ("R", xra))              # axles: front (driven by the motor belt), rear (driven by the 1:1 belt)
 
     # drive geometry (all derived): belt centre distance from the belt length, belt plane from the motor length
     P["pul_m_pd"] = 3.0 * P["pul_m_t"] / math.pi
@@ -331,8 +388,25 @@ def build_model(P=None):
     P["belt_plane_y"] = hw + P["motor_env_l"] + 1.5 + 5.5      # pulley bolted to the bell: flange 1.5 + half tooth width
     P["wheel_inner_y"] = P["belt_plane_y"] + 7.0 + 3.5         # wheel pulley half width + adapter disc
     # 1:1 belt: slack the idler takes up (belt longer than the straight 2C + pi*PD loop)
-    P["belt2_slack"] = P["belt2_len"] - (2 * P["wheelbase"] + math.pi * P["pul_r_pd"])
-    izc = az + (P["pul_r_pd"] / 2 - 0.38) + P["belt_t"] + 11.0     # idler centre resting on the upper run (608 r 11)
+    # 1:1 belt: wheelbase from the belt length (straight loop = belt - take-up), idler pressing the upper run down at
+    # mid-span; slot ends where it takes up 0.2 and 2.0 mm (belt length / print tolerance)
+    P["wheelbase"] = (P["belt2_len"] - math.pi * P["pul_r_pd"] - P["belt2_take_up"]) / 2
+    xra = -P["wheelbase"]                      # rear axle x
+    AX = (("F", 0.0), ("R", xra))              # axles: front (driven by the motor belt), rear (driven by the 1:1 belt)
+    P["idler_x"] = xra / 2
+    rp2, rip = P["pul_r_pd"] / 2, P["idler_r"] + P["belt_t"] - 0.38      # pitch radii (idler: on the belt back)
+    z_touch = az + rp2 + rip
+
+    def idler_z(extra):
+        lo, hi = z_touch - 40, z_touch
+        for _ in range(60):
+            zm = (lo + hi) / 2
+            Lm = belt_path([(0.0, az, rp2), (P["idler_x"], zm, -rip), (xra, az, rp2)])[0]
+            lo, hi = (zm, hi) if Lm - (P["belt2_len"] - P["belt2_take_up"]) > extra else (lo, zm)
+        return (lo + hi) / 2
+    izc = idler_z(P["belt2_take_up"])
+    iz_hi, iz_lo = idler_z(0.2), idler_z(2.0)
+    m.info["idler_travel"] = (iz_lo, izc, iz_hi)
     mdx = P["motor_dx"]; mdz = math.sqrt(P["belt_cc"] ** 2 - mdx ** 2)
     mc_x, mc_z = mdx, az + mdz
     bu = norm((mdx, 0.0, mdz))                 # belt direction (axle -> motor)
@@ -367,7 +441,7 @@ def build_model(P=None):
             box(xf_in - 8, xf_in + 0.01, s * 34, s * 46, 40, 58),                      # door-insert boss
             box(P["bat_x0"], xf_in, s * (P["bat_w"] / 2 + 1.5), s * (P["bat_w"] / 2 + 5), zf1 - 0.01, zf1 + 8),  # rails
             box(xf_in - 6, xf_in + 0.01, s * 34, s * 46, P["us_z"] - 8, P["us_z"] + 8),  # HC-SR04 insert boss
-            box(P["idler_x"] - 10, P["idler_x"] + 10, s * (inner - 6), s * (inner + 0.01), izc - 12, dz0 - 4),  # idler pad
+            box(P["idler_x"] - 10, P["idler_x"] + 10, s * (inner - 6), s * (inner + 0.01), iz_lo - 10, dz0 - 0.01),  # idler pad
         ]
         for k in (-1, 1):                                                              # pad behind the motor plate
             cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
@@ -427,8 +501,8 @@ def build_model(P=None):
         m.hole("tub", "motor_wire_" + side, (-66, s * (inner - 10), 72), (-66, s * (hw + co), 72), 12,
                for_item="motor phase wires grommet " + side, audit=False)
         # idler: vertical slot for an M8 bolt; the 608 presses the 1:1 belt's upper run down
-        m.slot_hole("tub", "idler_" + side, (P["idler_x"], s * (inner - 3), izc - 6.0), (P["idler_x"], s * (inner - 3), izc + 1.0),
-                    P["clr_m8"], (0, ys, 0), 12, for_item="idler M8 (vertical tension slot)")
+        m.slot_hole("tub", "idler_" + side, (P["idler_x"], s * (inner - 1), iz_lo), (P["idler_x"], s * (inner - 1), iz_hi),
+                    P["clr_m8"], (0, ys, 0), 10 + 2 * co, for_item="idler M8 (vertical tension slot)")
         # shell inserts (front + rear posts), deck inserts, door + bracket inserts
         m.hole("tub", "lid_f_" + side, (xf_in - 6, s * 52, top + co), (xf_in - 6, s * 52, top - P["ins_m3_depth"]),
                P["ins_m3"], kind="insert", for_item="shell M3")
@@ -553,7 +627,7 @@ def build_model(P=None):
                 cyl_y(s * (by2 - 7.0), s * (by2 - 5.5), 0, az, rfl), cyl_y(s * (by2 + 5.5), s * (by2 + 7.0), 0, az, rfl),
                 cyl_y(s * (by2 + 7.0 - 0.01), s * (by - 7.0 + 0.01), 0, az, rfl)]
         m.part(name, "printed", COL["accent"], adds, material="PAHT-CF", moving=True,
-               note="double pulley: %dT (motor belt) + %dT (rear belt); bolts through the wheel core"
+               note="double pulley: %dT (motor belt) + %dT (rear belt); 4 inserts, screwed on through the wheel core"
                     % (P["pul_w_t"], P["pul_r_t"]), mates={"wheel_F" + side, "belt_" + side, "belt2_" + side})
         teeth(name, s * by, 0.0, P["pul_w_t"], wpr)
         teeth(name, s * by2, 0.0, P["pul_r_t"], rpr)
@@ -564,7 +638,7 @@ def build_model(P=None):
                 cyl_y(s * (by2 - 7.0), s * (by2 - 5.5), xra, az, rfl), cyl_y(s * (by2 + 5.5), s * (by2 + 7.0), xra, az, rfl),
                 cyl_y(s * (by2 + 7.0 - 0.01), s * (wiy - 3.5), xra, az, 22.0),
                 cyl_y(s * (wiy - 3.5 - 0.01), s * (wiy - 0.01), xra, az, wfl)],
-               material="PAHT-CF", moving=True, note="%dT rear pulley + hub; bolts through the wheel core" % P["pul_r_t"],
+               material="PAHT-CF", moving=True, note="%dT rear pulley + hub; 4 inserts, screwed on through the wheel core" % P["pul_r_t"],
                mates={"wheel_R" + side, "belt2_" + side})
         teeth(rname, s * by2, xra, P["pul_r_t"], rpr)
         for nm, ax, ystart in (("F", 0.0, by2 - 7), ("R", xra, by2 - 7)):
@@ -574,10 +648,14 @@ def build_model(P=None):
             for k in range(4):
                 ang = k * math.pi / 2 + math.pi / 4
                 hx, hz = ax + 17.5 * math.cos(ang), az + 17.5 * math.sin(ang)
-                ya_ = (by - 7) if nm == "F" else (wiy - 3.5)
-                m.hole(pn, "core_%d" % k, (hx, s * (ya_ - co), hz), (hx, s * (wiy + co), hz), 3.15,
-                       for_item="M3 x 80 through the wheel core (3.15 close fit: centres the pulley)")
+                m.hole(pn, "core_%d" % k, (hx, s * (wiy + co), hz), (hx, s * (wiy - P["ins_m3_depth"] - 1.5), hz),
+                       P["ins_m3"], kind="insert", for_item="M3 x 60 from the wheel's outer face through the core "
+                       "(holes drilled 3.0 -> 3.15 with the jig: they centre the pulley)")
     m.info["wheel_pulley_flange_r"] = wfl
+    # printed tooth sections need >= 3 mm of plastic between the tooth roots and the bore (sleeve clearance)
+    root_wall = min(wpr, rpr) - 1.14 - (sd + 6.0) / 2
+    m.info["pulley_root_wall"] = root_wall
+    assert root_wall >= 3.0, "pulley root wall %.1f mm < 3 mm: more teeth or a thinner axle sleeve" % root_wall
 
     jz = -150.0                                # drill jig (tool, printed once, hidden)
     jig = m.part("pulley_drill_jig", "tools", COL["light"],
@@ -766,17 +844,18 @@ def build_model(P=None):
         m.part("belt_" + side, H, COL["belt"], belt_loop((0.0, az), wpr, (mc_x, mc_z), mpr, P["belt_t"], s * by, P["belt_w"]),
                mass=0.012, moving=True, mates={"wheel_pulley_F" + side, "motor_pulley_" + side},
                note="HTD-3M %d mm (%dT) x 9 mm closed belt" % (P["belt_len"], P["belt_len"] / 3))
-        m.part("belt2_" + side, H, COL["belt"], belt_loop((0.0, az), rpr + 0.001, (xra, az), rpr, P["belt_t"], s * by2,
-                                                          P["belt_w"]),
+        m.part("belt2_" + side, H, COL["belt"], belt_loop_n([(0.0, az, rpr, 1), (P["idler_x"], izc, P["idler_r"], -1),
+                                                             (xra, az, rpr, 1)], P["belt_t"], s * by2, P["belt_w"]),
                mass=0.02, moving=True, mates={"wheel_pulley_F" + side, "wheel_pulley_R" + side, "idler_" + side},
                note="HTD-3M %d mm (%dT) x 9 mm closed belt, front -> rear wheel 1:1" % (P["belt2_len"], P["belt2_len"] / 3))
         # idler: 608 on an M8 bolt in the wall slot, rolling on the back of the upper run
         m.part("idler_" + side, H, COL["hw_metal"],
-               [cyl_y(s * (by2 - 3.5), s * (by2 + 3.5), P["idler_x"], izc, 11.0),
+               [cyl_y(s * (by2 - 3.5), s * (by2 + 3.5), P["idler_x"], izc, P["idler_r"]),
                 cyl_y(s * (inner - 6), s * (by2 + 8), P["idler_x"], izc, 4.0),
+                cyl_y(s * (inner - 11.3), s * (inner - 6 + 0.01), P["idler_x"], izc, 6.5),
                 cyl_y(s * hw, s * (by2 - 3.5), P["idler_x"], izc, 6.0)],
                mass=0.03, moving=True, mates={"tub", "belt2_" + side},
-               note="608-2RS on an M8 x 50 bolt + 12 mm spacer; slide down in the slot to tension, then tighten")
+               note="608-2RS on an M8 x 50 bolt (head inside the tub) + 18.5 mm spacer + nyloc; slide down to tension, then tighten")
         m.info.setdefault("idler", {})[side] = (P["idler_x"], izc)
     m.part("battery", H, COL["battery"], [box(P["bat_x0"], P["bat_x0"] + P["bat_l"], -P["bat_w"] / 2, P["bat_w"] / 2, zf1, zf1 + P["bat_h"])],
            mass=0.40, mates={"tub", "bumper_door"}, note="3S 5000 mAh hard case <= 145 x 50 x 30 [M]")
