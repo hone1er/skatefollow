@@ -28,16 +28,13 @@ PARAMS = {
     # fit / tolerance policy (loose on purpose; FDM on a Bambu H2C, PAHT-CF / PETG)
     "clr_m2": 2.4, "clr_m25": 2.9, "clr_m3": 3.4, "clr_m4": 4.5, "clr_m5": 5.5, "clr_m8": 8.5,   # [D] through-holes
     "ins_m3": 4.0, "ins_m3_depth": 6.5, "ins_m4": 5.6, "ins_m4_depth": 9.0, "ins_m5": 6.4, "ins_m5_depth": 10.0,
-    "clr_m12": 12.6,  # [D] heat-set inserts (check insert maker's chart)
-    "bearing608_seat": 22.2, "bearing608_w": 7.0,  # [D] 608 = 8x22x7; 22.2 seat + retaining compound
-    "swivel_bearing_od": 28.0, "swivel_bearing_w": 8.0, "swivel_bearing_c0": 2360.0,   # 6001-2RS 12x28x8 [C0 typical]
-    "swivel_top_z": 154.0,                                                            # [D] top of the pivot post
+    # [D] heat-set inserts (check insert maker's chart)
     "slip": 0.6,          # [D] gap for parts that slide into each other (mast in socket, deck between walls)
     "cut_over": 0.6,      # [D] cut tools overshoot faces by this much (robust booleans)
     # drive wheels: 90 x 52 mm longboard wheels with 608 bearings [M: core holes / bearing inset]
     "wheel_d": 90.0, "wheel_w": 52.0, "axle_z": 45.0,
     # tub (main printed body, PAHT-CF)
-    "tub_x0": -150.0, "tub_x1": 58.0, "tub_hw": 62.0, "wall": 4.0, "floor_z0": 28.0, "floor_t": 4.0,
+    "tub_x0": -242.0, "tub_x1": 58.0, "tub_hw": 62.0, "wall": 4.0, "floor_z0": 28.0, "floor_t": 4.0,
     "tub_top": 140.0, "front_t": 6.0, "rear_t": 6.0,
     # battery: 3S 5000 mAh hard case. Tunnel fits <= 145 x 50 x 30 [M]
     "bat_l": 145.0, "bat_w": 50.0, "bat_h": 30.0, "bat_x0": -141.0,
@@ -50,12 +47,12 @@ PARAMS = {
     "motor_dx": -40.0,                              # [D] motor centre 40 mm behind the axle
     "pul_m_t": 28, "pul_w_t": 56, "belt_len": 258.0,   # [D] HTD-3M teeth (PD = 3*T/pi [V]); 258 mm = 86T belt
     "belt_t": 2.0, "belt_pretension_n": 30.0,           # [D] belt back thickness over the tooth tips; set tension
-    "axle_sleeve_d": 18.0,                              # [D] 7075-T6 aluminium sleeve over the M8 stub axle
+    "axle_sleeve_d": 16.0,                              # [D] stock tubes nested: 12 x 2 inside 16 x 2 (E355 steel)
+    "axle_sleeve_E": 210e3, "axle_sleeve_yield": 355.0,
+    # 4-wheel skid steer: rear axle, 1:1 belt from the front wheel pulley to the rear wheel, 608 idler tensioner
+    "wheelbase": 200.0, "pul_r_t": 28, "belt2_len": 486.0, "belt2_plane_y": 84.0, "idler_x": -100.0,
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
-    # caster (rear): 70 mm wheel, 51 wide [M], 25 mm trail
-    "caster_d": 70.0, "caster_w": 51.0, "caster_trail": 25.0, "pivot_x": -223.0,
-    "tail_x0": -298.0, "tail_hw": 68.0, "tail_deck_z": 112.0, "hood_h": 33.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
     # front: HC-SR04 bracket tilted up so the beam's lower edge meets the ground beyond slow_distance
     "us_z": 102.0, "us_tilt_deg": 12.0, "us_beam_half_deg": 15.0,   # [M] beam half-angle: measure (see docs)
@@ -318,10 +315,13 @@ def build_model(P=None):
     xf_in = x1 - P["front_t"]; xr_in = x0 + P["rear_t"]
     az = P["axle_z"]; wr = P["wheel_d"] / 2
     dz0, dz1 = P["deck_z0"], P["deck_z0"] + P["deck_t"]
+    xra = -P["wheelbase"]                      # rear axle x
+    AX = (("F", 0.0), ("R", xra))              # axles: front (driven by the motor belt), rear (driven by the 1:1 belt)
 
     # drive geometry (all derived): belt centre distance from the belt length, belt plane from the motor length
     P["pul_m_pd"] = 3.0 * P["pul_m_t"] / math.pi
     P["pul_w_pd"] = 3.0 * P["pul_w_t"] / math.pi
+    P["pul_r_pd"] = 3.0 * P["pul_r_t"] / math.pi
     lo_, hi_ = 20.0, 200.0
     for _ in range(80):
         cc = (lo_ + hi_) / 2
@@ -330,83 +330,82 @@ def build_model(P=None):
     P["belt_cc"] = cc
     P["belt_plane_y"] = hw + P["motor_env_l"] + 1.5 + 5.5      # pulley bolted to the bell: flange 1.5 + half tooth width
     P["wheel_inner_y"] = P["belt_plane_y"] + 7.0 + 3.5         # wheel pulley half width + adapter disc
+    # 1:1 belt: slack the idler takes up (belt longer than the straight 2C + pi*PD loop)
+    P["belt2_slack"] = P["belt2_len"] - (2 * P["wheelbase"] + math.pi * P["pul_r_pd"])
+    izc = az + (P["pul_r_pd"] / 2 - 0.38) + P["belt_t"] + 11.0     # idler centre resting on the upper run (608 r 11)
     mdx = P["motor_dx"]; mdz = math.sqrt(P["belt_cc"] ** 2 - mdx ** 2)
     mc_x, mc_z = mdx, az + mdz
     bu = norm((mdx, 0.0, mdz))                 # belt direction (axle -> motor)
     bv = norm(cross(bu, Y))                    # in-plane perpendicular; bu x bv = +y
     if cross(bu, bv)[1] < 0:
         bv = vmul(bv, -1)
-    m.info.update(motor_centre=(mc_x, mc_z), belt_u=bu, belt_v=bv)
+    m.info.update(motor_centre=(mc_x, mc_z), belt_u=bu, belt_v=bv, rear_axle_x=xra)
+    by = P["belt_plane_y"]; wiy = P["wheel_inner_y"]; by2 = P["belt2_plane_y"]
+    wpr = P["pul_w_pd"] / 2 - 0.38            # 56T tooth tip radius (pitch line sits 0.38 mm outside the tips)
+    rpr = P["pul_r_pd"] / 2 - 0.38            # 28T tooth tip radius
+    wfl = wpr + 3.0; rfl = rpr + 3.0          # flange radii
+    sd = P["axle_sleeve_d"]
 
-    # ---------------- TUB ----------------
+    # ---------------- TUB (one piece: both axles, battery tunnel, mast socket) ----------------
     tub_adds = [
         box(x0, x1, -hw, hw, zf0, zf1),                                  # floor
         box(x0, x1, inner - 0.01, hw, zf0, top), box(x0, x1, -hw, -inner + 0.01, zf0, top),   # side walls
         box(xf_in - 0.01, x1, -hw, hw, zf0, top),                        # front wall
         box(x0, xr_in + 0.01, -hw, hw, zf0, top),                        # rear wall
-        box(-12, 12, -inner, inner, 66, dz0),                            # axle bridge beam (deck rests on it)
         box(P["mast_x"] - 17, xf_in + 0.01, -24, 24, dz1, top),          # mast socket block (behind front wall)
-        box(xr_in - 0.01, xr_in + 8, -24, 24, dz0 - 9, dz0),             # rear deck-screw block
-        box(x0 - 14, x0 + 0.01, -50, 50, P["tail_deck_z"] - 12, P["tail_deck_z"]),  # rear ledge for the tail lip
     ]
+    for _, ax in AX:
+        tub_adds.append(box(ax - 12, ax + 12, -inner, inner, 66, dz0))   # bridge beam (ties the bosses, carries the deck)
     for s in (1, -1):
+        for _, ax in AX:
+            tub_adds += [box(ax - 18, ax + 18, s * 31, s * (inner + 0.01), zf0, 72),       # axle boss
+                         cyl_y(s * (hw - 0.01), s * (hw + 7.8), ax, az, 15)]                # boss ring (0.2 below the collar)
         tub_adds += [
-            box(-18, 18, s * 31, s * (inner + 0.01), zf0, 72),             # axle boss (merges with the bridge beam)
-            cyl_y(s * (hw - 0.01), s * (hw + 7.8), 0, az, 15),           # axle boss ring (face 0.2 below the collar)
-            # deck ledges
-            box(xr_in, xf_in, s * (inner - 4), s * inner, dz0 - 4, dz0) if s > 0 else box(xr_in, xf_in, -inner, -(inner - 4), dz0 - 4, dz0),
-            # lid / lap posts
-            box(xf_in - 12, xf_in, s * 46, s * inner, dz1, top) if s > 0 else box(xf_in - 12, xf_in, -inner, -46, dz1, top),
-            box(xr_in, xr_in + 14, s * 50, s * inner, dz1, top),
-            box(x0 + 27, x0 + 41, s * 50, s * inner, dz1, top),         # second lap post
-            # door-insert bosses behind the front wall
-            box(xf_in - 8, xf_in + 0.01, s * 34, s * 46, 40, 58) if s > 0 else box(xf_in - 8, xf_in + 0.01, -46, -34, 40, 58),
-            # battery guide rails on the floor
-            box(P["bat_x0"], xf_in, s * (P["bat_w"] / 2 + 1.5), s * (P["bat_w"] / 2 + 5), zf1 - 0.01, zf1 + 8) if s > 0
-            else box(P["bat_x0"], xf_in, -(P["bat_w"] / 2 + 5), -(P["bat_w"] / 2 + 1.5), zf1 - 0.01, zf1 + 8),
+            box(xr_in, xf_in, s * (inner - 4), s * inner, dz0 - 4, dz0),               # deck ledge
+            box(xf_in - 12, xf_in, s * 46, s * inner, dz1, top),                       # front shell post
+            box(xr_in, xr_in + 14, s * 50, s * inner, dz1, top),                       # rear shell post
+            box(xf_in - 8, xf_in + 0.01, s * 34, s * 46, 40, 58),                      # door-insert boss
+            box(P["bat_x0"], xf_in, s * (P["bat_w"] / 2 + 1.5), s * (P["bat_w"] / 2 + 5), zf1 - 0.01, zf1 + 8),  # rails
+            box(xf_in - 6, xf_in + 0.01, s * 34, s * 46, P["us_z"] - 8, P["us_z"] + 8),  # HC-SR04 insert boss
+            box(P["idler_x"] - 10, P["idler_x"] + 10, s * (inner - 6), s * (inner + 0.01), izc - 12, dz0 - 4),  # idler pad
         ]
-        # inner wall pad behind the motor plate (oriented in the belt frame)
-        for k in (-1, 1):
+        for k in (-1, 1):                                                              # pad behind the motor plate
             cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
             tub_adds.append(cyl_y(s * (inner - 8), s * (inner + 0.01), cc[0], cc[2], P["motor_plate"] / 2 + 5))
         tub_adds.append(obox((mc_x, s * (inner - 4), mc_z), P["tension_travel"], P["motor_plate"] + 10, 8.02, bu, bv))
-        # inner bosses: pod-cover screws, HC-SR04 bracket inserts
-        for xx in (mc_x - 38, mc_x + 50):
-            tub_adds.append(box(xx - 6, xx + 6, s * (inner - 5), s * (inner + 0.01), top - 12, top))
-        tub_adds.append(box(xf_in - 6, xf_in + 0.01, s * 34, s * 46, P["us_z"] - 8, P["us_z"] + 8))
-    tub = m.part("tub", "printed", COL["frame"], tub_adds, material="PAHT-CF", note="main body, print floor-down")
+    tub = m.part("tub", "printed", COL["frame"], tub_adds, material="PAHT-CF",
+                 note="one-piece main body (300 mm): both axles, battery tunnel, mast socket; print floor-down")
     tub_cuts = tub["cuts"]
-    # softer look: rounded front vertical corners, 2.5 mm chamfer on the bed-side bottom edges
-    for s in (1, -1):
-        tub_cuts.append(round_edge_cut((x1, s * hw, zf0 - 1), (x1, s * hw, top + 1), (-1, 0, 0), (0, -s, 0), 10.0))
+    for s in (1, -1):                         # softer look: rounded vertical corners, chamfered bed-side edges
+        for xe, ia in ((x1, (-1, 0, 0)), (x0, (1, 0, 0))):
+            tub_cuts.append(round_edge_cut((xe, s * hw, zf0 - 1), (xe, s * hw, top + 1), ia, (0, -s, 0), 10.0))
         tub_cuts.append(chamfer_cut((x0, s * hw, zf0), (x1, s * hw, zf0), (0, -s, 0), (0, 0, 1), 2.5))
     tub_cuts.append(chamfer_cut((x1, -hw, zf0), (x1, hw, zf0), (-1, 0, 0), (0, 0, 1), 2.5))
-    # battery door opening through the front wall
-    tub_cuts.append(box(xf_in - co, x1 + co, -28, 28, zf1 - co, 66))
-    # tail window in the rear wall (cables tub <-> tail)
-    tub_cuts.append(box(x0 - co, xr_in + co, -40, 40, 90, 126))
-    # wire pass-throughs in the bridge beam (side channels under the deck)
+    tub_cuts.append(chamfer_cut((x0, -hw, zf0), (x0, hw, zf0), (1, 0, 0), (0, 0, 1), 2.5))
+    tub_cuts.append(box(xf_in - co, x1 + co, -28, 28, zf1 - co, 66))                 # battery door opening
     for s in (1, -1):
-        m.hole("tub", "beam_pass_%s" % ("L" if s > 0 else "R"), (-18 - co, s * 45, 73), (18 + co, s * 45, 73), 12,
-               for_item="harness side channel", audit=False)
-    # mast socket bore + bottom/rear cable exit
+        for nm, ax in AX:
+            m.hole("tub", "beam_pass_%s%s" % (nm, "L" if s > 0 else "R"), (ax - 18 - co, s * 45, 73),
+                   (ax + 18 + co, s * 45, 73), 12, for_item="harness side channel", audit=False)
     ms = P["mast_sq"] + P["slip"]
     tub_cuts.append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, 92, top + co))
     tub_cuts.append(box(P["mast_x"] - 17 - co, P["mast_x"], -7, 7, 92, 104))
-    tub_cuts.append(box(P["mast_x"] - 17 - co, P["mast_x"], -5, 5, 92, top + co))     # rear slot: cables lift out with the mast
-    for s in (1, -1):   # mast flange thumb screws (M4 inserts in the socket top)
+    tub_cuts.append(box(P["mast_x"] - 17 - co, P["mast_x"], -5, 5, 92, top + co))   # rear slot: cables lift out with the mast
+    for s in (1, -1):
         m.hole("tub", "mast_flange_" + ("L" if s > 0 else "R"), (P["mast_x"], s * 17.65, top + co),
                (P["mast_x"], s * 17.65, top - P["ins_m4_depth"]), P["ins_m4"], kind="insert", for_item="mast flange M4")
-    # HC-SR04 wire hole through the front wall (offset to clear the mast socket)
     m.hole("tub", "us_wire", (xf_in - co, -30, 131), (x1 + co, -30, 131), 9, for_item="HC-SR04 cable", audit=False)
+    tub_cuts.append(box(x0 - co, xr_in + co, -38.2, -21.8, 116.9, 125.1))              # XT60 arming plug (panel)
+    m.holes.append({"host": "tub", "id": "xt60_arming", "a": (x0, -30, 121), "b": (xr_in, -30, 121), "d": 16.4,
+                    "kind": "slot", "for": "XT60 arming plug (panel)", "audit": False})
     for s in (1, -1):
         side = "L" if s > 0 else "R"
         ys = s * 1.0
-        # stub axle: M8 through boss and wall
-        tub_cuts.append(box(-7.7, 7.7, s * (31 - co), s * 40, az - 6.7, az + 6.7))   # captive M8 nyloc pocket (no turning)
-        m.hole("tub", "axle_sleeve_" + side, (0, s * 39.7, az), (0, s * (hw + 8 + co), az), P["axle_sleeve_d"] + 0.4,
-               for_item="inner axle sleeve 18 x 8.2 x 30.3 (through the boss)")
-        # motor plate pocket (outer face, capsule along the belt for tensioning) + shaft clearance + tension slots
+        for nm, ax in AX:
+            tub_cuts.append(box(ax - 7.7, ax + 7.7, s * (31 - co), s * 40, az - 6.7, az + 6.7))   # captive M8 nyloc pocket
+            m.hole("tub", "axle_sleeve_%s%s" % (nm, side), (ax, s * 39.7, az), (ax, s * (hw + 8 + co), az), sd + 0.4,
+                   for_item="inner axle sleeve %g x 8.2 x 30.3 (through the boss)" % sd)
+        # motor plate pocket (capsule along the belt) + shaft clearance + tension slots + pull-screw stop
         for k in (-1, 1):
             cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
             tub_cuts.append(cyl_y(s * (hw - P["motor_plate_t"]), s * (hw + co), cc[0], cc[2], P["motor_plate"] / 2 + 0.5))
@@ -419,40 +418,29 @@ def build_model(P=None):
             p0 = (p0[0], s * (inner - 6), p0[2]); p1 = (p1[0], s * (inner - 6), p1[2])
             m.slot_hole("tub", "tension_%s_%d" % (side, k), p0, p1, P["clr_m3"], (0, ys, 0), 6,
                         for_item="motor plate M3 (tension slot)")
-        # positive belt-tension stop: a tab on the plate (inside the tub) is pulled along +belt by an M3 screw
         tab_c = vadd((mc_x, s * (inner - 4), mc_z), vmul(bu, P["motor_plate"] / 2 - 6))
-        tub_cuts.append(obox(tab_c, 12 + P["tension_travel"] + 2, 12, 12, bu, bv))      # slot for the tab
+        tub_cuts.append(obox(tab_c, 12 + P["tension_travel"] + 2, 12, 12, bu, bv))
         boss_c = vadd((mc_x, s * (inner - 9), mc_z), vmul(bu, P["motor_plate"] / 2 + P["tension_travel"] + 4))
         tub["adds"].append(obox(boss_c, 8, 14, 10, bu, bv))
         a_ = vadd(boss_c, vmul(bu, 4 + co)); b_ = vadd(boss_c, vmul(bu, -4 - co))
         m.hole("tub", "pull_" + side, a_, b_, P["clr_m3"], for_item="belt pull screw M3 x 25 (head on the boss)")
-        m.info.setdefault("pull", {})[side] = (tab_c, boss_c)
         m.hole("tub", "motor_wire_" + side, (-66, s * (inner - 10), 72), (-66, s * (hw + co), 72), 12,
                for_item="motor phase wires grommet " + side, audit=False)
-        # tail lap: 2 x M4 inserts per side in the rear posts
-        for lx in (xr_in + 7, x0 + 34):
-            for zz in (98, 125):
-                m.hole("tub", "lap_%s_%d_%d" % (side, int(-lx), zz), (lx, s * (hw + co), zz),
-                       (lx, s * (hw - P["ins_m5_depth"]), zz), P["ins_m5"], kind="insert", for_item="tail lap M5")
-        # lid inserts (front + rear posts)
+        # idler: vertical slot for an M8 bolt; the 608 presses the 1:1 belt's upper run down
+        m.slot_hole("tub", "idler_" + side, (P["idler_x"], s * (inner - 3), izc - 6.0), (P["idler_x"], s * (inner - 3), izc + 1.0),
+                    P["clr_m8"], (0, ys, 0), 12, for_item="idler M8 (vertical tension slot)")
+        # shell inserts (front + rear posts), deck inserts, door + bracket inserts
         m.hole("tub", "lid_f_" + side, (xf_in - 6, s * 52, top + co), (xf_in - 6, s * 52, top - P["ins_m3_depth"]),
-               P["ins_m3"], kind="insert", for_item="tub lid M3")
+               P["ins_m3"], kind="insert", for_item="shell M3")
         m.hole("tub", "lid_r_" + side, (xr_in + 7, s * 54, top + co), (xr_in + 7, s * 54, top - P["ins_m3_depth"]),
-               P["ins_m3"], kind="insert", for_item="tub lid M3")
-        # deck inserts: bridge beam (front pair) and rear blocks
-        m.hole("tub", "deck_f_" + side, (0, s * 28, dz0 + co), (0, s * 28, dz0 - P["ins_m3_depth"]), P["ins_m3"],
-               kind="insert", for_item="deck M3")
-        m.hole("tub", "deck_r_" + side, (xr_in + 4, s * 16, dz0 + co), (xr_in + 4, s * 16, dz0 - P["ins_m3_depth"]),
-               P["ins_m3"], kind="insert", for_item="deck M3")
-        # door thumb-screw inserts (M4) through front wall into the bosses
+               P["ins_m3"], kind="insert", for_item="shell M3")
+        for nm, ax in AX:
+            m.hole("tub", "deck_%s%s" % (nm, side), (ax, s * 28, dz0 + co), (ax, s * 28, dz0 - P["ins_m3_depth"]),
+                   P["ins_m3"], kind="insert", for_item="deck M3")
         m.hole("tub", "door_" + side, (x1 + co, s * 40, 49), (x1 - P["ins_m4_depth"] - 4, s * 40, 49), P["ins_m4"],
                kind="insert", for_item="bumper-door M4 thumb screw")
-        # HC-SR04 bracket inserts (front face)
         m.hole("tub", "us_" + side, (x1 + co, s * 40, P["us_z"]), (x1 - P["ins_m3_depth"], s * 40, P["us_z"]),
                P["ins_m3"], kind="insert", for_item="HC-SR04 bracket M3")
-        # tail lip inserts in the rear ledge
-        m.hole("tub", "lip_" + side, (x0 - 7.5, s * 35, P["tail_deck_z"] + co), (x0 - 7.5, s * 35, P["tail_deck_z"] - P["ins_m4_depth"]),
-               P["ins_m4"] - 0.0, kind="insert", for_item="tail lip M4")
 
     # ---------------- MOTOR PLATES ----------------
     for s in (1, -1):
@@ -469,7 +457,6 @@ def build_model(P=None):
             p0 = vadd((mc_x, 0, mc_z), vmul(d, 8.0)); p1 = vadd((mc_x, 0, mc_z), vmul(d, 16.0))
             m.slot_hole(name, "mslot_%d" % k, (p0[0], yc, p0[2]), (p1[0], yc, p1[2]), P["clr_m3"], (0, 1, 0),
                         P["motor_plate_t"] + 2 * co, for_item="motor base M3 (any 16-30 mm pattern)", audit=False)
-            # counterbore for the screw heads on the wall side
             m.get(name)["cuts"].extend(slot((p0[0], 0, p0[2]), (p1[0], 0, p1[2]), 6.4, (0, s, 0), 3.0 + co,
                                             hw - P["motor_plate_t"] + 1.5 - co / 2))
         tab_c = vadd((mc_x, s * (inner - 4), mc_z), vmul(bu, P["motor_plate"] / 2 - 6))
@@ -482,175 +469,117 @@ def build_model(P=None):
             m.hole(name, "ins_%d" % k, (c[0], s * (hw - P["motor_plate_t"] - co), c[2]),
                    (c[0], s * (hw - P["motor_plate_t"] + P["ins_m3_depth"]), c[2]), P["ins_m3"], kind="insert",
                    for_item="motor plate <- wall M3")
-            # bolt head (inside the tub) + hex-key access envelope, both checked for clearance
             hy0 = s * (inner - 8)
             m.part("plate_bolt_%s%d" % (side, k), "hardware", COL["hw_metal"],
                    [cyl_y(hy0 - s * 3.0, hy0 + s * 0.01, c[0], c[2], 2.9)], mass=0.003, mates={"tub"},
                    note="M3 x 16 socket head + washer")
             m.part("tool_access_%s%d" % (side, k), "keepout", COL["keepout"],
                    [cyl_y(hy0 - s * 17.0, hy0 - s * 3.0, c[0], c[2], 5.0)],
-                   note="2.5 mm ball-end hex key (lid off)", mates={"tub", "plate_bolt_%s%d" % (side, k)})
+                   note="2.5 mm ball-end hex key (shell off)", mates={"tub", "plate_bolt_%s%d" % (side, k)})
 
-    # ---------------- DECK ----------------
+    # ---------------- DECK (with the ESP32 cradle printed on it) ----------------
     g = P["slip"] / 2
-    deck = m.part("deck", "printed", COL["light"], [box(xr_in + g, xf_in - g, -inner + g, inner - g, dz0, dz1)],
-                  material="PETG", note="removable electronics tray, 10 mm M3 grid", mates={"tub"})
+    ecx, el, ew = -195.0, P["esp_l"], P["esp_w"]
+    pcb_z = dz1 + 30                           # ESP32 PCB underside: jumper plugs on the downward pins clear the deck
+    deck_adds = [box(xr_in + g, xf_in - g, -inner + g, inner - g, dz0, dz1)]
+    for sx in (-1, 1):                         # cradle rails with a PCB groove (slide the DevKit in from -y)
+        rx0 = ecx + sx * (ew / 2 + 0.3)
+        deck_adds.append(box(min(rx0, rx0 + sx * 4), max(rx0, rx0 + sx * 4), -30, 30, dz1 - 0.01, pcb_z + 5))
+    deck = m.part("deck", "printed", COL["light"], deck_adds, material="PETG",
+                  note="removable electronics tray: 10 mm M3 grid, Pi holes, ESP32 slide-in cradle printed on",
+                  mates={"tub"})
     dc = deck["cuts"]
+    for sx in (-1, 1):
+        g0 = ecx + sx * (ew / 2 + 0.3)
+        dc.append(box(min(g0, g0 + sx * 1.2), max(g0, g0 + sx * 1.2), -30 - co, 30 + co, pcb_z - 0.2, pcb_z + 1.9))
     for s in (1, -1):
         dc.append(box(xf_in - 12.5, xf_in + co, s * 45.5 if s > 0 else -inner - co, s * (inner + co) if s > 0 else -45.5, dz0 - co, dz1 + co))
         dc.append(box(xr_in - co, xr_in + 14.5, s * 49.5 if s > 0 else -inner - co, s * (inner + co) if s > 0 else -49.5, dz0 - co, dz1 + co))
-        dc.append(box(x0 + 26.5, x0 + 41.5, s * 49.5 if s > 0 else -inner - co, s * (inner + co) if s > 0 else -49.5, dz0 - co, dz1 + co))
-        # clear the inner motor pads
         dc.append(box(mc_x - 44, mc_x + 44, s * 47.5 if s > 0 else -inner - co, s * (inner + co) if s > 0 else -47.5, dz0 - co, dz1 + co))
         dc.append(box(mc_x - 40, mc_x - 3, s * 42.5, s * (inner + co), dz0 - co, dz1 + co))   # belt-tension tab + pull boss
-        # cable pass slots at the rear corners
-        dc.append(box(xr_in + 15, xr_in + 24, s * 30 if s > 0 else -47, s * 47 if s > 0 else -30, dz0 - co, dz1 + co))
+        dc.append(box(-130, -112, s * 30 if s > 0 else -47, s * 47 if s > 0 else -30, dz0 - co, dz1 + co))   # cable pass
+        dc.append(box(xf_in - 6.5, xf_in + co, s * 33.5, s * 46.5, dz0 - co, dz1 + co))       # HC-SR04 boss notch
     dc.append(box(P["mast_x"] - 17.5, xf_in + co, -24.5, 24.5, dz0 - co, dz1 + co))     # mast socket notch
-    for s in (1, -1):   # notches so the deck lifts straight out past the wall bosses
-        dc.append(box(mc_x + 50 - 6.5, mc_x + 50 + 6.5, s * 52.5, s * (inner + co), dz0 - co, dz1 + co))
-        dc.append(box(xf_in - 6.5, xf_in + co, s * 33.5, s * 46.5, dz0 - co, dz1 + co))
-    # Raspberry Pi 5: 85 x 56, USB end facing rear; M2.5 holes 58 x 49, 3.5 from the non-USB end [V]
     pi_x0 = P["pi_x0"]; pi_x1 = pi_x0 + 85.0
     pi_holes = [(pi_x1 - 3.5, -24.5), (pi_x1 - 3.5, 24.5), (pi_x1 - 61.5, -24.5), (pi_x1 - 61.5, 24.5)]
     for i, (hx, hy) in enumerate(pi_holes):
         m.hole("deck", "pi_%d" % i, (hx, hy, dz0 - co), (hx, hy, dz1 + co), P["clr_m25"], for_item="Raspberry Pi 5 M2.5 standoff")
     m.info["pi"] = (pi_x0, pi_x1)
-    # 10 mm grid (M3 clearance) for everything with seller-dependent holes (ESP32 ext board etc. live in the tail)
     gp = P["grid_pitch"]
-    keep = [(hx, hy) for hx, hy in pi_holes]
     xs = [xr_in + 25 + gp * i for i in range(int((xf_in - xr_in - 40) / gp))]
     ys = [gp * j for j in range(-4, 5)]
     for gx in xs:
         for gy in ys:
-            if any(math.hypot(gx - kx, gy - ky) < 7.5 for kx, ky in keep):
+            if any(math.hypot(gx - kx, gy - ky) < 7.5 for kx, ky in pi_holes):
                 continue
             if (abs(gx - mc_x) < 47 and abs(gy) > 44) or (mc_x - 44 < gx < mc_x + 1 and abs(gy) > 38):
                 continue
-            if gx > P["mast_x"] - 21 and abs(gy) < 28:
+            if gx > P["mast_x"] - 21 and abs(gy) < 28 or gx > xf_in - 16:
                 continue
-            if gx > xf_in - 16 or (gx > xf_in - 16 and abs(gy) > 42):
+            if any(abs(gx - ax) < 6 and abs(abs(gy) - 28) < 6 for _, ax in AX):
                 continue
-            if (abs(gx) < 6 and abs(abs(gy) - 28) < 6) or (gx < xr_in + 10 and abs(abs(gy) - 16) < 6):
-                continue
-            if xr_in + 6 < gx < xr_in + 28 and 26 < abs(gy) < 51 or (x0 + 24 < gx < x0 + 44 and abs(gy) > 44):
+            if xr_in + 6 < gx < xr_in + 22 and abs(gy) > 44 or (-134 < gx < -108 and 26 < abs(gy) < 51):
                 continue
             if 4 < gx < 38 and 24 < abs(gy) < 56 or (gx > xf_in - 12 and abs(gy) > 30):
                 continue
+            if abs(gx - ecx) < ew / 2 + 7 and abs(gy) < 34:
+                continue
             dc.append(cyl_z(dz0 - co, dz1 + co, gx, gy, P["clr_m3"] / 2))
-    m.info["deck_grid_n"] = len(xs) * len(ys)
     for s in (1, -1):
         side = "L" if s > 0 else "R"
-        m.hole("deck", "screw_f_" + side, (0, s * 28, dz0 - co), (0, s * 28, dz1 + co), P["clr_m3"], for_item="deck M3")
-        m.hole("deck", "screw_r_" + side, (xr_in + 4, s * 16, dz0 - co), (xr_in + 4, s * 16, dz1 + co), P["clr_m3"], for_item="deck M3")
-        # zip-tie slot pairs for the two regulators (x 7..35, |y| 30..56)
-        for zx in (12, 30):
+        for nm, ax in AX:
+            m.hole("deck", "screw_%s%s" % (nm, side), (ax, s * 28, dz0 - co), (ax, s * 28, dz1 + co), P["clr_m3"],
+                   for_item="deck M3")
+        for zx in (12, 30):                     # zip-tie slots for the regulators
             dc.append(box(zx - 1.5, zx + 1.5, s * 29, s * 49, dz0 - co, dz1 + co))
+        for zx in (-170, -140):                 # zip-tie slots for the ESCs
+            dc.append(box(zx - 1.5, zx + 1.5, s * 32, s * 54, dz0 - co, dz1 + co))
 
-    # ---------------- TAIL (caster module) ----------------
-    tx0 = P["tail_x0"]; th = P["tail_hw"]; tdz = P["tail_deck_z"]; px = P["pivot_x"]
-    tail_adds = [box(tx0, x0 - 0.01, -th, th, tdz, tdz + 3),           # deck plate
-                 box(x0 - 14, x0, -50, 50, tdz, tdz + 3),                # front lip (on the tub's rear ledge)
-                 box(tx0, tx0 + 4, -th, th, 90, top),                    # rear wall
-                 cyl_z(89.5, P["swivel_top_z"], px, 0, 22),               # pivot post: 6001 bearings ~56 mm apart
-                 box(px - 5, px + 5, -th + 0.01, th - 0.01, 90, tdz + 0.01),    # cross rib (10 x 25) boss -> side walls
-                 box(px - 55, px + 45, -5, 5, 90, tdz + 0.01)]           # fore-aft rib (10 x 25)
-    for s in (1, -1):
-        tail_adds += [
-            box(tx0, x0 + 40, s * (hw - 0.01), s * th, 90, top),       # side walls, 6 mm, lap 40 mm over the tub
-            box(tx0 + 4, tx0 + 12, s * 54, s * hw, tdz, top) if s > 0 else box(tx0 + 4, tx0 + 12, -hw, -54, tdz, top),
-            box(x0 - 12, x0 - 4, s * 54, s * hw, tdz, top) if s > 0 else box(x0 - 12, x0 - 4, -hw, -54, tdz, top),
-        ]
-    tail = m.part("tail", "printed", COL["frame"], tail_adds, material="PAHT-CF",
-                  note="caster module, laps over the tub's rear posts", mates={"tub", "deck"})
-    tc = tail["cuts"]
-    for s in (1, -1):
-        tc.append(round_edge_cut((tx0, s * th, 89), (tx0, s * th, top + 1), (1, 0, 0), (0, -s, 0), 8.0))
-    stz = P["swivel_top_z"]; sbw = P["swivel_bearing_w"]; sod = P["swivel_bearing_od"] + 0.2
-    m.hole("tail", "pivot", (px, 0, 80), (px, 0, stz + co), P["clr_m12"] + 4, for_item="M12 pivot + 16 mm race spacer",
-           audit=False)
-    tc.append(cyl_z(89.5 - co, 89.5 + sbw + 0.5, px, 0, sod / 2))
-    tc.append(cyl_z(stz - sbw - 0.5, stz + co, px, 0, sod / 2))
-    m.holes.append({"host": "tail", "id": "6001_seats", "a": (px, 0, 89.5), "b": (px, 0, stz),
-                    "d": sod, "kind": "seat", "for": "2 x 6001-2RS caster swivel bearings", "audit": True})
-    m.info["swivel"] = {"z_low": 89.5 + sbw / 2, "z_high": stz - sbw / 2}
+    # ---------------- PULLEYS ----------------
+    def teeth(name, ycen, xc, n, rtip):
+        for k in range(n):
+            ang = 2 * math.pi * k / n
+            rc = rtip - 1.14 + 0.9
+            m.get(name)["cuts"].append(cyl_y(ycen - 5.5, ycen + 5.5, xc + rc * math.cos(ang), az + rc * math.sin(ang), 0.9))
+
     for s in (1, -1):
         side = "L" if s > 0 else "R"
-        for lx in (xr_in + 7, x0 + 34):
-            for zz in (98, 125):
-                m.hole("tail", "lap_%s_%d_%d" % (side, int(-lx), zz), (lx, s * (hw - co), zz), (lx, s * (th + co), zz),
-                       P["clr_m5"], for_item="tail lap M5")
-        m.hole("tail", "lip_" + side, (x0 - 7.5, s * 35, tdz - co), (x0 - 7.5, s * 35, tdz + 3 + co), P["clr_m4"],
-               for_item="tail lip M4")
-        m.hole("tail", "lid_r_" + side, (tx0 + 8, s * 58, top + co), (tx0 + 8, s * 58, top - P["ins_m3_depth"]),
-               P["ins_m3"], kind="insert", for_item="tail lid M3")
-        m.hole("tail", "lid_f_" + side, (x0 - 8, s * 58, top + co), (x0 - 8, s * 58, top - P["ins_m3_depth"]),
-               P["ins_m3"], kind="insert", for_item="tail lid M3")
-    m.info["lap"] = {"x": (xr_in + 7, x0 + 34), "z": (98, 125), "d": 5.0, "t": th - hw}
-    # arming plug (XT60 female, panel) [M] and cable notch to the tail deck
-    tc.append(box(tx0 - co, tx0 + 4 + co, -38.2, -21.8, 120.9, 129.1))
-    m.holes.append({"host": "tail", "id": "xt60_arming", "a": (tx0, -30, 125), "b": (tx0 + 4, -30, 125), "d": 16.4,
-                    "kind": "slot", "for": "XT60 arming plug (panel)", "audit": False})
-    # tail deck grid (ESP32 + SunFounder board, ESCs, fuse) - all [M] parts
-    for gx in [tx0 + 14 + gp * i for i in range(int((x0 - 14 - tx0 - 14) / gp) + 1)]:
-        for gy in [gp * j for j in range(-5, 6)]:
-            if math.hypot(gx - px, gy) < 29 or abs(gx - px) < 8 or (abs(gy) < 8 and px - 58 < gx < px + 48):
-                continue
-            if any(math.hypot(gx - bx_, gy - by2) < 8 for bx_ in (-196.0, -164.0) for by2 in (-20.0, 20.0)):
-                continue
-            tc.append(cyl_z(tdz - co, tdz + 3 + co, gx, gy, P["clr_m3"] / 2))
-
-    # ---------------- CASTER FORK ----------------
-    # Printed ON ITS SIDE (one leg's outer face on the bed): layer lines then run along the legs and across the
-    # crown, so leg bending and crown bending are both carried in-plane. All clamp stacks are metal sleeves.
-    cw = P["caster_w"]; cr = P["caster_d"] / 2; cxw = px - P["caster_trail"]
-    fy = cw / 2 + 16                       # outer face of the legs (13 mm legs)
-    crown_z0, crown_z1 = cr * 2 + 3.5, 85.9
-    fork_adds = rbox(cxw - 14, px + 14, -fy, fy, crown_z0, crown_z1, 6)
-    for s in (1, -1):
-        fork_adds.append(box(cxw - 12, cxw + 12, s * (cw / 2 + 3), s * fy, cr - 13, crown_z0 + 0.01))   # 13 x 24 leg
-        fork_adds.append(cyl_y(s * (cw / 2 + 3), s * fy, cxw, cr, 12))
-    fk = m.part("caster_fork", "printed", COL["accent"], fork_adds, material="PAHT-CF (print on its side)", moving=True,
-                note="25 mm trail; 9 x 24 legs run through the full crown depth, 10 mm crown; steel sleeves in crown and legs; "
-                     "friction washer under the pivot nut damps shimmy", mates={"tail"})
-    fk["cuts"].append(box(px - 9.3, px + 9.3, -10.8, 10.8, crown_z0 - co, crown_z0 + 7.0))     # M12 head pocket (hex locked)
-    m.hole("caster_fork", "pivot_sleeve", (px, 0, crown_z0 + 7.0), (px, 0, crown_z1 + co), 18.4,
-           for_item="steel sleeve 18 x 12.2 x 5.5: head -> washer -> race (crown captured with 0.1 mm play)")
-    for s in (1, -1):
-        m.hole("caster_fork", "axle_sleeve_" + ("L" if s > 0 else "R"), (cxw, s * (cw / 2 + 3 - co), cr),
-               (cxw, s * (fy + co), cr), 12.4, for_item="steel sleeve 12 x 8.2 x 9 (leg clamp stack)")
-    m.info["caster"] = {"pivot_x": px, "wheel_x": cxw, "r": cr, "w": cw, "leg_b": 24.0, "leg_t": fy - cw / 2 - 3,
-                        "crown_t": crown_z1 - crown_z0, "crown_w": 2 * fy, "leg_root_z": crown_z0}
-    m.info["caster_sweep_r"] = max(math.hypot(P["caster_trail"] + cr, cw / 2), math.hypot(P["caster_trail"] + 14, fy))
-
-    # ---------------- WHEEL PULLEYS (printed HTD-3M + adapter disc) ----------------
-    wpr = P["pul_w_pd"] / 2 - 0.38            # tooth tip radius (pitch line sits 0.38 mm outside the tips)
-    wfl = wpr + 3.0                           # flange radius
-    by = P["belt_plane_y"]; wiy = P["wheel_inner_y"]
-    for s in (1, -1):
-        side = "L" if s > 0 else "R"
-        name = "wheel_pulley_" + side
+        # front: 56T (motor belt) + 28T (rear belt) in one print
+        name = "wheel_pulley_F" + side
         adds = [cyl_y(s * (by - 7.0), s * (by + 7.0), 0, az, wpr),
-                cyl_y(s * (by - 7.0), s * (by - 5.5), 0, az, wfl),
-                cyl_y(s * (by + 5.5), s * (by + 7.0), 0, az, wfl),
-                cyl_y(s * (by + 7.0), s * (wiy - 0.01), 0, az, wfl)]
+                cyl_y(s * (by - 7.0), s * (by - 5.5), 0, az, wfl), cyl_y(s * (by + 5.5), s * (by + 7.0), 0, az, wfl),
+                cyl_y(s * (by + 7.0), s * (wiy - 0.01), 0, az, wfl),
+                cyl_y(s * (by2 - 7.0), s * (by2 + 7.0), 0, az, rpr),
+                cyl_y(s * (by2 - 7.0), s * (by2 - 5.5), 0, az, rfl), cyl_y(s * (by2 + 5.5), s * (by2 + 7.0), 0, az, rfl),
+                cyl_y(s * (by2 + 7.0 - 0.01), s * (by - 7.0 + 0.01), 0, az, rfl)]
         m.part(name, "printed", COL["accent"], adds, material="PAHT-CF", moving=True,
-               note="%dT HTD-3M, print teeth axis vertical with 0.4 nozzle; bolts through the wheel core" % P["pul_w_t"],
-               mates={"wheel_" + side, "belt_" + side})
-        m.hole(name, "bore", (0, s * (by - 7 - co), az), (0, s * (wiy + co), az), P["axle_sleeve_d"] + 6.0,
-               for_item="clears the steel axle sleeve", audit=False)
-        for k in range(P["pul_w_t"]):
-            ang = 2 * math.pi * k / P["pul_w_t"]
-            rc = wpr - 1.14 + 0.9
-            m.get(name)["cuts"].append(cyl_y(s * (by - 5.5), s * (by + 5.5), rc * math.cos(ang), az + rc * math.sin(ang), 0.9))
-        for k in range(4):
-            ang = k * math.pi / 2 + math.pi / 4
-            hx, hz = 17.5 * math.cos(ang), az + 17.5 * math.sin(ang)
-            m.hole(name, "core_%d" % k, (hx, s * (by - 7 - co), hz), (hx, s * (wiy + co), hz), 3.15,
-                   for_item="M3 x 80 through the wheel core (3.15 close fit: centres the pulley)")
+               note="double pulley: %dT (motor belt) + %dT (rear belt); bolts through the wheel core"
+                    % (P["pul_w_t"], P["pul_r_t"]), mates={"wheel_F" + side, "belt_" + side, "belt2_" + side})
+        teeth(name, s * by, 0.0, P["pul_w_t"], wpr)
+        teeth(name, s * by2, 0.0, P["pul_r_t"], rpr)
+        # rear: 28T + hub + adapter disc
+        rname = "wheel_pulley_R" + side
+        m.part(rname, "printed", COL["accent"],
+               [cyl_y(s * (by2 - 7.0), s * (by2 + 7.0), xra, az, rpr),
+                cyl_y(s * (by2 - 7.0), s * (by2 - 5.5), xra, az, rfl), cyl_y(s * (by2 + 5.5), s * (by2 + 7.0), xra, az, rfl),
+                cyl_y(s * (by2 + 7.0 - 0.01), s * (wiy - 3.5), xra, az, 22.0),
+                cyl_y(s * (wiy - 3.5 - 0.01), s * (wiy - 0.01), xra, az, wfl)],
+               material="PAHT-CF", moving=True, note="%dT rear pulley + hub; bolts through the wheel core" % P["pul_r_t"],
+               mates={"wheel_R" + side, "belt2_" + side})
+        teeth(rname, s * by2, xra, P["pul_r_t"], rpr)
+        for nm, ax, ystart in (("F", 0.0, by2 - 7), ("R", xra, by2 - 7)):
+            pn = "wheel_pulley_" + nm + side
+            m.hole(pn, "bore", (ax, s * (ystart - co), az), (ax, s * (wiy + co), az), sd + 6.0,
+                   for_item="clears the axle sleeve", audit=False)
+            for k in range(4):
+                ang = k * math.pi / 2 + math.pi / 4
+                hx, hz = ax + 17.5 * math.cos(ang), az + 17.5 * math.sin(ang)
+                ya_ = (by - 7) if nm == "F" else (wiy - 3.5)
+                m.hole(pn, "core_%d" % k, (hx, s * (ya_ - co), hz), (hx, s * (wiy + co), hz), 3.15,
+                       for_item="M3 x 80 through the wheel core (3.15 close fit: centres the pulley)")
     m.info["wheel_pulley_flange_r"] = wfl
 
-    # drill jig (tool, printed once): spigot fits the wheel's 22 mm bearing seat (bearing removed), 4 guides on D35
-    jz = -150.0
+    jz = -150.0                                # drill jig (tool, printed once, hidden)
     jig = m.part("pulley_drill_jig", "tools", COL["light"],
                  [cyl_z(jz, jz + 5, 0, 0, 25), cyl_z(jz + 4.99, jz + 11, 0, 0, 10.9)], material="PETG",
                  note="drill the wheel core 3.0 through these guides, then open to 3.2 -> pulley runout < 0.2 mm", hidden=True)
@@ -658,48 +587,21 @@ def build_model(P=None):
         ang = k * math.pi / 2 + math.pi / 4
         jig["cuts"].append(cyl_z(jz - co, jz + 5 + co, 17.5 * math.cos(ang), 17.5 * math.sin(ang), 1.5))
 
-    # ---------------- POD COVERS (belt guards) ----------------
-    # Caps over the motor's upper half and the motor pulley. Open below z = 98 so nothing reaches into the
-    # wheel pulley / lower belt (moving) zone; the lower motor half sits in the wheel's shadow.
-    for s in (1, -1):
-        side = "L" if s > 0 else "R"
-        name = "pod_" + side
-        sy = lambda a, b: (s * a, s * b) if s > 0 else (-b, -a)  # noqa: E731
-        ya, yb = sy(hw - 0.01, 119)
-        outer = soft_slab(mc_x - 37, mc_x + 47, ya, yb, 98, top + 2, 10, 7)
-        ia, ib = sy(hw - 6, 116.5)
-        inner_ = soft_slab(mc_x - 34.5, mc_x + 44.5, ia, ib, 60, top - 0.5, 7.5, 4.5)   # open bottom (cut overshoots)
-        adds = []
-        for xx in (mc_x - 38, mc_x + 50):
-            ta, tb = sy(hw, hw + 4)
-            adds.append(box(xx - 6, xx + 6, ta, tb, top - 12, top + 2))
-        cuts = []
-        p = m.part(name, "printed", COL["shell"], adds, cuts, pre=[(outer, inner_)], material="PETG",
-                   note="cap over motor + motor pulley; screws into the wall bosses", mates={"tub", "lid"})
-        for xx in (mc_x - 38, mc_x + 50):
-            # the screw tab is re-added after the cavity cut by keeping it outside the cavity in y
-            m.hole(name, "screw_%d" % int(xx), (xx, s * (hw - co), top - 6), (xx, s * (hw + 4 + co), top - 6), P["clr_m3"],
-                   for_item="pod M3 into wall", audit=False)
-            m.hole("tub", "pod_%s_%d" % (side, int(xx)), (xx, s * (hw + co), top - 6), (xx, s * (hw - P["ins_m3_depth"]), top - 6),
-                   P["ins_m3"], kind="insert", for_item="pod M3")
-
     # ---------------- BUMPER-DOOR ("mouth") ----------------
     bfront = x1 + 28
     bump = soft_slab(x1, bfront, -50, 50, 30, 76, 14, 12, top=True, bottom=True)
     bd = m.part("bumper_door", "printed", COL["accent"],
-                bump + [box(x1, x1 + 14, -38, 38, 30, 76)]                 # flat back where it meets the wall
+                bump + [box(x1, x1 + 14, -38, 38, 30, 76)]
                 + [box(P["bat_x0"] + P["bat_l"] + 0.5, x1 + 0.01, sy_ * 12, sy_ * 22, zf1 + 4, zf1 + 20) for sy_ in (1, -1)],
                 material="PETG (hollow crush zone; optional TPU skin)",
-                note="battery door + front bumper; two prongs hold the pack against the rear wall; the rounded "
-                     "nose touches down at ~20 deg pitch (anti-flip) and keeps the approach angle > 20 deg",
-                mates={"tub", "battery"})
+                note="battery door + front bumper; two prongs hold the pack against the rear wall", mates={"tub", "battery"})
     for s in (1, -1):
         m.hole("bumper_door", "thumb_" + ("L" if s > 0 else "R"), (x1 - co, s * 40, 49), (bfront + co, s * 40, 49),
                P["clr_m4"], for_item="M4 thumb screw")
-        bd["cuts"].append(cyl_x(x1 + 10, bfront + co, s * 40, 49, 6.0))      # thumb-screw head pocket
+        bd["cuts"].append(cyl_x(x1 + 10, bfront + co, s * 40, 49, 6.0))
     for zz in (60, 67):
-        bd["cuts"].append(box(bfront - 1.5, bfront + co, -30, 30, zz - 1, zz + 1))   # grille grooves
-    bd["cuts"].append(box(x1 + 3, bfront - 3, -32, 32, 33, 56))            # hollow crush zone (TPU)
+        bd["cuts"].append(box(bfront - 1.5, bfront + co, -30, 30, zz - 1, zz + 1))
+    bd["cuts"].append(box(x1 + 3, bfront - 3, -32, 32, 33, 56))
 
     # ---------------- HC-SR04 bracket ("eyes") ----------------
     t = math.radians(P["us_tilt_deg"]); n = (math.cos(t), 0.0, math.sin(t)); tv = (-math.sin(t), 0.0, math.cos(t))
@@ -707,14 +609,13 @@ def build_model(P=None):
     br_adds = [obox(plate_c, 4.0, 60.0, 30.0, n, Y)]
     for s in (1, -1):
         br_adds.append(box(x1, bfront, s * 29, s * 47, uz - 13, uz + 13))
-    br_adds.append(box(plate_c[0] + 2.0, bfront, -47, 47, uz + 13, uz + 17))   # short brow, in front of the PCB only
+    br_adds.append(box(plate_c[0] + 2.0, bfront, -47, 47, uz + 13, uz + 17))
     m.part("us_bracket", "printed", COL["light"], br_adds, material="PETG", mates={"tub"},
            note="tilts the sensor %.0f deg up so the ground return lands beyond slow_distance" % P["us_tilt_deg"])
     for s in (1, -1):
         side = "L" if s > 0 else "R"
         m.hole("us_bracket", "screw_" + side, (x1 - co, s * 40, uz), (bfront + co, s * 40, uz), P["clr_m3"],
                for_item="bracket M3")
-        # transducer windows (18 mm round, centres 26 mm apart [M]) and zip-tie slots for the PCB
         a_ = vadd(vadd(plate_c, vmul(Y, s * 13)), vmul(n, -2 - co)); b_ = vadd(a_, vmul(n, 4 + 2 * co))
         m.hole("us_bracket", "eye_" + side, a_, b_, 18.0, for_item="HC-SR04 transducer")
         m.slot_hole("us_bracket", "ztie_" + side, vadd(plate_c, vmul(vadd(vmul(Y, s * 26.5), vmul(tv, -7)), 1)),
@@ -723,81 +624,66 @@ def build_model(P=None):
     m.info["us"] = {"x": plate_c[0] + 7, "z": uz, "tilt": P["us_tilt_deg"], "half": P["us_beam_half_deg"],
                     "n": n, "c": vadd(plate_c, vmul(n, 6.5))}
 
-    # ---------------- LIDS ----------------
-    lid_adds = soft_slab(x0, x1, -hw, hw, top, top + 5, 10, 4) + soft_slab(x0 + 30, P["mast_x"] - 24, -22, 22, top + 4.99, top + 7, 8, 2)
-    lid = m.part("lid", "printed", COL["shell"], lid_adds, material="PETG", mates={"tub", "pod_L", "pod_R"},
-                 note="remove the mast first (2 front thumb screws), then lift")
-    lid["cuts"].append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, top - co, top + 7 + co))
+    # ---------------- SHELL: lid + both motor pods in one print ----------------
+    shell_pre = []
     for s in (1, -1):
-        m.hole("lid", "mast_flange_" + ("L" if s > 0 else "R"), (P["mast_x"], s * 17.65, top - co),
+        sy = lambda a, b: (s * a, s * b) if s > 0 else (-b, -a)  # noqa: E731
+        ya, yb = sy(hw - 0.01, 119)
+        ia, ib = sy(hw - 6, 116.5)
+        shell_pre.append((soft_slab(mc_x - 37, mc_x + 47, ya, yb, 98, top + 5, 10, 7),
+                          soft_slab(mc_x - 34.5, mc_x + 44.5, ia, ib, 60, top - 0.5, 7.5, 4.5)))
+    shell_adds = soft_slab(x0, x1, -hw, hw, top, top + 5, 10, 2.4) \
+        + soft_slab(x0 + 30, P["mast_x"] - 24, -22, 22, top + 4.99, top + 7, 8, 1.0)
+    shell = m.part("shell", "printed", COL["shell"], shell_adds, pre=shell_pre, material="PETG",
+                   mates={"tub"}, note="one-piece top: lid + both motor pods; 4 screws; remove the mast first, then lift")
+    shell["cuts"].append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, top - co, top + 7 + co))
+    for s in (1, -1):
+        m.hole("shell", "mast_flange_" + ("L" if s > 0 else "R"), (P["mast_x"], s * 17.65, top - co),
                (P["mast_x"], s * 17.65, top + 5 + co), P["clr_m4"], for_item="mast flange M4 thumb screw")
     for i in range(6):
         xx = -60 + i * 12
-        lid["cuts"] += slot((xx, -16, 0), (xx, 16, 0), 4.0, (0, 0, 1), 7 + 2 * co, top + 3.5)
+        shell["cuts"] += slot((xx, -16, 0), (xx, 16, 0), 4.0, (0, 0, 1), 7 + 2 * co, top + 3.5)
+    for i in range(4):
+        xx = -215 + i * 12
+        shell["cuts"] += slot((xx, -22, 0), (xx, 22, 0), 4.0, (0, 0, 1), 7 + 2 * co, top + 3.5)
     for s in (1, -1):
         side = "L" if s > 0 else "R"
-        m.hole("lid", "f_" + side, (xf_in - 6, s * 52, top - co), (xf_in - 6, s * 52, top + 5 + co), P["clr_m3"], for_item="tub lid M3")
-        m.hole("lid", "r_" + side, (xr_in + 7, s * 54, top - co), (xr_in + 7, s * 54, top + 5 + co), P["clr_m3"], for_item="tub lid M3")
-    hh = P["hood_h"]
-    hood_out = soft_slab(tx0, x0 - 0.5, -th, th, top, top + hh, 14, 10)
-    hood_in = soft_slab(tx0 + 2.5, x0 - 3.0, -th + 2.5, th - 2.5, top - 30, top + hh - 2.5, 11.5, 7.5)
-    tabs = []
-    for xa, xb in ((tx0 + 3, tx0 + 13), (x0 - 13, x0 - 3)):
-        for s in (1, -1):
-            tabs.append(box(xa, xb, s * 52, s * 62, top, top + 5))
-    tlid = m.part("tail_lid", "printed", COL["shell"], tabs, pre=[(hood_out, hood_in)], material="PETG",
-                  mates={"tail"}, note="raised hood over the ESP32, ESCs and fuse; access holes above the 4 screws")
-    for s in (1, -1):
-        side = "L" if s > 0 else "R"
-        for nm, xx in (("r_", tx0 + 8), ("f_", x0 - 8)):
-            m.hole("tail_lid", nm + side, (xx, s * 58, top - co), (xx, s * 58, top + 5 + co), P["clr_m3"], for_item="tail lid M3")
-            tlid["cuts"].append(cyl_z(top + 5, top + hh + co, xx, s * 58, 4.0))     # screwdriver access
-    for i in range(5):
-        tlid["cuts"] += slot((tx0 + 40 + i * 14, -30, 0), (tx0 + 40 + i * 14, 30, 0), 4.0, (0, 0, 1), 6, top + hh - 1.25)
+        m.hole("shell", "f_" + side, (xf_in - 6, s * 52, top - co), (xf_in - 6, s * 52, top + 5 + co), P["clr_m3"], for_item="shell M3")
+        m.hole("shell", "r_" + side, (xr_in + 7, s * 54, top - co), (xr_in + 7, s * 54, top + 5 + co), P["clr_m3"], for_item="shell M3")
 
-    # ---------------- MAST + PAN HEAD ----------------
+    # ---------------- MAST + PAN HEAD + UWB plate (one print) ----------------
     mx = P["mast_x"]; sq = P["mast_sq"]; mw = P["mast_wall"]; seat = P["servo_seat_z"]
-    sl, sw = P["servo_l"], P["servo_w"]; sbx = mx - P["servo_shaft_off"]       # servo body centre x
+    sl, sw = P["servo_l"], P["servo_w"]; sbx = mx - P["servo_shaft_off"]
     head_z0 = seat - P["servo_ear_z"] - 4
     head = (sbx - sl / 2 - 10, sbx + sl / 2 + 10, -sw / 2 - 4, sw / 2 + 4, head_z0, seat)
+    hx1 = sbx + sl / 2 + 10
+    uwz0, uwz1 = top + 11, seat - 3
+    upx = max(mx + sq / 2, hx1) + 0.5
     mast_adds = ([box(mx - sq / 2, mx + sq / 2, -sq / 2, sq / 2, 92 + 0.3, head_z0 + 0.01)]
-                 + rbox(mx - 14, mx + 14, -24, 24, top + 5, top + 10, 5)          # flange, sits on the lid
-                 + soft_slab(*head, R=6, r=2.5, top=True, bottom=True))
+                 + rbox(mx - 14, mx + 14, -24, 24, top + 5, top + 10, 5)
+                 + soft_slab(*head, R=6, r=2.5, top=True, bottom=True)
+                 + [box(hx1 - 0.5, upx + 4, -28, 28, head_z0 + 4, uwz1),                     # UWB plate (front)
+                    box(mx + sq / 2 - 0.01, upx + 0.01, -11, 11, uwz0, head_z0 + 0.01)])      # UWB plate web to the mast
     mast = m.part("mast", "printed", COL["mast"], mast_adds, material="PAHT-CF (print lying on its side)",
-                  mates={"tub", "lid", "uwb_plate"}, note="removable: 2 M4 thumb screws through the flange")
+                  mates={"tub", "shell"}, note="removable: 2 M4 thumb screws through the flange; UWB plate printed on")
     mc = mast["cuts"]
-    mc.append(box(mx - sq / 2 + mw, mx + sq / 2 - mw, -sq / 2 + mw, sq / 2 - mw, 92 - co, head_z0 + 6))  # bore
-    mc.append(box(mx - sq / 2 - co, mx, -6, 6, 92 - co, 104))                    # bottom cable exit (rear)
-    mc.append(box(sbx - sl / 2 - 0.4, sbx + sl / 2 + 0.4, -sw / 2 - 0.4, sw / 2 + 0.4, head_z0 + 4, seat + co))   # servo pocket
-    mc.append(box(sbx - sl / 2 - 6, sbx - sl / 2 + 6, 4, 12, head_z0 - co, seat + co))    # servo cable notch (beside the ear screw), through the floor
-    mc.append(box(mx - sq / 2 - co, mx - sq / 2 + mw + co, -5, 5, 92 - co, head_z0 + 0.5))  # open rear channel: cables lay in
+    mc.append(box(mx - sq / 2 + mw, mx + sq / 2 - mw, -sq / 2 + mw, sq / 2 - mw, 92 - co, head_z0 + 6))
+    mc.append(box(mx - sq / 2 - co, mx, -6, 6, 92 - co, 104))
+    mc.append(box(sbx - sl / 2 - 0.4, sbx + sl / 2 + 0.4, -sw / 2 - 0.4, sw / 2 + 0.4, head_z0 + 4, seat + co))
+    mc.append(box(sbx - sl / 2 - 6, sbx - sl / 2 + 6, 4, 12, head_z0 - co, seat + co))
+    mc.append(box(mx - sq / 2 - co, mx - sq / 2 + mw + co, -5, 5, 92 - co, head_z0 + 0.5))
     for s in (1, -1):
         m.slot_hole("mast", "servo_ear_" + ("A" if s > 0 else "B"), (sbx + s * 24.0, 0, seat), (sbx + s * 27.0, 0, seat),
                     2.4, (0, 0, 1), 12, centre_depth=-6 + co / 2, for_item="servo ear screw (self-tapping)")
         m.hole("mast", "flange_" + ("L" if s > 0 else "R"), (mx, s * 17.65, top + 5 - co), (mx, s * 17.65, top + 10 + co),
                P["clr_m4"], for_item="mast flange M4 thumb screw")
+    for sy_ in (1, -1):
+        for zz in (head_z0 + 10, uwz1 - 5):
+            m.slot_hole("mast", "uwb_board_%d_%d" % (sy_, int(zz)), (upx + 2, sy_ * 14, zz), (upx + 2, sy_ * 23, zz),
+                        P["clr_m3"], (1, 0, 0), 4 + 2 * co, for_item="UWB board M3 [M]", audit=False)
     m.info["mast"] = {"x": mx, "sq": sq, "wall": mw, "z0": top + 5, "z_head": head_z0}
 
-    # UWB anchor plate in front of the mast + pan head [M board size]: through-bolted across the mast
-    uwz0, uwz1 = top + 11, seat - 3
-    hx1 = sbx + sl / 2 + 10                    # front face of the pan head
-    upx = max(mx + sq / 2, hx1) + 0.5
-    uwb = m.part("uwb_plate", "printed", COL["light"], [box(upx, upx + 4, -28, 28, uwz0, uwz1)],
-                 material="PETG", mates={"mast"}, note="slots fit the UWB anchor board (measure on arrival)")
-    for sy_ in (1, -1):
-        for hz in (head_z0 + 6, head_z0 + 14):
-            m.hole("uwb_plate", "head_%d_%d" % (sy_, int(hz)), (upx - co, sy_ * 5, hz), (upx + 4 + co, sy_ * 5, hz),
-                   P["clr_m3"], for_item="UWB plate -> pan head M3")
-            m.hole("mast", "uwb_ins_%d_%d" % (sy_, int(hz)), (hx1 + co, sy_ * 5, hz), (hx1 - P["ins_m3_depth"], sy_ * 5, hz),
-                   P["ins_m3"], kind="insert", for_item="UWB plate M3")
-    for sy_ in (1, -1):
-        for zz in (uwz0 + 5, uwz1 - 5):
-            m.slot_hole("uwb_plate", "board_%d_%d" % (sy_, int(zz)), (upx + 2, sy_ * 14, zz), (upx + 2, sy_ * 23, zz),
-                        P["clr_m3"], (1, 0, 0), 4 + 2 * co, for_item="UWB board M3 [M]", audit=False)
-
-    # pan horn + GoPro buckle (3 prongs, M5 thumb screw)
-    horn_z0 = seat + 13 + 5          # servo body top + spline
-    disc = (mx, 0, horn_z0)
+    horn_z0 = seat + 13 + 5
     piv_z = horn_z0 + 4 + 9
     buckle_adds = [cyl_z(horn_z0, horn_z0 + 4, mx, 0, 15)]
     prong_t, gap = 3.0, 3.3
@@ -815,7 +701,6 @@ def build_model(P=None):
         m.slot_hole("pan_buckle", "horn_%d" % k, (mx + 6 * math.cos(ang), 6 * math.sin(ang), horn_z0 + 2),
                     (mx + 13 * math.cos(ang), 13 * math.sin(ang), horn_z0 + 2), 2.2, (0, 0, 1), 4 + 2 * co,
                     for_item="horn arm screws", audit=False)
-    # 9 g servo adapter (drops into the standard pocket, puts the SG90 shaft on the same pan axis)
     sgl, sgw = P["sg90_l"], P["sg90_w"]; sgx = mx - P["sg90_shaft_off"]
     ad = m.part("servo9g_adapter", "printed", COL["light"],
                 [box(sbx - sl / 2, sbx + sl / 2, -sw / 2, sw / 2, head_z0 + 4.2, seat),
@@ -833,33 +718,28 @@ def build_model(P=None):
     H = "hardware"
     for s in (1, -1):
         side = "L" if s > 0 else "R"
-        ya, yb = (wiy, wiy + P["wheel_w"]) if s > 0 else (-wiy - P["wheel_w"], -wiy)
-        m.part("wheel_" + side, H, COL["wheel"], [cyl_y(ya, yb, 0, az, wr)], mass=0.16, moving=True,
-               mates={"wheel_pulley_" + side, "axle_" + side}, note="90 x 52 longboard wheel [M mass]")
-        # Axle stack (all metal, bolt from OUTSIDE so each side installs on its own):
-        #   head + washer | 608 | wheel spacer | 608 | speed washer | outer sleeve | collar 8.4 x 30 x 2 | inner sleeve
-        #   through the boss (0.3 longer than the boss) | captive nyloc in the boss pocket.
-        # The boss is held between the collar and the nut with 0.2-0.3 mm play: located, but never clamped (no creep).
-        ye = wiy + P["wheel_w"]
-        m.part("axle_" + side, H, COL["hw_metal"], [cyl_y(s * 31.5, s * (ye + 1.6), 0, az, 4),
-                                                     cyl_y(s * (ye + 0.01), s * (ye + 1.6), 0, az, 8.0),
-                                                     cyl_y(s * (ye + 1.59), s * (ye + 7.0), 0, az, 7.5)],
-               mass=0.045, mates={"tub", "wheel_" + side, "spacer_" + side, "axle_nut_" + side},
-               note="M8 x 140 hex bolt 12.9 from outside + washer; turns into the captive nyloc")
-        m.part("axle_nut_" + side, H, COL["hw_metal"], [box(-7.4, 7.4, s * 31.6, s * 39.6, az - 6.4, az + 6.4)],
-               mass=0.005, mates={"tub", "axle_" + side, "spacer_" + side}, note="M8 nyloc, hex held by the pocket")
-        m.part("spacer_" + side, H, COL["hw_metal"],
-               [cyl_y(s * 39.7, s * 70.0, 0, az, P["axle_sleeve_d"] / 2),          # inner sleeve (boss)
-                cyl_y(s * 70.0, s * 72.0, 0, az, 15.0),                          # collar
-                cyl_y(s * 72.0, s * (wiy - 0.5), 0, az, P["axle_sleeve_d"] / 2),   # outer sleeve
-                cyl_y(s * (wiy - 0.51), s * (wiy + 1.0), 0, az, 6.0)],           # speed washer on the inner race
-               mass=0.06, mates={"tub", "wheel_" + side, "axle_" + side, "axle_nut_" + side},
-               note="inner sleeve 18 x 8.2 x 30.3 + collar 8.4 x 30 x 2 + outer sleeve 18 x 8.2 (cut to measure) + speed washer")
+        for nm, ax in AX:
+            k = nm + side
+            ya, yb = (wiy, wiy + P["wheel_w"]) if s > 0 else (-wiy - P["wheel_w"], -wiy)
+            m.part("wheel_" + k, H, COL["wheel"], [cyl_y(ya, yb, ax, az, wr)], mass=0.16, moving=True,
+                   mates={"wheel_pulley_" + k, "axle_" + k}, note="90 x 52 longboard wheel [M mass]")
+            ye = wiy + P["wheel_w"]
+            m.part("axle_" + k, H, COL["hw_metal"], [cyl_y(s * 31.5, s * (ye + 1.6), ax, az, 4),
+                                                       cyl_y(s * (ye + 0.01), s * (ye + 1.6), ax, az, 8.0),
+                                                       cyl_y(s * (ye + 1.59), s * (ye + 7.0), ax, az, 7.5)],
+                   mass=0.045, mates={"tub", "wheel_" + k, "spacer_" + k, "axle_nut_" + k},
+                   note="M8 x 140 hex bolt 12.9 from outside + washer; turns into the captive nyloc")
+            m.part("axle_nut_" + k, H, COL["hw_metal"], [box(ax - 7.4, ax + 7.4, s * 31.6, s * 39.6, az - 6.4, az + 6.4)],
+                   mass=0.005, mates={"tub", "axle_" + k, "spacer_" + k}, note="M8 nyloc, hex held by the pocket")
+            m.part("spacer_" + k, H, COL["hw_metal"],
+                   [cyl_y(s * 39.7, s * 70.0, ax, az, sd / 2), cyl_y(s * 70.0, s * 72.0, ax, az, 15.0),
+                    cyl_y(s * 72.0, s * (wiy - 0.5), ax, az, sd / 2), cyl_y(s * (wiy - 0.51), s * (wiy + 1.0), ax, az, 6.0)],
+                   mass=0.07, mates={"tub", "wheel_" + k, "axle_" + k, "axle_nut_" + k},
+                   note="nested stock tubes 12x2 in 16x2: inner 30.3 + collar 8.4 x 30 x 2 + outer (cut to measure) + speed washer")
         my0, my1 = (hw, hw + P["motor_env_l"]) if s > 0 else (-hw - P["motor_env_l"], -hw)
-        m.part("motor_" + side, H, COL["hw_metal"], [cyl_y(my0, my1, mc_x, mc_z, P["motor_env_d"] / 2)], mass=0.15,
-               moving=True, mates={"motor_plate_" + side, "tub", "pod_" + side, "motor_pulley_" + side},
-               note="MAD 5010 EEE V2.0 370KV (O56 x 32.7) inside a O62 x 33 envelope [mass M]")
-        # motor pulley: printed 24T HTD-3M, bolted to the bell's prop holes (no long shaft needed)
+        m.part("motor_" + side, H, COL["hw_metal"], [cyl_y(my0, my1, mc_x, mc_z, P["motor_env_d"] / 2)], mass=0.11,
+               moving=True, mates={"motor_plate_" + side, "tub", "shell", "motor_pulley_" + side},
+               note="5010-class outrunner (buy one, measure, set PARAMS) inside a O62 x 33 envelope")
         mpn = "motor_pulley_" + side
         mpr = P["pul_m_pd"] / 2 - 0.38
         y0p = hw + P["motor_env_l"]
@@ -868,7 +748,7 @@ def build_model(P=None):
                 cyl_y(s * (y0p + 1.49), s * (y0p + 12.51), mc_x, mc_z, mpr),
                 cyl_y(s * (y0p + 12.5), s * (y0p + 14.0), mc_x, mc_z, mpr + 2.5)],
                material="PAHT-CF", moving=True, mates={"motor_" + side, "belt_" + side},
-               note="%dT HTD-3M, 4 x M3 low-head screws into the bell's prop holes on D12, centred on the shaft" % P["pul_m_t"])
+               note="%dT HTD-3M, 4 x M3 low-head screws into the bell's prop holes, centred on the shaft" % P["pul_m_t"])
         m.hole(mpn, "bore", (mc_x, s * (y0p - co), mc_z), (mc_x, s * (y0p + 8), mc_z), P["motor_shaft_d"] + 0.1,
                for_item="motor shaft stub (centres the pulley; drill to fit)", audit=False)
         for k in range(4):
@@ -883,11 +763,21 @@ def build_model(P=None):
             rc = mpr - 1.14 + 0.9
             m.get(mpn)["cuts"].append(cyl_y(s * (y0p + 1.5), s * (y0p + 12.5), mc_x + rc * math.cos(ang),
                                             mc_z + rc * math.sin(ang), 0.9))
-        # belt: true loop = two tangent strands + wrap arcs on each pulley (ring minus the unwrapped side)
-        m.part("belt_" + side, H, COL["belt"], belt_loop((0.0, az), wpr, (mc_x, mc_z), mpr, P["belt_t"], s * by,
-                                                        P["belt_w"]),
-               mass=0.012, moving=True, mates={"wheel_pulley_" + side, "motor_pulley_" + side},
+        m.part("belt_" + side, H, COL["belt"], belt_loop((0.0, az), wpr, (mc_x, mc_z), mpr, P["belt_t"], s * by, P["belt_w"]),
+               mass=0.012, moving=True, mates={"wheel_pulley_F" + side, "motor_pulley_" + side},
                note="HTD-3M %d mm (%dT) x 9 mm closed belt" % (P["belt_len"], P["belt_len"] / 3))
+        m.part("belt2_" + side, H, COL["belt"], belt_loop((0.0, az), rpr + 0.001, (xra, az), rpr, P["belt_t"], s * by2,
+                                                          P["belt_w"]),
+               mass=0.02, moving=True, mates={"wheel_pulley_F" + side, "wheel_pulley_R" + side, "idler_" + side},
+               note="HTD-3M %d mm (%dT) x 9 mm closed belt, front -> rear wheel 1:1" % (P["belt2_len"], P["belt2_len"] / 3))
+        # idler: 608 on an M8 bolt in the wall slot, rolling on the back of the upper run
+        m.part("idler_" + side, H, COL["hw_metal"],
+               [cyl_y(s * (by2 - 3.5), s * (by2 + 3.5), P["idler_x"], izc, 11.0),
+                cyl_y(s * (inner - 6), s * (by2 + 8), P["idler_x"], izc, 4.0),
+                cyl_y(s * hw, s * (by2 - 3.5), P["idler_x"], izc, 6.0)],
+               mass=0.03, moving=True, mates={"tub", "belt2_" + side},
+               note="608-2RS on an M8 x 50 bolt + 12 mm spacer; slide down in the slot to tension, then tighten")
+        m.info.setdefault("idler", {})[side] = (P["idler_x"], izc)
     m.part("battery", H, COL["battery"], [box(P["bat_x0"], P["bat_x0"] + P["bat_l"], -P["bat_w"] / 2, P["bat_w"] / 2, zf1, zf1 + P["bat_h"])],
            mass=0.40, mates={"tub", "bumper_door"}, note="3S 5000 mAh hard case <= 145 x 50 x 30 [M]")
     m.part("pi5", H, COL["pcb_green"], [box(pi_x0, pi_x1, -28, 28, dz1 + 6, dz1 + 7.6),
@@ -897,89 +787,44 @@ def build_model(P=None):
         m.part("pi_standoff_%d" % i, H, COL["hw_metal"], [cyl_z(dz1, dz1 + 6, hx, hy, 2.5)], mass=0.002,
                mates={"deck", "pi5"})
     m.part("usb_keepout", "keepout", COL["keepout"], [box(pi_x0 - 25, pi_x0, -28, 28, dz1 + 2, dz1 + 24)],
-           note="right-angle USB-A plugs (GoPro, ESP32) need 25 mm", mates={"pi5"})
+           note="right-angle USB-A plugs (GoPro, ESP32, UWB) need 25 mm", mates={"pi5"})
     for s in (1, -1):
         side = "L" if s > 0 else "R"
         y0_, y1_ = (26.5, 51.9) if s > 0 else (-51.9, -26.5)
         m.part("reg_" + side, H, COL["pcb_blue"], [box(8.3, 33.7, y0_, y1_, dz1 + 0.01, dz1 + 9.5)], mass=0.007,
                mates={"deck"}, note=("Pololu D36V50F5 5 V 5.5 A (Pi)" if s > 0 else "Pololu D36V50F6 6 V (servo)") + " 25.4 sq [V]")
-    # tail electronics (all [M] envelopes, on the 10 mm grid)
-    tz = tdz + 3
-    # ESP32: printed cradle in front of the caster pivot; PCB slides into grooves 33 mm above the cradle plate so the
-    # jumper plugs on its downward pins clear the plate; USB end faces +y (cable to the Pi), antenna end faces -y.
-    ecx, el, ew = -180.0, P["esp_l"], P["esp_w"]
-    cz0 = tz + 7                       # cradle plate bottom (on four 7 mm bosses)
-    pcb_z = cz0 + 3 + 24               # PCB underside
-    cr_adds = [box(ecx - 19, ecx + 19, -32, 32, cz0, cz0 + 3)]
-    for bx in (ecx - 16, ecx + 16):
-        for by_ in (-20, 20):
-            cr_adds.append(cyl_z(tz - 0.01, cz0 + 0.01, bx, by_, 4.5))
-    for sx in (-1, 1):                 # side rails with a PCB groove
-        rx0 = ecx + sx * (ew / 2 + 0.3)
-        cr_adds.append(box(min(rx0, rx0 + sx * 4), max(rx0, rx0 + sx * 4), -30, 30, cz0 + 2.99, pcb_z + 5))
-    cradle = m.part("esp32_cradle", "printed", COL["light"], cr_adds, material="PETG", mates={"tail", "esp32"},
-                    note="slide-in cradle for the ESP32 DevKit; plate has a 10 mm M3 grid for the SunFounder board instead")
-    for sx in (-1, 1):
-        g0 = ecx + sx * (ew / 2 + 0.3)
-        cradle["cuts"].append(box(min(g0, g0 + sx * 1.2), max(g0, g0 + sx * 1.2), -30 - co, 30 + co, pcb_z - 0.2, pcb_z + 1.9))
-    for bx in (ecx - 16, ecx + 16):
-        for by_ in (-20, 20):
-            m.hole("esp32_cradle", "boss_%d_%d" % (bx, by_), (bx, by_, tz - co), (bx, by_, tz + P["ins_m3_depth"]),
-                   P["ins_m3"], kind="insert", for_item="cradle M3 from under the tail deck")
-            m.hole("tail", "cradle_%d_%d" % (bx, by_), (bx, by_, tdz - co), (bx, by_, tdz + 3 + co), P["clr_m3"],
-                   for_item="cradle M3 from under the tail deck")
-    for gx_ in (ecx - 10, ecx, ecx + 10):
-        for gy_ in (-10, 0, 10):
-            cradle["cuts"].append(cyl_z(cz0 - co, cz0 + 3 + co, gx_, gy_, P["clr_m3"] / 2))
+        ey0, ey1 = (29, 56) if s > 0 else (-56, -29)
+        m.part("esc_" + side, H, COL["hw_dark"], [box(-179, -131, ey0, ey1, dz1 + 0.01, dz1 + 14)],
+               mass=0.03, mates={"deck"}, note="AM32 ESC envelope 48 x 28 x 14 [M], zip-tied to the deck")
     m.part("esp32", H, COL["pcb_blue"],
-           [box(ecx - ew / 2, ecx + ew / 2, -el / 2, el / 2, pcb_z, pcb_z + 1.6),                 # PCB
-            box(ecx - 9, ecx + 9, -el / 2 + 1, -el / 2 + 26.5, pcb_z + 1.6, pcb_z + 4.8),       # WROOM module (antenna at -y)
-            box(ecx - 4, ecx + 4, el / 2 - 5, el / 2 + 1, pcb_z + 1.6, pcb_z + 4.6)]           # micro-USB
+           [box(ecx - ew / 2, ecx + ew / 2, -el / 2, el / 2, pcb_z, pcb_z + 1.6),
+            box(ecx - 9, ecx + 9, -el / 2 + 1, -el / 2 + 26.5, pcb_z + 1.6, pcb_z + 4.8),
+            box(ecx - 4, ecx + 4, el / 2 - 5, el / 2 + 1, pcb_z + 1.6, pcb_z + 4.6)]
            + [box(ecx + sx * (ew / 2 - 2.5) - 1.25, ecx + sx * (ew / 2 - 2.5) + 1.25, -24, 24, pcb_z - 8.5, pcb_z)
-              for sx in (-1, 1)],                                                                  # pin headers (down)
-           mass=0.012, mates={"esp32_cradle", "esp32_plugs"}, note="ESP32 DevKit (WROOM-32, CP2102) [M size]")
+              for sx in (-1, 1)],
+           mass=0.012, mates={"deck", "esp32_plugs"}, note="ESP32 DevKit (WROOM-32, CP2102) [M size]")
     m.part("esp32_plugs", "keepout", COL["keepout"],
-           [box(ecx + sx * (ew / 2 - 2.5) - 1.8, ecx + sx * (ew / 2 - 2.5) + 1.8, -24, 24, pcb_z - 8.5 - 14 - 4, pcb_z - 2.5)
-            for sx in (-1, 1)], note="female jumper plugs on the downward pins + wire bend", mates={"esp32", "esp32_cradle"})
+           [box(ecx + sx * (ew / 2 - 2.5) - 1.8, ecx + sx * (ew / 2 - 2.5) + 1.8, -24, 24, pcb_z - 8.5 - 18, pcb_z - 2.5)
+            for sx in (-1, 1)], note="female jumper plugs on the downward pins + wire bend", mates={"esp32", "deck"})
     m.part("esp32_usb", "keepout", COL["keepout"], [box(ecx - 6, ecx + 6, el / 2 + 1, el / 2 + 22, pcb_z - 3, pcb_z + 8)],
            note="right-angle micro-USB plug to the Pi", mates={"esp32"})
     esp_pin = (ecx + ew / 2 - 2.5, 0.0, pcb_z - 16)
     m.info["esp32"] = {"pcb_z": pcb_z, "x": ecx}
-    m.part("fuse_zone", "keepout", (255, 160, 0), [box(px - 9, ecx + 22, -61, -35, tz + 0.01, tz + 16)],
-           note="20 A blade fuse holder + Wago/XT30 distribution [M]", mates={"tail"})
-    m.part("xt60_plug", H, COL["battery"], [box(tx0 - 14, tx0 + 4, -38, -22, 121, 129)], mass=0.01, mates={"tail"},
-           note="XT60 arming plug: pull it = robot dead (main switch)")
-    m.part("caster_wheel", H, COL["wheel"], [cyl_y(-cw / 2, cw / 2, cxw, cr, cr)], mass=0.10, moving=True,
-           mates={"caster_fork", "caster_axle"}, note="70 mm wheel with 608 bearings [M]")
-    m.part("caster_axle", H, COL["hw_metal"], [cyl_y(-fy - 9, fy + 9, cxw, cr, 4)]
-           + [cyl_y(s_ * (cw / 2 + 0.01), s_ * fy, cxw, cr, 6.0) for s_ in (1, -1)], mass=0.035,
-           mates={"caster_fork", "caster_wheel"}, note="M8 x 80 12.9 + steel sleeves 12 x 8.2 through both legs + nyloc")
-    m.part("caster_pivot_bolt", H, COL["hw_metal"],
-           [box(px - 9.0, px + 9.0, -10.4, 10.4, crown_z0 - 0.5, crown_z0 + 7.0),          # M12 head, hex-locked in the crown
-            cyl_z(crown_z0 + 6.99, stz + 13, px, 0, 6),                                  # shank
-            cyl_z(crown_z0 + 7.0, 86.0, px, 0, 9.0),                                      # sleeve 18 x 12.2 x 5.5... (to 86)
-            cyl_z(86.0, 88.0, px, 0, 12.0),                                               # washer 12.5 x 24 x 2 (captures crown)
-            cyl_z(88.0, 89.5, px, 0, 8.0),                                                # speed washer 12.2 x 16 x 1.5
-            cyl_z(89.5 + sbw + 0.01, stz - sbw - 0.01, px, 0, 8.0)],                      # race spacer 16 x 12.2
-           mass=0.11, mates={"tail", "caster_fork", "caster_pivot_nut"},
-           note="M12 x 90 12.9: head locked in the crown, sleeve, washer, 6001, spacer, 6001 - all metal")
-    m.part("caster_pivot_nut", H, COL["hw_metal"], [cyl_z(stz, stz + 2, px, 0, 10.0), cyl_z(stz + 2, stz + 14, px, 0, 9.5)],
-           mass=0.02, mates={"tail", "caster_pivot_bolt"}, note="washer + PTFE/spring washer + M12 nyloc (shimmy damper)")
-    # HC-SR04 on the bracket (PCB behind the plate, transducers through it)
-    # HC-SR04 mounted UPSIDE DOWN: its 4-pin header (in the board plane, off one long edge) then points up, so the
-    # plug and wires rise behind the bracket instead of running into the bumper-door.
+    m.part("fuse_zone", "keepout", (255, 160, 0), [box(-180, -146, -30, 30, zf1 + 1, zf1 + 28)],
+           note="20 A blade fuse + XT30/Wago distribution, below the deck behind the battery [M]", mates={"tub"})
+    m.part("xt60_plug", H, COL["battery"], [box(x0 - 14, xr_in, -38, -22, 117, 125)], mass=0.01, mates={"tub"},
+           note="XT60 arming plug in the rear wall: pull it = robot dead (main switch)")
     uc = vadd(plate_c, vmul(n, -6.0))
     us_adds = [obox(uc, 1.6, 45.0, 20.0, n, Y)]
     for s in (1, -1):
         a_ = vadd(uc, vmul(Y, s * 13)); us_adds.append(cyl(a_, vadd(a_, vmul(n, 12.5)), 8.0))
     hdr = vadd(vadd(uc, vmul(tv, 10.0 + 4.0)), vmul(n, -1.5))
-    us_adds.append(obox(hdr, 2.5, 10.2, 8.0, n, Y))                       # header pins (in-plane, pointing up)
+    us_adds.append(obox(hdr, 2.5, 10.2, 8.0, n, Y))
     m.part("hcsr04", H, COL["pcb_blue"], us_adds, mass=0.009, mates={"us_bracket", "us_plug"},
            note="HC-SR04 upside down (header up) [M: confirm the header lies in the board plane]")
     plug = vadd(vadd(uc, vmul(tv, 10.0 + 8.0 + 9.0)), vmul(n, -1.5))
     m.part("us_plug", "keepout", COL["keepout"], [obox(plug, 7.0, 13.0, 18.0, n, Y)],
            note="female Dupont plug (14 mm) + wire bend", mates={"hcsr04"})
-    # servo + GoPro
     m.part("servo", H, COL["hw_dark"], [box(sbx - sl / 2, sbx + sl / 2, -sw / 2, sw / 2, seat - P["servo_ear_z"], seat + 13),
                                         box(sbx - P["servo_ear_span"] / 2, sbx + P["servo_ear_span"] / 2, -sw / 2, sw / 2, seat, seat + 2.5),
                                         cyl_z(seat + 13, horn_z0 + 0.01, mx, 0, 3)],
@@ -997,74 +842,65 @@ def build_model(P=None):
            [cyl_z(cam_bot - 1, cam_bot + gh + 1, mx, 0, math.hypot(gw / 2, gd / 2 + P["gopro_lens_protrude"]) + 2)],
            note="GoPro swept volume over the pan range", mates={"gopro", "pan_buckle", "servo"})
     m.part("uwb_anchor", H, COL["pcb_green"], [box(upx + 6, upx + 12, -25, 25, uwz0 + 2, uwz1 - 2)],
-           mass=0.03, mates={"uwb_plate"}, note="UWB AoA anchor envelope 50 x %.0f [M]" % (uwz1 - uwz0 - 4))
-    m.part("caster_crown_sweep", "keepout", COL["keepout"], [cyl_z(cr * 2 + 5.9, cr * 2 + 3.5 + 14.0, px, 0, 55.0)],
-           note="fork crown swept disc; its top runs on the thrust washer under the pivot boss",
-           mates={"caster_fork", "caster_pivot_bolt", "tail"})
-    m.part("caster_sweep", "keepout", COL["keepout"], [cyl_z(0.5, cr * 2 + 5.9, px, 0, m.info["caster_sweep_r"] + 1.0)],
-           note="caster swivel envelope (360 deg)", mates={"caster_fork", "caster_wheel", "caster_axle", "caster_pivot_bolt"})
+           mass=0.03, mates={"mast"}, note="UWB AoA anchor envelope 50 x %.0f [M]" % (uwz1 - uwz0 - 4))
     m.info["P"] = P
 
-    # ================= WIRING ROUTES (centre lines, checked against solids) =================
-    # intended interpenetration of simplified hardware (solid wheels with bolts through them, belt envelopes ...)
-    for sd in ("L", "R"):
-        m.nests += [("axle_" + sd, "wheel_" + sd, "bolt through the wheel bearings"),
-                    ("axle_" + sd, "axle_nut_" + sd, "nut on its bolt"),
-                    ("axle_" + sd, "spacer_" + sd, "bolt through the spacer"),
-                    ("spacer_" + sd, "wheel_" + sd, "spacer reaches the recessed inner race")]
+    # ================= nests, assembly sweeps, wiring =================
+    for side in ("L", "R"):
+        for nm, _ in AX:
+            k = nm + side
+            m.nests += [("axle_" + k, "wheel_" + k, "bolt through the wheel bearings"),
+                        ("axle_" + k, "axle_nut_" + k, "nut on its bolt"),
+                        ("axle_" + k, "spacer_" + k, "bolt through the spacer"),
+                        ("spacer_" + k, "wheel_" + k, "spacer reaches the recessed inner race")]
     m.nests += [("gopro", "pan_buckle", "camera fingers interleave the buckle prongs"),
-                ("servo", "servo9g_adapter", "alternatives: only one is fitted"),
-                ("caster_wheel", "caster_axle", "axle through the bearings"),
-                ("caster_pivot_bolt", "caster_pivot_nut", "nut on its bolt")]
-    mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_plate", "uwb_anchor", "servo9g_adapter"]
-    deck_grp = ["deck", "pi5", "reg_L", "reg_R"] + ["pi_standoff_%d" % i for i in range(4)]
-    bolts = ["plate_bolt_%s%d" % (sd, k) for sd in "LR" for k in range(3)]
+                ("servo", "servo9g_adapter", "alternatives: only one is fitted")]
+    mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_anchor", "servo9g_adapter"]
+    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp32"] + ["pi_standoff_%d" % i for i in range(4)]
+    bolts = ["plate_bolt_%s%d" % (sd_, k) for sd_ in "LR" for k in range(3)]
     m.removals = [
         (mast_grp, (0, 0, 1), 170, []),
-        (["lid"], (0, 0, 1), 40, mast_grp),
-        (["tail_lid"], (0, 0, 1), 40, []),
-        (deck_grp, (0, 0, 1), 90, mast_grp + ["lid"]),
+        (["shell"], (0, 0, 1), 60, mast_grp),
+        (deck_grp, (0, 0, 1), 90, mast_grp + ["shell"]),
         (["bumper_door"], (1, 0, 0), 70, []),
         (["battery"], (1, 0, 0), 180, ["bumper_door"]),
-        (["pod_L"], (0, 1, 0), 70, []), (["pod_R"], (0, -1, 0), 70, []),
-        (["axle_L"], (0, 1, 0), 150, ["axle_nut_L", "wheel_L", "spacer_L"]),          # bolt out (hollow parts skipped)
-        (["axle_R"], (0, -1, 0), 150, ["axle_nut_R", "wheel_R", "spacer_R"]),
-        (["wheel_L", "wheel_pulley_L"], (0, 1, 0), 90, ["axle_L", "axle_nut_L", "spacer_L", "belt_L"]),
-        (["wheel_R", "wheel_pulley_R"], (0, -1, 0), 90, ["axle_R", "axle_nut_R", "spacer_R", "belt_R"]),
-        (["caster_fork", "caster_wheel", "caster_axle", "caster_pivot_bolt"], (0, 0, -1), 110, ["caster_pivot_nut"]),
-        (["motor_L", "motor_plate_L", "motor_pulley_L"], (0, 1, 0), 120,
-         ["wheel_L", "wheel_pulley_L", "belt_L", "pod_L", "axle_L", "axle_nut_L", "spacer_L"] + bolts),
-        (["motor_R", "motor_plate_R", "motor_pulley_R"], (0, -1, 0), 120,
-         ["wheel_R", "wheel_pulley_R", "belt_R", "pod_R", "axle_R", "axle_nut_R", "spacer_R"] + bolts),
     ]
-    sx = mx - 20   # cable drop point behind the socket
-    ch = (mx - sq / 2 + mw / 2, 0.0)     # mast rear cable channel (x, y)
-    cz = head_z0 - 7                      # level where cables turn into the channel, under the pan head
-    pz = dz1 + 12                         # Pi USB plug height
-    ein = [(x0 - 5, 38, 124), (esp_pin[0], 38, 132), esp_pin]          # into the cradle from its open +y end
+    for side, sgn in (("L", 1), ("R", -1)):
+        for nm, _ in AX:
+            k = nm + side
+            m.removals += [
+                (["axle_" + k], (0, sgn, 0), 150, ["axle_nut_" + k, "wheel_" + k, "spacer_" + k]),
+                (["wheel_" + k, "wheel_pulley_" + k], (0, sgn, 0), 120,
+                 ["axle_" + k, "axle_nut_" + k, "spacer_" + k, "belt_" + side, "belt2_" + side, "idler_" + side]),
+            ]
+        m.removals.append((["motor_" + side, "motor_plate_" + side, "motor_pulley_" + side], (0, sgn, 0), 120,
+                           ["wheel_F" + side, "wheel_pulley_F" + side, "belt_" + side, "belt2_" + side, "shell",
+                            "axle_F" + side, "axle_nut_F" + side, "spacer_F" + side] + bolts))
+    sx = mx - 20
+    ch = (mx - sq / 2 + mw / 2, 0.0)
+    cz = head_z0 - 7
+    pz = dz1 + 12
+    ein = [(ecx + 22, 36, esp_pin[2]), (esp_pin[0], 36, esp_pin[2]), esp_pin]   # into the cradle from its open +y end
+    fz = (-163, 0, zf1 + 14)                                                    # fuse / distribution block
     m.routes = [
-        ("battery main 12 AWG", [(48, -20, 64), (42, -45, 73), (xr_in + 30, -45, 73), (xr_in + 19, -38, 73),
-                                 (xr_in + 19, -38, 118), (x0 - 10, -40, 118), (ecx + 10, -48, tz + 8)]),
-        ("ESC L phase wires", [(-66, inner - 12, 73), (-80, 45, 73), (xr_in + 19, 38, 73), (xr_in + 19, 38, 118),
-                               (x0 - 10, 30, 118), (tx0 + 60, 47, tz + 8)]),
-        ("ESC R phase wires", [(-66, -(inner - 12), 73), (-80, -45, 75), (xr_in + 30, -45, 75), (xr_in + 19, -34, 75),
-                               (xr_in + 19, -34, 121), (x0 - 10, -38, 121), (tx0 + 60, -47, tz + 8)]),
-        ("regulator inputs 18 AWG (fuse -> regs)", [(ecx + 10, -48, tz + 8), (x0 - 5, -38, 122), (x0 + 10, -36, 122),
-                                                     (xr_in + 30, 20, 122), (20, 24, 100), (20, 24, dz1 + 11)]),
+        ("battery main 12 AWG", [(48, -20, 64), (42, -45, 73), (-150, -45, 73), (-163, -20, zf1 + 20), fz]),
+        ("ESC L power + phase", [(-66, inner - 12, 73), (-120, 40, 73), (-121, 40, 90), (-134, 42, dz1 + 7)]),
+        ("ESC R power + phase", [(-66, -(inner - 12), 73), (-120, -40, 73), (-121, -40, 90), (-134, -42, dz1 + 7)]),
+        ("regulator inputs 18 AWG", [fz, (-163, 20, zf1 + 20), (-150, 35, 73), (-121, 35, 73), (-121, 35, 92), (-110, 30, 112), (20, 30, 112), (20, 39, dz1 + 11)]),
         ("GoPro USB-C (service loop around the pan)", [(mx - 6, 38, cam_bot + 20), (mx - 30, 38, cam_bot + 10), (mx - 30, 30, cz),
                                                       (ch[0], 0, cz), (ch[0], 0, 120), (sx, 0, 120),
                                                       (pi_x0 - 12, -10, 120), (pi_x0 - 12, -10, pz)]),
-        ("servo signal + 6 V (pan)", [(sbx - sl / 2 - 3, 8, head_z0 + 10), (sbx - sl / 2 - 3, 8, cz), (ch[0], 2, cz),
-                                      (ch[0], 2, 124), (x0 + 10, 20, 124)] + ein),
+        ("servo signal (pan)", [(sbx - sl / 2 - 3, 8, head_z0 + 10), (sbx - sl / 2 - 3, 8, cz), (ch[0], 2, cz),
+                                (ch[0], 2, 124), (-150, 36, 124)] + ein),
         ("servo 6 V from reg R", [(20, -39, dz1 + 11), (20, -24, 110), (ch[0] - 10, -3, 110), (ch[0], -3, 115)]),
         ("UWB anchor USB -> Pi", [(upx + 8, 22, uwz0 + 6), (upx + 8, 33, uwz0 + 6), (upx - 3, 33, uwz0 + 6), (mx, 26, cz),
                                   (mx - 16, 26, cz), (mx - 16, 0, cz), (ch[0], -2, cz),
                                   (ch[0], -2, 118), (sx, -3, 118), (pi_x0 - 12, 0, 118), (pi_x0 - 12, 0, pz)]),
-        ("ESP32 USB", [(ecx, el / 2 + 18, pcb_z + 2), (x0 - 5, 45, pcb_z + 2), (x0 - 5, 36, 122), (x0 + 10, 30, 122),
-                       (pi_x0 - 12, 10, 120), (pi_x0 - 12, 10, pz)]),
+        ("ESP32 USB", [(ecx, el / 2 + 18, pcb_z + 2), (ecx + 30, 40, pcb_z + 2), (pi_x0 - 12, 10, 120), (pi_x0 - 12, 10, pz)]),
+        ("ESC signals -> ESP32", [(-134, 40, dz1 + 15), (-150, 36, 120)] + ein),
         ("Pi 5 V from reg L", [(20, 39, dz1 + 11), (20, 30, 116), (pi_x0 + 40, 26, 116), (pi_x0 + 40, 26, dz1 + 12)]),
         ("HC-SR04", [(plug[0], 0, plug[2] + 8), (x1 + 6, -12, 133), (x1 + 3, -30, 131), (xf_in - 8, -30, 131),
-                     (xf_in - 20, -30, 128), (x0 + 10, 20, 124)] + ein),
+                     (xf_in - 20, -30, 128), (-150, 36, 124)] + ein),
     ]
     return m
 

@@ -3,7 +3,7 @@
 
 Imports cad/fusion/HonebotChassis/HonebotChassis.py (the single geometry source) and checks:
   clearances (static + moving parts, keep-outs), mounting-hole audit, GoPro field of view over the pan range,
-  mass / CG, tip-over and braking, stub axle / caster / mast / belt loads, HC-SR04 ground return, wiring routes,
+  mass / CG, tip-over and braking, stub axle / idler / mast / belt loads, HC-SR04 ground return, wiring routes,
   printability (bed size), overall envelope.
 Writes cad/report/check_report.md and PNG views. Needs numpy + matplotlib.
 
@@ -237,7 +237,7 @@ def check_clearance(M, report):
     rows.sort(key=lambda r: (r[5] != "FAIL", r[0]))
     report.append("## 1. Clearances\n")
     report.append("Every pair of parts that are not declared mates (bolted/sitting on each other) is checked. Required gap: "
-                  "0.5 mm static, 3 mm when either part moves or is a swept keep-out volume (caster swivel, GoPro pan, "
+                  "0.5 mm static, 3 mm when either part moves or is a swept keep-out volume (GoPro pan, "
                   "wheels, belts, pulleys, USB plugs). Only pairs within 8 mm are listed.\n")
     report.append("| Part A | Part B | type | need (mm) | measured gap (mm) | result |\n|---|---|---|---|---|---|")
     for r in rows:
@@ -584,41 +584,34 @@ def mass_props(M, report):
 
 
 def dynamics(M, report, mass, cg):
-    P = M.info["P"]; c = M.info["caster"]
+    P = M.info["P"]
     tw = P["wheel_inner_y"] + P["wheel_w"] / 2
-    xc_tr = c["pivot_x"] - P["caster_trail"]
-    L = -xc_tr
+    xr = M.info["rear_axle_x"]
+    L = -xr
     h = cg[2]
     report.append("## 5. Stability, traction, braking\n")
-    # lateral tip: triangle (0, +tw) (0, -tw) caster contact on the trail circle (worst position)
-    worst = 1e9
-    for ang in np.linspace(0, 2 * np.pi, 72, endpoint=False):
-        cc = np.array([c["pivot_x"] + P["caster_trail"] * math.cos(ang), P["caster_trail"] * math.sin(ang)])
-        for wpt in (np.array([0.0, tw]), np.array([0.0, -tw])):
-            e = cc - wpt; q = cg[:2] - wpt
-            dist = abs(e[0] * q[1] - e[1] * q[0]) / np.linalg.norm(e)
-            worst = min(worst, dist)
-    lat_g = worst / h
-    fx = (cg[0] - xc_tr) / L          # fraction of weight on the drive wheels (static)
-    pitch_g = -cg[0] / h              # tip forward over the drive axle (CG behind it by -cg_x)
-    report.append("- Support triangle: drive wheel contacts at y = +/-%.0f mm, caster contact %.0f mm behind the axle "
-                  "(trail %.0f mm, worst swivel angle used for tipping).\n" % (tw, L, P["caster_trail"]))
-    report.append("- Static load on the drive wheels: **%.0f %%** (traction and braking come only from them).\n" % (100 * fx))
+    # rectangle of 4 wheel contacts: x in [xr, 0], y = +/-tw
+    lat_g = (tw - abs(cg[1])) / h
+    fx = (cg[0] - xr) / L             # static fraction on the front axle
+    pitch_g = -cg[0] / h if cg[0] < 0 else 0.0   # tip forward over the front axle
+    back_g = (cg[0] - xr) / h         # tip backward over the rear axle
+    report.append("- Support rectangle: 4 wheel contacts at x = 0 / %.0f mm, y = +/-%.0f mm (all four driven, belt-coupled "
+                  "per side).\n" % (xr, tw))
+    report.append("- Static load: front axle **%.0f %%**, rear %.0f %%. All four wheels brake and drive.\n" % (100 * fx, 100 * (1 - fx)))
     report.append("- Sideways tip-over needs **%.2f g** (urethane on asphalt slides at ~0.7-0.9 g, so it slides first%s).\n" %
                   (lat_g, "" if lat_g > 0.9 else " ONLY JUST - keep heavy parts low"))
     nose = sample(M.get("bumper_door"), 2.0)
     nose = nose[nose[:, 0] > 0]
     touch = math.degrees(np.min(np.arctan2(nose[:, 2], nose[:, 0])))
     tip_deg = math.degrees(math.atan2(-cg[0], h))
-    report.append("- Forward pitch-over about the drive axle under braking starts at **%.2f g**. If it does pitch, the "
-                  "rounded bumper nose touches down after **%.1f deg**, well before the %.0f deg at which the CG would pass "
-                  "over the axle, so it rides on the bumper instead of flipping. Software should still cap deceleration "
-                  "at ~0.5 g (see docs).\n" % (pitch_g, touch, tip_deg))
+    report.append("- Forward pitch-over about the front axle needs **%.2f g** of braking, backward (hard launch) **%.2f g**. "
+                  "If it does pitch forward, the bumper touches down after %.1f deg (the CG passes over the axle at "
+                  "%.0f deg).\n" % (pitch_g, back_g, touch, tip_deg))
     rows = []
     for mu in (0.8, 0.6):
-        a_fd = mu * 9.81 * (cg[0] - xc_tr) / (L - mu * h)          # drive front (this design)
-        a_fd = min(a_fd, pitch_g * 9.81)
-        a_rd = mu * 9.81 * (cg[0] - xc_tr) / (L + mu * h)          # same robot with the drive axle at the rear
+        a_fd = min(mu, pitch_g) * 9.81                             # 4WD: all wheels brake (traction or pitch limit)
+        a_rd = mu * 9.81 * (cg[0] - xr) / (L - mu * h)             # comparison: only the front axle braking (2WD + caster)
+        a_rd = min(a_rd, pitch_g * 9.81)
         for v_mph in (8, 12, 15):
             v = v_mph * 0.44704
             d_fd = v * 0.25 + v * v / (2 * a_fd)
@@ -626,13 +619,13 @@ def dynamics(M, report, mass, cg):
             rows.append((mu, v_mph, a_fd / 9.81, d_fd, a_rd / 9.81, d_rd))
     report.append("\nStopping distance = 0.25 s reaction (gate + ESC ramp) + v^2 / 2a, a limited by drive-wheel traction "
                   "(weight transfer included) and by pitch-over:\n")
-    report.append("| mu | speed (mph) | THIS layout: decel (g) | stop (m) | if drive wheels were at the rear: decel (g) | stop (m) |\n|---|---|---|---|---|---|")
+    report.append("| mu | speed (mph) | THIS layout (4WD): decel (g) | stop (m) | old 2WD + caster: decel (g) | stop (m) |\n|---|---|---|---|---|---|")
     for r in rows:
         report.append("| %.1f | %d | %.2f | %.1f | %.2f | %.1f |" % r)
     report.append("\nThe follow distance must exceed the stopping distance at the current speed if the skater can stop "
                   "instantly (a fall). Recommended `follow_distance` >= the 'stop' column, e.g. speed-dependent "
                   "d = 1.5 m + 0.35 s x v + v^2 / (2 x 0.45 g).\n")
-    return {"lat_g": lat_g, "fx": fx, "pitch_g": pitch_g, "rows": rows}
+    return {"lat_g": lat_g, "fx": fx, "pitch_g": pitch_g, "back_g": back_g, "rows": rows}
 
 
 def drivetrain(report, mass):
@@ -688,33 +681,30 @@ def structural(M, report, mass, cg, dyn):
     P = M.info["P"]; g = 9.81; fx = dyn["fx"]
     report.append("## 7. Structural checks (hand calculations) at the worst road event\n")
     cases = [("6 mm crack at 15 mph", 6.0, 6.7), ("10 mm lip at 3 m/s (driveway, slowed down)", 10.0, 3.0)]
-    m_w = mass * fx / 2 + 0.25
-    m_c = mass * (1 - fx) + 0.12
-    rw = P["wheel_d"] / 2; rc = P["caster_d"] / 2
+    m_w = mass * max(fx, 1 - fx) / 2 + 0.25          # the more loaded axle, one wheel + its unsprung share
+    rw = P["wheel_d"] / 2
     report.append("Design event: a wheel hits a square lip. Peak force = v sin(theta) x sqrt(k m), with the urethane "
-                  "contact stiffness k = %.0f N/mm [assumption] and the mass riding on that wheel (drive %.2f kg, caster "
-                  "%.2f kg). The skater will not cross a 10 mm lip at 15 mph either; the follower must slow for driveways.\n"
-                  % (K_LIP / 1000, m_w, m_c))
-    report.append("| event | drive wheel force (N) | caster force (N) |\n|---|---|---|")
-    Fw = Fc = 0.0; thw = thc = 0.0
+                  "contact stiffness k = %.0f N/mm [assumption] and the mass riding on that wheel (%.2f kg, heavier "
+                  "axle). The skater will not cross a 10 mm lip at 15 mph either; the follower must slow for driveways.\n"
+                  % (K_LIP / 1000, m_w))
+    report.append("| event | wheel force (N) |\n|---|---|")
+    Fw = 0.0; thw = 0.0
     for name, h, v in cases:
-        a, ta = lip_impact(m_w, rw, h, v); b, tb = lip_impact(m_c, rc, h, v)
-        report.append("| %s | %.0f | %.0f |" % (name, a, b))
+        a, ta = lip_impact(m_w, rw, h, v)
+        report.append("| %s | %.0f |" % (name, a))
         if a > Fw:
             Fw, thw = a, ta
-        if b > Fc:
-            Fc, thc = b, tb
     rows = []
     # ---- stub axle: M8 12.9 bolt inside a steel sleeve (wall -> wheel) ----
     lever = (P["wheel_inner_y"] + P["wheel_w"] / 2) - P["tub_hw"]
     sd = P["axle_sleeve_d"]
-    E_al, E_st = 71e3, 210e3
+    E_sl, E_st, Y_sl = P["axle_sleeve_E"], 210e3, P["axle_sleeve_yield"]
     I_sl = math.pi / 64 * (sd ** 4 - 8.2 ** 4); I_b = math.pi / 64 * 6.47 ** 4
     M_root = Fw * lever
-    kappa = M_root / (E_al * I_sl + E_st * I_b)
-    s_root = E_al * kappa * sd / 2
-    rows.append(("stub axle root: 7075-T6 sleeve 18x8.2 over M8 (sleeve yield 460 MPa)", "%.0f N at %.0f mm" % (Fw, lever),
-                 "%.0f MPa" % s_root, 460 / s_root))
+    kappa = M_root / (E_sl * I_sl + E_st * I_b)
+    s_root = E_sl * kappa * sd / 2
+    rows.append(("stub axle root: nested steel tubes %gx8.2 over M8 (yield %.0f MPa)" % (sd, Y_sl),
+                 "%.0f N at %.0f mm" % (Fw, lever), "%.0f MPa" % s_root, Y_sl / s_root))
     s_bolt_root = E_st * kappa * 6.47 / 2
     rows.append(("M8 12.9 at the root (shares the sleeve's curvature)", "", "%.0f MPa" % s_bolt_root, 1080 / s_bolt_root))
     span = P["wheel_w"] - 8
@@ -728,42 +718,15 @@ def structural(M, report, mass, cg, dyn):
                  "%.0f MPa" % s_boss, 40 / s_boss))
     s_blk = M_root / (36.0 * 44.0 ** 2 / 6)
     rows.append(("boss block root into floor + bridge beam (allow 40 MPa)", "36 x 44 mm section", "%.1f MPa" % s_blk, 40 / s_blk))
-    # ---- caster ----
-    ci = M.info["caster"]
-    Fh, Fv = Fc * math.sin(thc), Fc * math.cos(thc)
-    sw = M.info["swivel"]
-    zb = (sw["z_low"] + sw["z_high"]) / 2; spn = sw["z_high"] - sw["z_low"]
-    Mb = Fh * zb + Fv * P["caster_trail"]
-    Rb = Mb / spn + Fh / 2
-    rows.append(("6001 swivel bearings %.0f mm apart, static rating C0 %.0f N" % (spn, P["swivel_bearing_c0"]),
-                 "%.0f N back + %.0f N up at the contact" % (Fh, Fv), "%.0f N per bearing" % Rb, P["swivel_bearing_c0"] / Rb))
-    Mpost = Rb * (sw["z_high"] - P["tail_deck_z"] - 3)
-    Zp = math.pi * (44 ** 4 - (P["swivel_bearing_od"] + 0.2) ** 4) / (32 * 44)
-    rows.append(("pivot post above the deck, across layers (allow 20 MPa)", "top bearing load x height", "%.1f MPa" % (Mpost / Zp),
-                 20 / (Mpost / Zp)))
-    leg_l = ci["leg_root_z"] - rc
-    s_leg = (Fh / 2 * leg_l) / (ci["leg_t"] * ci["leg_b"] ** 2 / 6)
-    rows.append(("fork leg, fore-aft (printed on its side: in-plane, allow 50 MPa)", "%.0f mm lever per leg" % leg_l,
-                 "%.1f MPa" % s_leg, 50 / s_leg))
-    s_lat = (0.8 * Fv / 2 * ci["leg_root_z"]) / (ci["leg_b"] * ci["leg_t"] ** 2 / 6)
-    rows.append(("fork leg, sideways skid 0.8 x vertical (allow 50 MPa)", "", "%.1f MPa" % s_lat, 50 / s_lat))
-    s_cr = (Fv * P["caster_trail"]) / (ci["crown_w"] * ci["crown_t"] ** 2 / 6)
-    rows.append(("fork crown (allow 50 MPa)", "vertical x trail", "%.1f MPa" % s_cr, 50 / s_cr))
-    s_rib = (Fc * 2 * P["tail_hw"] / 4) / (10 * 25 ** 2 / 6)
-    rows.append(("tail cross rib 10 x 25 (pivot -> side walls, allow 50 MPa)", "centre load", "%.1f MPa" % s_rib, 50 / s_rib))
-    lp = M.info["lap"]
-    xs, zs = lp["x"], lp["z"]
-    xcen, zcen = sum(xs) / 2, sum(zs) / 2
-    M_lap = Fv * abs(P["pivot_x"] - xcen) + Fh * zcen
-    r2 = sum((xx - xcen) ** 2 + (zz - zcen) ** 2 for xx in xs for zz in zs)
-    rmax = max(math.hypot(xx - xcen, zz - zcen) for xx in xs for zz in zs)
-    F_bolt = (M_lap / 2) * rmax / r2 + Fc / 8
-    cap = lp["d"] * lp["t"] * 50
-    rows.append(("tail -> tub lap: 2 x 4 x M%d, bearing in the %d mm tail wall (%.0f N)" % (lp["d"], lp["t"], cap),
-                 "moment %.0f N m on two bolt groups" % (M_lap / 1000), "%.0f N per bolt" % F_bolt, cap / F_bolt))
+    # ---- 1:1 belt idler (608 on an M8 in a wall slot) ----
+    T2 = P["belt_pretension_n"] + (mu_tr := 0.9) * (mass * g / 4 * 1.3) * rw / 1000 / (P["pul_r_pd"] / 2000)
+    F_id = 2 * T2 * math.sin(math.radians(15))          # ~15 deg wrap deflection per side of the idler
+    rows.append(("idler M8 clamped in a 6 mm wall slot (bearing, allow 40 MPa)", "rear belt tight side %.0f N" % T2,
+                 "%.1f MPa" % (F_id / (8 * 6)), 40 / (F_id / (8 * 6))))
+    rows.append(("608-2RS idler, static rating C0 1370 N", "", "%.0f N" % F_id, 1370 / F_id))
     # ---- motor shaft (pulley bolted to the bell) ----
     mu = 0.9
-    Tw = mu * (mass * g * fx / 2 * 1.3) * rw / 1000
+    Tw = mu * (mass * g / 2 * 1.3) * rw / 1000   # one motor drives both wheels on its side
     Te = Tw / (P["pul_w_pd"] / 2000)
     T0 = P["belt_pretension_n"]
     F_sh = (T0 + Te / 2) + max(0.0, T0 - Te / 2)
@@ -807,7 +770,7 @@ def structural(M, report, mass, cg, dyn):
 def terrain(M, report):
     """Approach, departure, breakover (crest) and gutter (valley) angles; climbable lip."""
     P = M.info["P"]
-    skip = ("wheel_L", "wheel_R", "caster_wheel")
+    skip = tuple("wheel_" + a + b for a in "FR" for b in "LR")
     pts = []
     for p in M.parts:
         if p["group"] == "keepout" or p["name"] in skip:
@@ -817,7 +780,7 @@ def terrain(M, report):
             pts.append(sp[sp[:, 2] < 90])
     pts = np.vstack(pts)
     x, z = pts[:, 0], pts[:, 2]
-    xc = M.info["caster"]["wheel_x"]
+    xc = M.info["rear_axle_x"]
 
     def ok(gfun):
         g0, gc = gfun(np.array([0.0]))[0], gfun(np.array([xc]))[0]
@@ -837,7 +800,7 @@ def terrain(M, report):
         return best
     res["approach (ramp ahead of the front wheels)"] = search(lambda t, xa: (lambda xx: t * np.maximum(0, xx - xa)),
                                                               np.arange(0, 121, 10))
-    res["departure (ramp behind the caster)"] = search(lambda t, xa: (lambda xx: t * np.maximum(0, xa - xx)),
+    res["departure (ramp behind the rear wheels)"] = search(lambda t, xa: (lambda xx: t * np.maximum(0, xa - xx)),
                                                        np.arange(xc - 120, xc + 1, 10))
     res["breakover (crest between the wheels)"] = search(lambda t, xa: (lambda xx: -np.tan(math.atan(t) / 2) * np.abs(xx - xa)),
                                                          np.arange(xc, 1, 10))
@@ -855,10 +818,9 @@ def terrain(M, report):
         okk = v >= 20
         fails += 0 if okk else 1
         report.append("| %s | %.0f deg | 20 deg | **%s** |" % (k, v, "OK" if okk else "FAIL"))
-    report.append("\nLowest points: under the floor %.0f mm, wheel-pulley flange %.0f mm (inside the wheel's shadow), caster "
-                  "legs %.0f mm. A driven 90 mm wheel climbs a square lip of about **%.0f mm** from standstill (mu 0.8); "
+    report.append("\nLowest points: under the floor %.0f mm, wheel-pulley flange %.0f mm (inside the wheel's shadow). A driven 90 mm wheel climbs a square lip of about **%.0f mm** from standstill (mu 0.8); "
                   "more with momentum. Treat 10 mm lips as a slow-down event (section 7).\n" %
-                  (P["floor_z0"], P["axle_z"] - M.info["wheel_pulley_flange_r"], M.info["caster"]["r"] - 13, lip_w))
+                  (P["floor_z0"], P["axle_z"] - M.info["wheel_pulley_flange_r"], lip_w))
     return fails
 
 
@@ -1081,7 +1043,7 @@ def main():
     fastener_schedule(M, rep)
     plot_views(M, os.path.join(OUT, "views.png"))
     head = ["## Summary\n", "| check | failures |\n|---|---|"] + ["| %s | %d |" % kv for kv in summary.items()] + [
-        "\nMass %.2f kg, CG (%.0f, %.0f, %.0f) mm, %.0f %% on the drive wheels, sideways tip at %.2f g.\n" %
+        "\nMass %.2f kg, CG (%.0f, %.0f, %.0f) mm, %.0f %% on the front axle, sideways tip at %.2f g.\n" %
         (mass, cg[0], cg[1], cg[2], 100 * dyn["fx"], dyn["lat_g"])]
     rep = rep[:3] + head + rep[3:]
     with open(os.path.join(OUT, "check_report.md"), "w") as f:
