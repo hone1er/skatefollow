@@ -55,8 +55,9 @@ PARAMS = {
     "belt2_take_up_range": (0.3, 4.5),   # +/-0.3 % print shrink on 200 mm centres is ~ +/-1.2 mm of belt path
     "idler_r": 11.0,            # 608-2RS outer radius
     # prototype kit (hidden "Prototype kit" group): printed axle sleeves + TPU belts, to drive before buying metal
-    "tpu_E": 26.0,              # [M] TPU tensile modulus, MPa (95A class; hang 1 kg on a printed loop to measure, docs §8)
-    "tpu_T0": 5.0,              # [D] TPU belt pretension per strand, N; belts print short by T0 / EA so they sit on pitch
+    "tpu_E": 600.0,             # [V/M] Bambu "TPU for AMS" (68D) TDS: 1190 MPa X-Y, 600 MPa Z; the lower value is used
+    "tpu_strength": 22.4,       # [V] same TDS, tensile strength X-Y (belts print flat, so the loop runs in X-Y)
+    "tpu_T0": 15.0,             # [D] TPU belt pretension per strand, N; belts print short by T0 / EA so they sit on pitch
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
@@ -450,7 +451,7 @@ def build_model(P=None):
         for k in (-1, 1):                                                              # pad behind the motor plate
             cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
             tub_adds.append(cyl_y(s * (inner - 8), s * (inner + 0.01), cc[0], cc[2], P["motor_plate"] / 2 + 5))
-        tub_adds.append(obox((mc_x, s * (inner - 4), mc_z), P["tension_travel"], P["motor_plate"] + 10, 8.02, bu, bv))
+        tub_adds.append(obox((mc_x, s * (inner - 4 + 0.005), mc_z), P["tension_travel"], P["motor_plate"] + 10, 8.01, bu, bv))  # flush with the pad cylinders (no sliver)
     tub = m.part("tub", "printed", COL["frame"], tub_adds, material="PAHT-CF",
                  note="one-piece main body (300 mm): both axles, battery tunnel, mast socket; print floor-down")
     tub_cuts = tub["cuts"]
@@ -504,7 +505,7 @@ def build_model(P=None):
         tub["adds"].append(obox(boss_c, 8, 14, 10, bu, bv))
         a_ = vadd(boss_c, vmul(bu, 4 + co)); b_ = vadd(boss_c, vmul(bu, -4 - co))
         m.hole("tub", "pull_" + side, a_, b_, P["clr_m3"], for_item="belt pull screw M3 x 25 (head on the boss)")
-        m.hole("tub", "motor_wire_" + side, (-66, s * (inner - 10), 72), (-66, s * (hw + co), 72), 12,
+        m.hole("tub", "motor_wire_" + side, (-80, s * (inner - 10), 62), (-80, s * (hw + co), 62), 12,   # fully clear of the plate pad
                for_item="motor phase wires grommet " + side, audit=False)
         # idler: vertical slot for an M8 bolt; the 608 presses the 1:1 belt's upper run down
         for kx in (-1, 1):                     # hex channel: holds the M8 head (13 AF) so the nyloc tightens from outside
@@ -543,6 +544,9 @@ def build_model(P=None):
                         P["motor_plate_t"] + 2 * co, for_item="motor base M3 (any 16-30 mm pattern)", audit=False)
             m.get(name)["cuts"].extend(slot((p0[0], 0, p0[2]), (p1[0], 0, p1[2]), 6.4, (0, s, 0), 3.0 + co,
                                             hw - P["motor_plate_t"] + 1.5 - co / 2))
+        # central pocket at counterbore depth: merges the 8 counterbore ends (they overlap below r 8.4 and would leave
+        # knife edges / non-manifold cusps against the shaft hole)
+        m.get(name)["cuts"].append(cyl_y(s * (hw - P["motor_plate_t"] - co), s * (hw - P["motor_plate_t"] + 3.0), mc_x, mc_z, 11.5))
         tab_c = vadd((mc_x, s * (inner - 4), mc_z), vmul(bu, P["motor_plate"] / 2 - 6))
         tab_c = (tab_c[0], s * (hw - P["motor_plate_t"] - 5), tab_c[2])
         m.get(name)["adds"].append(obox(tab_c, 12, 11, 10.02, bu, bv))
@@ -662,6 +666,9 @@ def build_model(P=None):
                        P["ins_m3"], kind="insert", for_item="M3 x 60 from the wheel's outer face through the core "
                        "(holes drilled 3.0 -> 3.15 with the jig: they centre the pulley)")
     m.info["wheel_pulley_flange_r"] = wfl
+    for k in (-1, 1):                          # wire grommet must clear the plate pad (no knife edges)
+        cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
+        assert math.hypot(cc[0] + 80, cc[2] - 62) >= P["motor_plate"] / 2 + 5 + 6 + 1.5, "motor wire hole touches the pad"
     # printed tooth sections need >= 3 mm of plastic between the tooth roots and the bore (sleeve clearance)
     root_wall = min(wpr, rpr) - 1.14 - (sd + 6.0) / 2
     m.info["pulley_root_wall"] = root_wall
@@ -787,7 +794,7 @@ def build_model(P=None):
     mc.append(box(mx - sq / 2 + mw, mx + sq / 2 - mw, -sq / 2 + mw, sq / 2 - mw, 92 - co, head_z0 + 6))
     mc.append(box(mx - sq / 2 - co, mx, -6, 6, 92 - co, 104))
     mc.append(box(sbx - sl / 2 - 0.4, sbx + sl / 2 + 0.4, -sw / 2 - 0.4, sw / 2 + 0.4, head_z0 + 4, seat + co))
-    mc.append(box(sbx - sl / 2 - 6, sbx - sl / 2 + 6, 4, 12, head_z0 - co, seat + co))
+    mc.append(box(sbx - sl / 2 - 6, sbx - sl / 2 + 6, 4, 11, head_z0 - co, seat + co))   # servo lead notch (corner kept off the rounded edge)
     mc.append(box(mx - sq / 2 - co, mx - sq / 2 + mw + co, -5, 5, 92 - co, head_z0 + 0.5))
     for s in (1, -1):
         m.slot_hole("mast", "servo_ear_" + ("A" if s > 0 else "B"), (sbx + s * 24.0, 0, seat), (sbx + s * 27.0, 0, seat),
@@ -1013,8 +1020,8 @@ def build_model(P=None):
     fz = (-163, 0, zf1 + 14)                                                    # fuse / distribution block
     m.routes = [
         ("battery main 12 AWG", [(48, -20, 64), (42, -45, 73), (-150, -45, 73), (-163, -20, zf1 + 20), fz]),
-        ("ESC L power + phase", [(-66, inner - 12, 73), (-120, 40, 73), (-121, 40, 90), (-134, 42, dz1 + 7)]),
-        ("ESC R power + phase", [(-66, -(inner - 12), 73), (-120, -40, 73), (-121, -40, 90), (-134, -42, dz1 + 7)]),
+        ("ESC L power + phase", [(-80, inner - 12, 62), (-118, 40, 70), (-121, 40, 90), (-134, 42, dz1 + 7)]),
+        ("ESC R power + phase", [(-80, -(inner - 12), 62), (-118, -40, 70), (-121, -40, 90), (-134, -42, dz1 + 7)]),
         ("regulator inputs 18 AWG", [fz, (-163, 20, zf1 + 20), (-150, 35, 73), (-121, 35, 73), (-121, 35, 92), (-110, 30, 112), (20, 30, 112), (20, 39, dz1 + 11)]),
         ("GoPro USB-C (service loop around the pan)", [(mx - 6, 38, cam_bot + 20), (mx - 30, 38, cam_bot + 10), (mx - 30, 30, cz),
                                                       (ch[0], 0, cz), (ch[0], 0, 120), (sx, 0, 120),

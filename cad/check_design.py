@@ -810,24 +810,35 @@ def prototype(M, report, mass, dyn):
     r56 = P["pul_w_pd"] / 2
     teeth_mesh = P["pul_m_t"] * 0.45                  # ~160 deg wrap on the 28T motor pulley
     err_ok = 0.5                                      # [assumption] cumulative pitch error before teeth ride out (mm)
-    Te_max = 2 * EA * err_ok / (3.0 * teeth_mesh)
+    T_str = P["tpu_strength"] / 3.0 * P["belt_w"] * 2.0          # tight-side limit: 1/3 of tensile strength (fatigue, layers)
+    Te_pitch = 2 * EA * err_ok / (3.0 * teeth_mesh)
+    Te_str = 2 * (T_str - P["tpu_T0"])
+    Te_slack = 2 * P["tpu_T0"]                                     # slack side must stay taut: T0 - Te/2 >= 0
+    Te_max = min(Te_pitch, Te_str, Te_slack)
+    lim = "stretch" if Te_max == Te_pitch else ("strength" if Te_max == Te_str else "pretension: slack side goes loose")
     F_side_max = Te_max * r56 / rw
     a_max = (2 * F_side_max - 0.02 * mass * g) / mass
-    report.append("**TPU belts.** Without tension cords the belt stretches under load, so the teeth stop matching the pulley "
-                  "pitch. Model: EA = E x 9 mm x 2 mm = **%.0f N** (E = %.0f MPa [M]); belts print short by T0/EA so they "
-                  "sit on pitch at the %.0f N pretension; teeth start riding out when the tight-side stretch adds %.1f mm "
-                  "over the ~%.0f teeth in mesh on the 28T.\n" % (EA, P["tpu_E"], P["tpu_T0"], err_ok, teeth_mesh))
-    turn_side = 0.8 * mass * g * (M.info["P"]["wheelbase"] / 2) / (2 * (P["wheel_inner_y"] + P["wheel_w"] / 2))
+    report.append("**TPU belts.** No tension cords: the belt stretches under load (teeth drift off the pulley pitch) and its "
+                  "strength is the plastic's. Model: EA = E x 9 mm x 2 mm = **%.0f N** (E = %.0f MPa), tight side kept "
+                  "below 1/3 of the %.1f MPa tensile strength (%.0f N), pretension %.0f N per strand (belts print short "
+                  "by T0/EA so they sit on pitch), teeth ride out after %.1f mm of extra stretch over ~%.0f teeth in mesh.\n"
+                  % (EA, P["tpu_E"], P["tpu_strength"], T_str, P["tpu_T0"], err_ok, teeth_mesh))
+    turn_side = 0.8 * mass * g * (P["wheelbase"] / 2) / (2 * (P["wheel_inner_y"] + P["wheel_w"] / 2))
     report.append("| case | thrust per side (N) | belt pull Te (N) | result |\n|---|---|---|---|")
     for name, F in (("cruise 3 m/s on flat ground", 0.5 * (0.02 * mass * g + 0.5 * 1.2 * 0.055 * 9)),
                     ("accelerate at 1 m/s^2", 0.5 * mass * 1.0 + 0.5 * 0.02 * mass * g),
                     ("turn in place (mu 0.8)", turn_side)):
         Te = F * rw / r56
-        report.append("| %s | %.1f | %.1f | %s |" % (name, F, Te, "OK" if Te <= Te_max else "**skips**"))
-    report.append("\nLimit: Te %.0f N -> about **%.1f m/s^2** of acceleration. Pivot turns will skip TPU belts: turn in "
-                  "arcs and keep `THROTTLE_LIMIT` low. Pretension relaxes as TPU creeps: re-tension often. Order real "
-                  "HTD-3M belts (about $10-16 each) before driving fast.\n" % (Te_max, a_max))
-
+        report.append("| %s | %.1f | %.1f | %s |" % (name, F, Te, "OK" if Te <= Te_max else "**skips / overloads**"))
+    bend = 1.0 / (P["pul_m_pd"] / 2) * 100
+    report.append("\nBending: the 2 mm belt body wraps the 28T pulley (pitch radius %.1f mm) at ~%.0f %% surface strain, "
+                  "well past where hard TPU stays elastic, at every pass. It will not snap at once (elongation at "
+                  "break > 600 %%) but its fatigue life is unknown: inspect for whitening/cracks at the tooth roots.\n"
+                  % (P["pul_m_pd"] / 2, bend))
+    report.append("\nLimit: Te %.0f N (set by %s) -> about **%.1f m/s^2** of acceleration. Keep `THROTTLE_LIMIT` low, "
+                  "re-tension after the first runs, and swap in real HTD-3M belts (about $10-16 each) before driving "
+                  "fast: a printed belt also flexes around the 28T pulley at every turn and its life is unknown.\n"
+                  % (Te_max, lim, a_max))
 
 def terrain(M, report):
     """Approach, departure, breakover (crest) and gutter (valley) angles; climbable lip."""

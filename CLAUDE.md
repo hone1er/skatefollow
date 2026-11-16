@@ -146,6 +146,7 @@ honebot_ws/
 cad/                                  (repo root, not in honebot_ws/src)
 ├── fusion/HonebotChassis/HonebotChassis.py   Fusion 360 script = single geometry source (PARAMS at the top)
 ├── check_design.py                   offline checks (clearance, holes, assembly, GoPro view, CG/braking, loads) → cad/report/
+├── check_manifold.py                 non-manifold edge scan of every printed part (run before exporting meshes)
 └── tests/test_fusion_script.py       runs the Fusion code path against a stub adsk API
 docs/
 ├── chassis_cad.md                    CAD design decisions, checks, print table, measure list, BOM, assembly

@@ -253,14 +253,24 @@ calculated in report §7b.
   standing still. With printed sleeves the bolt alone carries the bending: up to **~3.5 m/s (8 mph) over a 6 mm
   crack, ~2.8 m/s (6 mph) over a 10 mm lip**. Re-tighten the wheel bolts after the first runs, because plastic in
   the clamped stack creeps.
-- **TPU belts** have no tension cords, so they stretch under load and the teeth drift off the pulley pitch.
-  - They print short (by pretension / EA) so they sit on pitch at 5 N.
-  - With E = 26 MPa (assumed) they carry about **3.6 m/s² of acceleration** and easy cruising.
-  - **Turning in place will skip them**: drive arcs, keep `THROTTLE_LIMIT` low, and re-tension often (TPU creeps).
-  - Measure your TPU first: hang 1 kg on a printed motor belt looped over a broomstick, measure how many mm the
-    hanging loop gets longer (d), and set `tpu_E` = 35 / d MPa (d = 1.3 mm → 26 MPa). Then re-run the script so the belts print at the
-    right length.
+- **TPU belts: Bambu "TPU for AMS" (68D).** Its datasheet gives E ≈ 1190 MPa in X-Y and 600 MPa in Z (600 is used),
+  with 22.4 MPa tensile strength in X-Y. The belts print flat, so the loop runs in X-Y. That is stiff enough that
+  stretch is no longer the limit:
+  - Belts print 257.6 mm and 509.3 mm long, so they reach full pitch at **15 N pretension**.
+  - Belt pull is limited to 30 N by the slack side going loose. That covers cruising, hard acceleration and
+    **turning in place** (18 N).
+  - Tension: 2 N at the middle of a motor-belt span → ~2 mm deflection; rear-belt span → ~3 mm.
+  - **Unknown: fatigue.** The 2 mm belt body bends to ~7 % surface strain around the 28T pulley at every pass, past
+    where hard TPU stays elastic. Check the tooth roots for whitening or cracks after each session, and keep spares
+    printed.
+  - Print with 100 % infill, walls only if your slicer allows (the loop direction then carries the load), and the
+    TPU for AMS profile.
 - Swap in steel tubes and real belts (about $10–16 each) before going faster than a jog.
+
+**Mesh check:** `python3 cad/check_manifold.py` scans every printed part for non-manifold edges (knife edges where
+two solids or two cut-outs meet along a line). It found and fixed (2026-11-16): the motor-wire hole grazing the
+motor-plate pad in the tub (4 edges), overlapping counterbore ends at the centre of the motor plates, and the
+servo-lead notch corner on the mast's rounded edge. All parts now report "ok".
 
 ## 7. Assembly order
 

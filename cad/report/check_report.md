@@ -278,7 +278,7 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | axle_FR | hardware | 45 | 0, -108, 45 |
 | axle_RR | hardware | 45 | -200, -108, 45 |
 | idler_R | hardware | 45 | -100, -76, 69 |
-| mast | printed | 39 | 38, -1, 161 |
+| mast | printed | 39 | 37, -1, 161 |
 | wheel_pulley_FL | printed | 36 | -0, 100, 45 |
 | wheel_pulley_FR | printed | 34 | -0, -100, 45 |
 | esc_L | hardware | 30 | -155, 42, 89 |
@@ -381,12 +381,12 @@ Design event: a wheel hits a square lip. Peak force = v sin(theta) x sqrt(k m), 
 
 | event | wheel force (N) |
 |---|---|
-| 6 mm crack at 15 mph | 914 |
+| 6 mm crack at 15 mph | 915 |
 | 10 mm lip at 3 m/s (driveway, slowed down) | 516 |
 
 | item | load case | result | safety factor |
 |---|---|---|---|
-| stub axle root: nested steel tubes 16x8.2 over M8 (yield 355 MPa) | 914 N at 76 mm | 182 MPa | 2.0 |
+| stub axle root: nested steel tubes 16x8.2 over M8 (yield 355 MPa) | 915 N at 76 mm | 182 MPa | 2.0 |
 | M8 12.9 at the root (shares the sleeve's curvature) |  | 73 MPa | 14.7 |
 | M8 + the wheel's 12 x 8 bearing spacer, between the 608s | F/2 x 44 mm bearing span | 137 MPa | 7.9 |
 | axle boss bearing on the sleeve, PAHT-CF (allow 40 MPa) | moment over a 33 mm boss | 25 MPa | 1.6 |
@@ -412,15 +412,18 @@ Mast first bending mode (E 3.5 GPa, ideal clamp): **118 Hz** (target > 30 Hz).
 
 Plastic in the clamped axle stack creeps: re-tighten the wheel bolts after the first runs.
 
-**TPU belts.** Without tension cords the belt stretches under load, so the teeth stop matching the pulley pitch. Model: EA = E x 9 mm x 2 mm = **468 N** (E = 26 MPa [M]); belts print short by T0/EA so they sit on pitch at the 5 N pretension; teeth start riding out when the tight-side stretch adds 0.5 mm over the ~13 teeth in mesh on the 28T.
+**TPU belts.** No tension cords: the belt stretches under load (teeth drift off the pulley pitch) and its strength is the plastic's. Model: EA = E x 9 mm x 2 mm = **10800 N** (E = 600 MPa), tight side kept below 1/3 of the 22.4 MPa tensile strength (134 N), pretension 15 N per strand (belts print short by T0/EA so they sit on pitch), teeth ride out after 0.5 mm of extra stretch over ~13 teeth in mesh.
 
 | case | thrust per side (N) | belt pull Te (N) | result |
 |---|---|---|---|
 | cruise 3 m/s on flat ground | 0.5 | 0.9 | OK |
 | accelerate at 1 m/s^2 | 2.3 | 3.9 | OK |
-| turn in place (mu 0.8) | 10.9 | 18.3 | **skips** |
+| turn in place (mu 0.8) | 10.9 | 18.3 | OK |
 
-Limit: Te 12 N -> about **3.6 m/s^2** of acceleration. Pivot turns will skip TPU belts: turn in arcs and keep `THROTTLE_LIMIT` low. Pretension relaxes as TPU creeps: re-tension often. Order real HTD-3M belts (about $10-16 each) before driving fast.
+Bending: the 2 mm belt body wraps the 28T pulley (pitch radius 13.4 mm) at ~7 % surface strain, well past where hard TPU stays elastic, at every pass. It will not snap at once (elongation at break > 600 %) but its fatigue life is unknown: inspect for whitening/cracks at the tooth roots.
+
+
+Limit: Te 30 N (set by pretension: slack side goes loose) -> about **9.1 m/s^2** of acceleration. Keep `THROTTLE_LIMIT` low, re-tension after the first runs, and swap in real HTD-3M belts (about $10-16 each) before driving fast: a printed belt also flexes around the 28T pulley at every turn and its life is unknown.
 
 ## 8. HC-SR04 beam
 
@@ -435,8 +438,8 @@ Centre lines sampled every 1 mm; a route fails if it passes through printed mate
 | harness | length (mm) | blocked samples | result |
 |---|---|---|---|
 | battery main 12 AWG | 275 | 0  | **OK** |
-| ESC L power + phase | 85 | 0  | **OK** |
-| ESC R power + phase | 85 | 0  | **OK** |
+| ESC L power + phase | 73 | 0  | **OK** |
+| ESC R power + phase | 73 | 0  | **OK** |
 | regulator inputs 18 AWG | 272 | 0  | **OK** |
 | GoPro USB-C (service loop around the pan) | 353 | 0  | **OK** |
 | servo signal (pan) | 339 | 0  | **OK** |
