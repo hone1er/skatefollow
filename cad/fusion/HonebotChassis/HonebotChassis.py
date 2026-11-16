@@ -352,7 +352,7 @@ def build_model(P=None):
     for s in (1, -1):
         tub_adds += [
             box(-18, 18, s * 31, s * (inner + 0.01), zf0, 72),             # axle boss (merges with the bridge beam)
-            cyl_y(s * (hw - 0.01), s * (hw + 8), 0, az, 15),             # axle boss ring outside the wall
+            cyl_y(s * (hw - 0.01), s * (hw + 7.8), 0, az, 15),           # axle boss ring (face 0.2 below the collar)
             # deck ledges
             box(xr_in, xf_in, s * (inner - 4), s * inner, dz0 - 4, dz0) if s > 0 else box(xr_in, xf_in, -inner, -(inner - 4), dz0 - 4, dz0),
             # lid / lap posts
@@ -403,9 +403,9 @@ def build_model(P=None):
         side = "L" if s > 0 else "R"
         ys = s * 1.0
         # stub axle: M8 through boss and wall
-        tub_cuts.append(box(-7.7, 7.7, s * (31 - co), s * 37, az - 6.7, az + 6.7))   # M8 head pocket (stops it turning)
-        m.hole("tub", "axle_sleeve_" + side, (0, s * 37, az), (0, s * (hw + 8 + co), az), P["axle_sleeve_d"] + 0.4,
-               for_item="7075 axle sleeve 18 x 8.2 (metal clamp stack)")
+        tub_cuts.append(box(-7.7, 7.7, s * (31 - co), s * 40, az - 6.7, az + 6.7))   # captive M8 nyloc pocket (no turning)
+        m.hole("tub", "axle_sleeve_" + side, (0, s * 39.7, az), (0, s * (hw + 8 + co), az), P["axle_sleeve_d"] + 0.4,
+               for_item="inner axle sleeve 18 x 8.2 x 30.3 (through the boss)")
         # motor plate pocket (outer face, capsule along the belt for tensioning) + shaft clearance + tension slots
         for k in (-1, 1):
             cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
@@ -551,7 +551,7 @@ def build_model(P=None):
     tail_adds = [box(tx0, x0 - 0.01, -th, th, tdz, tdz + 3),           # deck plate
                  box(x0 - 14, x0, -50, 50, tdz, tdz + 3),                # front lip (on the tub's rear ledge)
                  box(tx0, tx0 + 4, -th, th, 90, top),                    # rear wall
-                 cyl_z(88, P["swivel_top_z"], px, 0, 22),                 # pivot post: 6001 bearings ~58 mm apart
+                 cyl_z(89.5, P["swivel_top_z"], px, 0, 22),               # pivot post: 6001 bearings ~56 mm apart
                  box(px - 5, px + 5, -th + 0.01, th - 0.01, 90, tdz + 0.01),    # cross rib (10 x 25) boss -> side walls
                  box(px - 55, px + 45, -5, 5, 90, tdz + 0.01)]           # fore-aft rib (10 x 25)
     for s in (1, -1):
@@ -568,11 +568,11 @@ def build_model(P=None):
     stz = P["swivel_top_z"]; sbw = P["swivel_bearing_w"]; sod = P["swivel_bearing_od"] + 0.2
     m.hole("tail", "pivot", (px, 0, 80), (px, 0, stz + co), P["clr_m12"] + 4, for_item="M12 pivot + 16 mm race spacer",
            audit=False)
-    tc.append(cyl_z(88 - co, 88 + sbw + 0.5, px, 0, sod / 2))
+    tc.append(cyl_z(89.5 - co, 89.5 + sbw + 0.5, px, 0, sod / 2))
     tc.append(cyl_z(stz - sbw - 0.5, stz + co, px, 0, sod / 2))
-    m.holes.append({"host": "tail", "id": "6001_seats", "a": (px, 0, 88), "b": (px, 0, stz),
+    m.holes.append({"host": "tail", "id": "6001_seats", "a": (px, 0, 89.5), "b": (px, 0, stz),
                     "d": sod, "kind": "seat", "for": "2 x 6001-2RS caster swivel bearings", "audit": True})
-    m.info["swivel"] = {"z_low": 88 + sbw / 2, "z_high": stz - sbw / 2}
+    m.info["swivel"] = {"z_low": 89.5 + sbw / 2, "z_high": stz - sbw / 2}
     for s in (1, -1):
         side = "L" if s > 0 else "R"
         for lx in (xr_in + 7, x0 + 34):
@@ -604,7 +604,7 @@ def build_model(P=None):
     # crown, so leg bending and crown bending are both carried in-plane. All clamp stacks are metal sleeves.
     cw = P["caster_w"]; cr = P["caster_d"] / 2; cxw = px - P["caster_trail"]
     fy = cw / 2 + 16                       # outer face of the legs (13 mm legs)
-    crown_z0, crown_z1 = cr * 2 + 3.5, 87.5
+    crown_z0, crown_z1 = cr * 2 + 3.5, 85.9
     fork_adds = rbox(cxw - 14, px + 14, -fy, fy, crown_z0, crown_z1, 6)
     for s in (1, -1):
         fork_adds.append(box(cxw - 12, cxw + 12, s * (cw / 2 + 3), s * fy, cr - 13, crown_z0 + 0.01))   # 13 x 24 leg
@@ -614,7 +614,7 @@ def build_model(P=None):
                      "friction washer under the pivot nut damps shimmy", mates={"tail"})
     fk["cuts"].append(box(px - 9.3, px + 9.3, -10.8, 10.8, crown_z0 - co, crown_z0 + 7.0))     # M12 head pocket (hex locked)
     m.hole("caster_fork", "pivot_sleeve", (px, 0, crown_z0 + 7.0), (px, 0, crown_z1 + co), 18.4,
-           for_item="steel sleeve 18 x 12.2 x 7 (head -> lower race, metal stack)")
+           for_item="steel sleeve 18 x 12.2 x 5.5: head -> washer -> race (crown captured with 0.1 mm play)")
     for s in (1, -1):
         m.hole("caster_fork", "axle_sleeve_" + ("L" if s > 0 else "R"), (cxw, s * (cw / 2 + 3 - co), cr),
                (cxw, s * (fy + co), cr), 12.4, for_item="steel sleeve 12 x 8.2 x 9 (leg clamp stack)")
@@ -645,9 +645,18 @@ def build_model(P=None):
         for k in range(4):
             ang = k * math.pi / 2 + math.pi / 4
             hx, hz = 17.5 * math.cos(ang), az + 17.5 * math.sin(ang)
-            m.hole(name, "core_%d" % k, (hx, s * (by - 7 - co), hz), (hx, s * (wiy + co), hz), P["clr_m3"],
-                   for_item="M3 x 80 through the wheel core")
+            m.hole(name, "core_%d" % k, (hx, s * (by - 7 - co), hz), (hx, s * (wiy + co), hz), 3.15,
+                   for_item="M3 x 80 through the wheel core (3.15 close fit: centres the pulley)")
     m.info["wheel_pulley_flange_r"] = wfl
+
+    # drill jig (tool, printed once): spigot fits the wheel's 22 mm bearing seat (bearing removed), 4 guides on D35
+    jz = -150.0
+    jig = m.part("pulley_drill_jig", "tools", COL["light"],
+                 [cyl_z(jz, jz + 5, 0, 0, 25), cyl_z(jz + 4.99, jz + 11, 0, 0, 10.9)], material="PETG",
+                 note="drill the wheel core 3.0 through these guides, then open to 3.2 -> pulley runout < 0.2 mm", hidden=True)
+    for k in range(4):
+        ang = k * math.pi / 2 + math.pi / 4
+        jig["cuts"].append(cyl_z(jz - co, jz + 5 + co, 17.5 * math.cos(ang), 17.5 * math.sin(ang), 1.5))
 
     # ---------------- POD COVERS (belt guards) ----------------
     # Caps over the motor's upper half and the motor pulley. Open below z = 98 so nothing reaches into the
@@ -733,9 +742,9 @@ def build_model(P=None):
     hood_out = soft_slab(tx0, x0 - 0.5, -th, th, top, top + hh, 14, 10)
     hood_in = soft_slab(tx0 + 2.5, x0 - 3.0, -th + 2.5, th - 2.5, top - 30, top + hh - 2.5, 11.5, 7.5)
     tabs = []
-    for xx in (tx0 + 8, x0 - 8):
+    for xa, xb in ((tx0 + 3, tx0 + 13), (x0 - 13, x0 - 3)):
         for s in (1, -1):
-            tabs.append(box(xx - 6, xx + 6, s * 52 if s > 0 else -th + 1, s * (th - 1) if s > 0 else -52, top, top + 5))
+            tabs.append(box(xa, xb, s * 52, s * 62, top, top + 5))
     tlid = m.part("tail_lid", "printed", COL["shell"], tabs, pre=[(hood_out, hood_in)], material="PETG",
                   mates={"tail"}, note="raised hood over the ESP32, ESCs and fuse; access holes above the 4 screws")
     for s in (1, -1):
@@ -827,15 +836,25 @@ def build_model(P=None):
         ya, yb = (wiy, wiy + P["wheel_w"]) if s > 0 else (-wiy - P["wheel_w"], -wiy)
         m.part("wheel_" + side, H, COL["wheel"], [cyl_y(ya, yb, 0, az, wr)], mass=0.16, moving=True,
                mates={"wheel_pulley_" + side, "axle_" + side}, note="90 x 52 longboard wheel [M mass]")
-        m.part("axle_" + side, H, COL["hw_metal"], [cyl_y(s * 31.5, s * (wiy + P["wheel_w"] + 9), 0, az, 4),
-                                                     box(-6.5, 6.5, s * 31.5, s * 36.8, az - 6.5, az + 6.5),
-                                                     cyl_y(s * (wiy + P["wheel_w"] + 1.5), s * (wiy + P["wheel_w"] + 9.5), 0, az, 7.3)],
-               mass=0.045, mates={"tub", "wheel_" + side, "spacer_" + side},
-               note="M8 x 150 hex bolt 12.9: head in the boss pocket; head-sleeve-washer-608-spacer-608-washer-nyloc, all metal")
-        m.part("spacer_" + side, H, COL["hw_metal"], [cyl_y(s * 37, s * (wiy - 0.5), 0, az, P["axle_sleeve_d"] / 2),
-                                                     cyl_y(s * (wiy - 0.51), s * (wiy + 1.0), 0, az, 6.0)],
-               mass=0.06, mates={"tub", "wheel_" + side, "axle_" + side},
-               note="7075-T6 sleeve 18 x 8.2 (head -> wheel, through the boss) + 8 x 12 x 1.5 speed washer on the 608 inner race")
+        # Axle stack (all metal, bolt from OUTSIDE so each side installs on its own):
+        #   head + washer | 608 | wheel spacer | 608 | speed washer | outer sleeve | collar 8.4 x 30 x 2 | inner sleeve
+        #   through the boss (0.3 longer than the boss) | captive nyloc in the boss pocket.
+        # The boss is held between the collar and the nut with 0.2-0.3 mm play: located, but never clamped (no creep).
+        ye = wiy + P["wheel_w"]
+        m.part("axle_" + side, H, COL["hw_metal"], [cyl_y(s * 31.5, s * (ye + 1.6), 0, az, 4),
+                                                     cyl_y(s * (ye + 0.01), s * (ye + 1.6), 0, az, 8.0),
+                                                     cyl_y(s * (ye + 1.59), s * (ye + 7.0), 0, az, 7.5)],
+               mass=0.045, mates={"tub", "wheel_" + side, "spacer_" + side, "axle_nut_" + side},
+               note="M8 x 140 hex bolt 12.9 from outside + washer; turns into the captive nyloc")
+        m.part("axle_nut_" + side, H, COL["hw_metal"], [box(-7.4, 7.4, s * 31.6, s * 39.6, az - 6.4, az + 6.4)],
+               mass=0.005, mates={"tub", "axle_" + side, "spacer_" + side}, note="M8 nyloc, hex held by the pocket")
+        m.part("spacer_" + side, H, COL["hw_metal"],
+               [cyl_y(s * 39.7, s * 70.0, 0, az, P["axle_sleeve_d"] / 2),          # inner sleeve (boss)
+                cyl_y(s * 70.0, s * 72.0, 0, az, 15.0),                          # collar
+                cyl_y(s * 72.0, s * (wiy - 0.5), 0, az, P["axle_sleeve_d"] / 2),   # outer sleeve
+                cyl_y(s * (wiy - 0.51), s * (wiy + 1.0), 0, az, 6.0)],           # speed washer on the inner race
+               mass=0.06, mates={"tub", "wheel_" + side, "axle_" + side, "axle_nut_" + side},
+               note="inner sleeve 18 x 8.2 x 30.3 + collar 8.4 x 30 x 2 + outer sleeve 18 x 8.2 (cut to measure) + speed washer")
         my0, my1 = (hw, hw + P["motor_env_l"]) if s > 0 else (-hw - P["motor_env_l"], -hw)
         m.part("motor_" + side, H, COL["hw_metal"], [cyl_y(my0, my1, mc_x, mc_z, P["motor_env_d"] / 2)], mass=0.15,
                moving=True, mates={"motor_plate_" + side, "tub", "pod_" + side, "motor_pulley_" + side},
@@ -936,12 +955,16 @@ def build_model(P=None):
            + [cyl_y(s_ * (cw / 2 + 0.01), s_ * fy, cxw, cr, 6.0) for s_ in (1, -1)], mass=0.035,
            mates={"caster_fork", "caster_wheel"}, note="M8 x 80 12.9 + steel sleeves 12 x 8.2 through both legs + nyloc")
     m.part("caster_pivot_bolt", H, COL["hw_metal"],
-           [box(px - 9.0, px + 9.0, -10.4, 10.4, crown_z0 + 0.2, crown_z0 + 7.0), cyl_z(crown_z0 + 6.99, stz + 13, px, 0, 6),
-            cyl_z(crown_z0 + 7.0, crown_z1 + 0.5, px, 0, 9.0), cyl_z(88 + sbw + 0.5, stz - sbw - 0.5, px, 0, 8.0),
-            cyl_z(stz, stz + 12.5, px, 0, 10.0)],
-           mass=0.12, mates={"tail", "caster_fork"},
-           note="M12 x 90 12.9 pivot: head locked in the crown, sleeve 18 x 12.2, 6001, steel spacer 16 x 12.2, 6001, "
-                "washer + nyloc on top of the post (inside the hood)")
+           [box(px - 9.0, px + 9.0, -10.4, 10.4, crown_z0 - 0.5, crown_z0 + 7.0),          # M12 head, hex-locked in the crown
+            cyl_z(crown_z0 + 6.99, stz + 13, px, 0, 6),                                  # shank
+            cyl_z(crown_z0 + 7.0, 86.0, px, 0, 9.0),                                      # sleeve 18 x 12.2 x 5.5... (to 86)
+            cyl_z(86.0, 88.0, px, 0, 12.0),                                               # washer 12.5 x 24 x 2 (captures crown)
+            cyl_z(88.0, 89.5, px, 0, 8.0),                                                # speed washer 12.2 x 16 x 1.5
+            cyl_z(89.5 + sbw + 0.01, stz - sbw - 0.01, px, 0, 8.0)],                      # race spacer 16 x 12.2
+           mass=0.11, mates={"tail", "caster_fork", "caster_pivot_nut"},
+           note="M12 x 90 12.9: head locked in the crown, sleeve, washer, 6001, spacer, 6001 - all metal")
+    m.part("caster_pivot_nut", H, COL["hw_metal"], [cyl_z(stz, stz + 2, px, 0, 10.0), cyl_z(stz + 2, stz + 14, px, 0, 9.5)],
+           mass=0.02, mates={"tail", "caster_pivot_bolt"}, note="washer + PTFE/spring washer + M12 nyloc (shimmy damper)")
     # HC-SR04 on the bracket (PCB behind the plate, transducers through it)
     # HC-SR04 mounted UPSIDE DOWN: its 4-pin header (in the board plane, off one long edge) then points up, so the
     # plug and wires rise behind the bracket instead of running into the bumper-door.
@@ -986,11 +1009,13 @@ def build_model(P=None):
     # intended interpenetration of simplified hardware (solid wheels with bolts through them, belt envelopes ...)
     for sd in ("L", "R"):
         m.nests += [("axle_" + sd, "wheel_" + sd, "bolt through the wheel bearings"),
+                    ("axle_" + sd, "axle_nut_" + sd, "nut on its bolt"),
                     ("axle_" + sd, "spacer_" + sd, "bolt through the spacer"),
                     ("spacer_" + sd, "wheel_" + sd, "spacer reaches the recessed inner race")]
     m.nests += [("gopro", "pan_buckle", "camera fingers interleave the buckle prongs"),
                 ("servo", "servo9g_adapter", "alternatives: only one is fitted"),
-                ("caster_wheel", "caster_axle", "axle through the bearings")]
+                ("caster_wheel", "caster_axle", "axle through the bearings"),
+                ("caster_pivot_bolt", "caster_pivot_nut", "nut on its bolt")]
     mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_plate", "uwb_anchor", "servo9g_adapter"]
     deck_grp = ["deck", "pi5", "reg_L", "reg_R"] + ["pi_standoff_%d" % i for i in range(4)]
     bolts = ["plate_bolt_%s%d" % (sd, k) for sd in "LR" for k in range(3)]
@@ -1002,12 +1027,15 @@ def build_model(P=None):
         (["bumper_door"], (1, 0, 0), 70, []),
         (["battery"], (1, 0, 0), 180, ["bumper_door"]),
         (["pod_L"], (0, 1, 0), 70, []), (["pod_R"], (0, -1, 0), 70, []),
-        (["wheel_L", "wheel_pulley_L"], (0, 1, 0), 90, ["axle_L", "spacer_L", "belt_L"]),
-        (["wheel_R", "wheel_pulley_R"], (0, -1, 0), 90, ["axle_R", "spacer_R", "belt_R"]),
+        (["axle_L"], (0, 1, 0), 150, ["axle_nut_L", "wheel_L", "spacer_L"]),          # bolt out (hollow parts skipped)
+        (["axle_R"], (0, -1, 0), 150, ["axle_nut_R", "wheel_R", "spacer_R"]),
+        (["wheel_L", "wheel_pulley_L"], (0, 1, 0), 90, ["axle_L", "axle_nut_L", "spacer_L", "belt_L"]),
+        (["wheel_R", "wheel_pulley_R"], (0, -1, 0), 90, ["axle_R", "axle_nut_R", "spacer_R", "belt_R"]),
+        (["caster_fork", "caster_wheel", "caster_axle", "caster_pivot_bolt"], (0, 0, -1), 110, ["caster_pivot_nut"]),
         (["motor_L", "motor_plate_L", "motor_pulley_L"], (0, 1, 0), 120,
-         ["wheel_L", "wheel_pulley_L", "belt_L", "pod_L", "axle_L", "spacer_L"] + bolts),
+         ["wheel_L", "wheel_pulley_L", "belt_L", "pod_L", "axle_L", "axle_nut_L", "spacer_L"] + bolts),
         (["motor_R", "motor_plate_R", "motor_pulley_R"], (0, -1, 0), 120,
-         ["wheel_R", "wheel_pulley_R", "belt_R", "pod_R", "axle_R", "spacer_R"] + bolts),
+         ["wheel_R", "wheel_pulley_R", "belt_R", "pod_R", "axle_R", "axle_nut_R", "spacer_R"] + bolts),
     ]
     sx = mx - 20   # cable drop point behind the socket
     ch = (mx - sq / 2 + mw / 2, 0.0)     # mast rear cable channel (x, y)
@@ -1070,6 +1098,13 @@ def run(context):
             return adsk.core.Vector3D.create(v[0], v[1], v[2])
 
         sphere_fail = []
+        bool_fail = []
+
+        def boolop(a, b, kind):
+            try:
+                tbm.booleanOperation(a, b, kind)
+            except Exception:
+                bool_fail.append(1)
 
         def prim(p):
             if p["t"] == "sph":
@@ -1083,7 +1118,7 @@ def run(context):
                 for q in p["b"]:
                     bq = prim(q)
                     if a is not None and bq is not None:
-                        tbm.booleanOperation(a, bq, adsk.fusion.BooleanTypes.DifferenceBooleanType)
+                        boolop(a, bq, adsk.fusion.BooleanTypes.DifferenceBooleanType)
                 return a
             if p["t"] == "box":
                 w = norm(cross(p["u"], p["v"]))
@@ -1102,7 +1137,7 @@ def run(context):
                 if body is None:
                     body = b
                 else:
-                    tbm.booleanOperation(body, b, adsk.fusion.BooleanTypes.UnionBooleanType)
+                    boolop(body, b, adsk.fusion.BooleanTypes.UnionBooleanType)
             return body
 
         appearances = {}
@@ -1143,7 +1178,8 @@ def run(context):
             return a
 
         groups = {}
-        for gname, label in (("printed", "Printed parts"), ("hardware", "Reference hardware"), ("keepout", "Keep-out volumes")):
+        for gname, label in (("printed", "Printed parts"), ("hardware", "Reference hardware"), ("keepout", "Keep-out volumes"),
+                             ("tools", "Tools (print once)")):
             occ = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
             occ.component.name = label
             groups[gname] = occ.component
@@ -1157,20 +1193,20 @@ def run(context):
                 for st_adds, st_cuts in part.get("pre", []):
                     sb = merge(st_adds)
                     if st_cuts:
-                        tbm.booleanOperation(sb, merge(st_cuts), adsk.fusion.BooleanTypes.DifferenceBooleanType)
+                        boolop(sb, merge(st_cuts), adsk.fusion.BooleanTypes.DifferenceBooleanType)
                     if body is None:
                         body = sb
                     else:
-                        tbm.booleanOperation(body, sb, adsk.fusion.BooleanTypes.UnionBooleanType)
+                        boolop(body, sb, adsk.fusion.BooleanTypes.UnionBooleanType)
                 ab = merge(part["adds"]) if part["adds"] else None
                 if ab is not None:
                     if body is None:
                         body = ab
                     else:
-                        tbm.booleanOperation(body, ab, adsk.fusion.BooleanTypes.UnionBooleanType)
+                        boolop(body, ab, adsk.fusion.BooleanTypes.UnionBooleanType)
                 if part["cuts"]:
                     tool = merge(part["cuts"])
-                    tbm.booleanOperation(body, tool, adsk.fusion.BooleanTypes.DifferenceBooleanType)
+                    boolop(body, tool, adsk.fusion.BooleanTypes.DifferenceBooleanType)
                 if direct:
                     b = comp.bRepBodies.add(body)
                 else:   # parametric design: bodies must live in a base feature
@@ -1199,6 +1235,8 @@ def run(context):
         msg = "honebot: built %d of %d parts." % (len(model.parts) - len(failures), len(model.parts))
         if failures:
             msg += "\n\nFailed parts:\n" + "\n".join(failures)
+        if bool_fail:
+            msg += "\n\n%d boolean operations failed and were skipped (a part may miss a hole or a rounded edge)." % len(bool_fail)
         if sphere_fail:
             msg += "\n\n(Spheres unavailable in this Fusion version: %d rounded corners were skipped.)" % len(sphere_fail)
         msg += ("\n\nKeep-out volumes are hidden (turn on 'Keep-out volumes' to see swept envelopes)."

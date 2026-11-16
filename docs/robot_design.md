@@ -9,7 +9,7 @@
 > - **Battery:** in a floor tunnel loaded from the front.
 > - **Camera:** removable mast at the nose.
 > - **Frame:** printed as tub + tail module.
-> - **Size and mass:** ≈ 399 × 348 × 173 mm (mast off) and ≈ 3.4 kg, not 350 × 280 × 140 / 2.5 kg.
+> - **Size and mass:** ≈ 399 × 343 × 173 mm (mast off) and ≈ 3.4 kg, not 350 × 280 × 140 / 2.5 kg.
 >
 > Unchanged and still valid here: §1 power/speed reasoning, the AM32 ESC set-up in §3, battery/charger choice.
 > The layout sketches in §2/§2a and the frame-plate print row below describe the old design.

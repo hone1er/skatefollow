@@ -14,7 +14,8 @@ Files:
 > so a problem skips one part and is named in the final message box instead of stopping the script.
 > **First run:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> "built 68 of 68 parts" (owner confirmed the earlier 66-part version runs). If any part fails, send the message text back.
+> "built 72 of 72 parts" (owner confirmed the earlier 66-part version runs; the "Tools" group holds the hidden drill jig).
+> Every boolean is wrapped on its own: if one fails, the message box counts it instead of dropping the part. If any part fails, send the message text back.
 > Rounded corners use `TemporaryBRepManager.createSphere`; if a Fusion version lacks it, those corners are skipped and the
 > message box says how many.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
@@ -25,13 +26,13 @@ Files:
 
 | Topic | Before (2026-11-13 plan) | Now | Why |
 |---|---|---|---|
-| Wheel arrangement | Driven wheels **rear**, caster front | Driven wheels **front**, caster trails at the rear | Braking. Weight shifts forward when braking, onto the wheels that brake, and front-wheel braking is directionally stable (a rear-braked robot spins when its wheels slide). From 15 mph the checker gives **5.4 m vs 6.4 m** (good grip, μ 0.8) and **5.5 m vs 7.7 m** (dusty, μ 0.6). With the recommended 0.5 g software cap both layouts need ~6.3 m on good grip; front drive keeps that on poor grip, rear drive would not. Steering is unaffected (`base_link` = axle centre). |
+| Wheel arrangement | Driven wheels **rear**, caster front | Driven wheels **front**, caster trails at the rear | Braking. Weight shifts forward when braking, onto the wheels that brake, and front-wheel braking is directionally stable (a rear-braked robot spins when its wheels slide). From 15 mph the checker gives **4.9 m vs 6.7 m** (good grip, μ 0.8) and **5.7 m vs 8.0 m** (dusty, μ 0.6). With the recommended 0.5 g software cap the front-drive robot needs ~6.3 m on any grip ≥ 0.57; the rear-drive version could not reach 0.5 g at all. Steering is unaffected (`base_link` = axle centre). |
 | Motors | generic 5010 360KV + GT2 belt, pulley on the shaft | **Reference motor MAD 5010 EEE V2.0 370KV** (published size, base and prop holes; "EEE" = the maker's weather-resistant industrial line). **Printed 28T HTD-3M pulley bolted to the bell's prop holes** → printed 56T on the wheel (2:1), **258 mm (86T) belt**. Motor sits on a **replaceable round plate** with a universal slotted pattern; a **pull screw** gives belt tension a positive stop | Generic 5010 listings disagree on pattern, shaft and weight, and none showed the ~25 mm of bare shaft a shaft-mounted pulley would need here. Bolting to the bell needs no shaft length. HTD-3M's round tooth prints better and skips less than GT2. |
-| Axle | One M8 × 300 rod through the frame | Two **M8 × 150 stub axles (12.9)** inside an **18 × 8.2 mm 7075 sleeve** that runs from the bolt head (locked in a pocket in the boss) to the wheel's inner race; nyloc outside | Leaves the centre free for a battery tunnel; each wheel comes off with one nut. The sleeve makes the clamp all-metal and carries the bending at the wall. |
+| Axle | One M8 × 300 rod through the frame | Two **M8 × 140 stub axles (12.9)** inserted **from outside** into a **captive nyloc** in the boss pocket. All-metal stack: head, 608, wheel spacer, 608, speed washer, outer sleeve, **collar 8.4 × 30 × 2**, inner sleeve through the boss (0.3 mm longer than the boss), nut | Leaves the centre free for a battery tunnel. Each side installs and comes off on its own, with one bolt turned from outside. The collar and nut locate the axle sideways (0.2–0.3 mm play) without clamping plastic. The sleeves carry the bending at the wall. |
 | Battery | Strapped on the plate | **Tunnel in the floor**, loaded from the front behind a bumper-door; two prongs hold it against the rear wall | Low CG, no strap, charging needs no tools (2 thumb screws). |
 | Camera | Damped mast above the axle | **Removable mast at the nose**, standard servo pan head, GoPro lens ahead of everything | With the lens ahead of the robot and high enough, nothing of the robot is in frame at ±45° pan, even in Wide 4:3 (see §3). |
 | Frame | One 330 × 260 plate | **Tub + tail module + lids + pods**, every part ≤ 222 mm | The 330 mm plate did not fit the 325 mm bed reliably; the tub (a box section) is much stiffer than a plate. |
-| Size / mass | ≈ 350 × 280 × 140 mm, ≈ 2.5 kg | **399 × 348 × 173 mm** (mast off; the tail hood is the top), 288 mm tall with the mast, **≈ 3.4 kg** (estimate) | Front drive needs the CG well behind the axle (pitch-over), which needs length. The 2026-11-16 strength review added the axle sleeves, the caster post and bearings, and thicker tail walls (+0.3 kg). Wheels off → 399 × 238 × 173 mm. **Measure your backpack** against this. |
+| Size / mass | ≈ 350 × 280 × 140 mm, ≈ 2.5 kg | **399 × 343 × 173 mm** (mast off; the tail hood is the top), 288 mm tall with the mast, **≈ 3.4 kg** (estimate) | Front drive needs the CG well behind the axle (pitch-over), which needs length. The 2026-11-16 strength review added the axle sleeves, the caster post and bearings, and thicker tail walls (+0.3 kg). Wheels off → 399 × 238 × 173 mm. **Measure your backpack** against this. |
 
 ### Drivetrain options checked (checker §6; 3S nominal, 90 mm wheels, needs ≥ 6.5 N at 15 mph)
 
@@ -62,6 +63,15 @@ If start-up still stutters under load, the motor plate and pulley are the only p
 tooth tips. The checker tests it against everything around it. The 28T pulley has 10–11 teeth in mesh.
 **Tension:** press the belt at mid-span with about **2 N** (a 200 g weight); it should move **~1 mm** (span/64,
 ≈ 30 N per strand). Then tighten the pull screw against its boss, then the three plate screws.
+
+**Pulley runout budget: ≤ 0.2 mm.** On 65 mm centres a 0.2 mm wobble swings belt tension by roughly ±15 N
+(≈ half the pretension; belt stiffness [M]).
+- **Wheel pulley:** centred by its four bolts in **3.15 mm close-fit holes**. The holes in the wheel core are
+  drilled through the printed **pulley_drill_jig** (Tools group). The jig's spigot sits in the wheel's 22 mm
+  bearing seat with the bearing removed, so the holes come out concentric with the wheel.
+- **Motor pulley:** centred on the motor's shaft stub (bore drilled to fit, 8 mm deep) [M: confirm the stub stands
+  ≥ 2 mm above the bell].
+- **Check after assembly:** spin each pulley against a fixed pointer; no visible wobble.
 
 **Motor shaft support.** The pulley is bolted straight to the bell, which keeps the overhang on the 5 mm shaft as
 short as possible (~14 mm). At full pull the shaft sees ~68 MPa, a safety factor of 3.7 against fatigue. An extra
@@ -129,6 +139,9 @@ including the regulator inputs from the tail fuse and the servo's 6 V. Lengths a
   - **Forward pitch-over:** starts at **0.71 g**. If it pitches, the rounded bumper touches down at 22°, before the
     35° tip point, so it can't flip.
   - Do the firmware decel-ramp change in §8.
+- **Retention**: each drive axle is located sideways by the collar and the captive nut, and the caster crown by the
+  bolt head and the 24 mm washer. No load path relies on plastic being clamped. Bolt insertion is checked too: the
+  axle bolts slide out from outside, and the caster assembly drops out downward once the top nut is off.
 - **Structure at the worst road event.** The event is a wheel hitting a 6 mm crack at 15 mph: ~920 N on a drive
   wheel, ~840 N on the caster. It uses an assumed urethane contact stiffness of 50 N/mm; the 10 mm lip case at 3 m/s
   is lower. Every item has a safety factor ≥ 1.5:
@@ -139,7 +152,7 @@ including the regulator inputs from the tail fuse and the servo's 6 V. Lengths a
   | M8 at the root | 8.3 |
   | M8 inside the wheel | 7.8 (needs the wheel's 12 × 8 bearing spacer) |
   | Axle boss bearing | 1.8 |
-  | 6001 swivel bearings vs static rating | 1.6 |
+  | 6001 swivel bearings vs static rating | 1.5 |
   | Pivot post | 2.6 |
   | Fork legs, fore-aft / sideways | 6.9 / 1.6 |
   | Fork crown | 7.8 |
@@ -151,7 +164,7 @@ including the regulator inputs from the tail fuse and the servo's 6 V. Lengths a
   What the review changed to get there (each was below 1.5 or failing before):
   - **Axle:** a 7075 sleeve and a longer boss.
   - **Caster:**
-    - 6001 bearings in a 58 mm-tall post; the 24 mm-apart 608s were at a factor of 0.5.
+    - 6001 bearings 56 mm apart in a post; the 24 mm-apart 608s were at a factor of 0.5.
     - 13 mm legs; 9 mm was at 0.9.
     - The fork now prints **on its side**.
     - The M12 head is locked in the crown, so no nut hangs where the wheel passes under the pivot.
@@ -215,9 +228,9 @@ UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear
 | AM32 ESC 30–40 A, 2–4S, PWM input, bidirectional | 2 | + USB linker. Set: bidirectional, sine start-up on, LVC 3.3 V/cell |
 | 90 × 52 longboard wheels (4-pack) with a 12 × 8 bearing spacer + one 70 × ~51 wheel for the caster | 1 + 1 | Core must take 4 × M3 on Ø35 |
 | 6001-2RS bearings (12 × 28 × 8) | 2 | caster swivel |
-| M8 × 150 hex bolt **12.9** + 8 × 12 × 1.5 speed washer + nyloc | 2 | stub axles |
-| 7075-T6 (or 6082-T6) sleeve 18 × 8.2 mm, ~76 mm | 2 | turned from 18 mm bar and drilled 8.2; cut to measured length (bolt head pocket → wheel inner race) |
-| M12 × 90 hex bolt 12.9, M12 nyloc + 2 washers, steel spacer 16 × 12.2 (~50 mm), steel sleeve 18 × 12.2 × 7 | 1 | caster pivot stack (metal only) |
+| M8 × 140 hex bolt **12.9** + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 2 | stub axles (bolt from outside, nyloc captive inside) |
+| Axle sleeves 18 × 8.2 mm: inner 30.3 mm + outer (cut to measure, ~40 mm), and a collar washer 8.4 × 30 × 2 | 2 sets | 7075-T6 (SF 3.8) turned from 18 mm bar. **No lathe?** Nest stock tubes 12 × 2 inside 16 × 2 (E355 steel or stainless): set `axle_sleeve_d` = 16 and re-run; the checker then gives SF ≈ 1.9. |
+| M12 × 90 hex bolt 12.9, steel sleeve 18 × 12.2 × 5.5, washer 12.5 × 24 × 2, speed washer 12.2 × 16 × 1.5, steel spacer 16 × 12.2 (~48 mm), washer + PTFE/spring washer + M12 nyloc | 1 | caster pivot (metal only; the 24 mm washer captures the crown) |
 | M8 × 80 12.9 + nyloc, 2 × steel sleeve 12 × 8.2 × 13 | 1 | caster wheel axle (sleeves through the fork legs) |
 | M3 × 80 bolts + nylocs | 8 | wheel pulley through the core (stack ≈ 69.5 mm + washer + nut) |
 | Heat-set inserts M3 × 5.7 (~35), M4 × 8.1 (~8), M5 × 9.5 (8) | | |
@@ -233,14 +246,15 @@ UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear
 1. Inserts into tub, tail, motor plates, mast, ESP32 cradle. 6001s into the tail post.
 2. Motor → plate (screw heads in the counterbores); 28T pulley → bell (4 × M3 low head) → plate into the wall
    pocket, 3 × M3 from inside, loose; pull screw through its boss into the plate tab, loose.
-3. Stub axle from inside (head in its pocket) → 18 mm sleeve → speed washer → wheel with pulley bolted on →
-   washer, nyloc. Tighten so the stack is solid.
+3. Each side: drop the M8 nyloc into the boss pocket from inside the tub (battery out, or before the deck goes in).
+   Then from outside: inner sleeve into the boss, collar, outer sleeve, speed washer, wheel with its pulley, washer,
+   M8 × 140 bolt. Turn the bolt from outside until the stack is solid. The pocket stops the nut turning.
 4. Belt on; turn the pull screw until the belt passes the 2 N / 1 mm check (§1); tighten the three plate screws.
-5. Tail onto the tub (8 × M5 sideways + 2 × M4 through the lip). Caster: M12 head into the crown pocket → 18 mm
-   sleeve → washer → lower 6001 → 16 mm spacer → upper 6001 → washer → PTFE + spring washer → nyloc (snug, not
-   tight: it is the shimmy damper).
-6. ESP32 slides into the cradle grooves from the −y end; cradle bolts up from under the tail deck before the tail
-   goes on.
+5. ESP32 cradle: bolt it to the tail deck from below (4 × M3) **before** the tail goes on; the ESP32 slides into the
+   grooves from the −y end.
+6. Tail onto the tub (8 × M5 sideways + 2 × M4 through the lip). Caster from below: M12 head into the crown pocket,
+   18 mm sleeve, 24 mm washer, speed washer, lower 6001, 16 mm spacer, upper 6001, washer, PTFE + spring washer,
+   nyloc on top of the post. Snug, not tight: it is the shimmy damper.
 7. Wiring in the side channels, deck with Pi/regulators in, lid, mast (2 thumb screws), GoPro, hood.
 8. Battery in from the front, lead end last (the XT60 stays at the door, then is tucked up past the prongs),
    bumper-door on, 2 thumb screws.
