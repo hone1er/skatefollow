@@ -51,7 +51,8 @@ PARAMS = {
     "axle_sleeve_E": 210e3, "axle_sleeve_yield": 355.0,
     # 4-wheel skid steer: rear axle, 1:1 belt from the front wheel pulley to the rear wheel, 608 idler tensioner
     "pul_r_t": 36, "belt2_len": 510.0, "belt2_plane_y": 84.0,  # 1:1 front -> rear belt: HTD 510-3M-09 (170T, stock)
-    "belt2_take_up": 1.0,       # [D] belt length the idler takes up at mid-slot; slot covers 0.2 ... 2.0 mm
+    "belt2_take_up": 2.0,       # [D] belt length the idler takes up at nominal; slot covers 0.3 ... 4.5 mm
+    "belt2_take_up_range": (0.3, 4.5),   # +/-0.3 % print shrink on 200 mm centres is ~ +/-1.2 mm of belt path
     "idler_r": 11.0,            # 608-2RS outer radius
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
@@ -405,7 +406,7 @@ def build_model(P=None):
             lo, hi = (zm, hi) if Lm - (P["belt2_len"] - P["belt2_take_up"]) > extra else (lo, zm)
         return (lo + hi) / 2
     izc = idler_z(P["belt2_take_up"])
-    iz_hi, iz_lo = idler_z(0.2), idler_z(2.0)
+    iz_hi, iz_lo = idler_z(P["belt2_take_up_range"][0]), idler_z(P["belt2_take_up_range"][1])
     m.info["idler_travel"] = (iz_lo, izc, iz_hi)
     mdx = P["motor_dx"]; mdz = math.sqrt(P["belt_cc"] ** 2 - mdx ** 2)
     mc_x, mc_z = mdx, az + mdz
@@ -457,6 +458,8 @@ def build_model(P=None):
     tub_cuts.append(chamfer_cut((x1, -hw, zf0), (x1, hw, zf0), (-1, 0, 0), (0, 0, 1), 2.5))
     tub_cuts.append(chamfer_cut((x0, -hw, zf0), (x0, hw, zf0), (1, 0, 0), (0, 0, 1), 2.5))
     tub_cuts.append(box(xf_in - co, x1 + co, -28, 28, zf1 - co, 66))                 # battery door opening
+    for s_ in (1, -1):                         # notch the battery rails so the front axle nylocs drop into their pockets
+        tub_cuts.append(box(-9.5, 9.5, min(s_ * 26.0, s_ * 30.5), max(s_ * 26.0, s_ * 30.5), zf1, zf1 + 8 + co))
     for s in (1, -1):
         for nm, ax in AX:
             m.hole("tub", "beam_pass_%s%s" % (nm, "L" if s > 0 else "R"), (ax - 18 - co, s * 45, 73),
@@ -501,6 +504,10 @@ def build_model(P=None):
         m.hole("tub", "motor_wire_" + side, (-66, s * (inner - 10), 72), (-66, s * (hw + co), 72), 12,
                for_item="motor phase wires grommet " + side, audit=False)
         # idler: vertical slot for an M8 bolt; the 608 presses the 1:1 belt's upper run down
+        for kx in (-1, 1):                     # hex channel: holds the M8 head (13 AF) so the nyloc tightens from outside
+            tub["adds"].append(box(min(P["idler_x"] + kx * 6.8, P["idler_x"] + kx * 10), max(P["idler_x"] + kx * 6.8, P["idler_x"] + kx * 10),
+                                   min(s * (inner - 11.5), s * (inner - 5.99)), max(s * (inner - 11.5), s * (inner - 5.99)),
+                                   iz_lo - 9, dz0 - 0.01))
         m.slot_hole("tub", "idler_" + side, (P["idler_x"], s * (inner - 1), iz_lo), (P["idler_x"], s * (inner - 1), iz_hi),
                     P["clr_m8"], (0, ys, 0), 10 + 2 * co, for_item="idler M8 (vertical tension slot)")
         # shell inserts (front + rear posts), deck inserts, door + bracket inserts
@@ -844,19 +851,26 @@ def build_model(P=None):
         m.part("belt_" + side, H, COL["belt"], belt_loop((0.0, az), wpr, (mc_x, mc_z), mpr, P["belt_t"], s * by, P["belt_w"]),
                mass=0.012, moving=True, mates={"wheel_pulley_F" + side, "motor_pulley_" + side},
                note="HTD-3M %d mm (%dT) x 9 mm closed belt" % (P["belt_len"], P["belt_len"] / 3))
-        m.part("belt2_" + side, H, COL["belt"], belt_loop_n([(0.0, az, rpr, 1), (P["idler_x"], izc, P["idler_r"], -1),
+        m.part("belt2_" + side, H, COL["belt"], belt_loop_n([(0.0, az, rpr, 1), (P["idler_x"], iz_hi, P["idler_r"], -1),
                                                              (xra, az, rpr, 1)], P["belt_t"], s * by2, P["belt_w"]),
                mass=0.02, moving=True, mates={"wheel_pulley_F" + side, "wheel_pulley_R" + side, "idler_" + side},
                note="HTD-3M %d mm (%dT) x 9 mm closed belt, front -> rear wheel 1:1" % (P["belt2_len"], P["belt2_len"] / 3))
         # idler: 608 on an M8 bolt in the wall slot, rolling on the back of the upper run
         m.part("idler_" + side, H, COL["hw_metal"],
-               [cyl_y(s * (by2 - 3.5), s * (by2 + 3.5), P["idler_x"], izc, P["idler_r"]),
-                cyl_y(s * (inner - 6), s * (by2 + 8), P["idler_x"], izc, 4.0),
-                cyl_y(s * (inner - 11.3), s * (inner - 6 + 0.01), P["idler_x"], izc, 6.5),
-                cyl_y(s * hw, s * (by2 - 3.5), P["idler_x"], izc, 6.0)],
-               mass=0.03, moving=True, mates={"tub", "belt2_" + side},
-               note="608-2RS on an M8 x 50 bolt (head inside the tub) + 18.5 mm spacer + nyloc; slide down to tension, then tighten")
-        m.info.setdefault("idler", {})[side] = (P["idler_x"], izc)
+               [cyl_y(s * (by2 - 7.0), s * (by2 + 7.0), P["idler_x"], iz_hi, P["idler_r"]),
+                cyl_y(s * (inner - 6), s * (by2 + 11), P["idler_x"], iz_hi, 4.0),
+                cyl_y(s * (inner - 11.3), s * (inner - 6 + 0.01), P["idler_x"], iz_hi, 6.5),
+                cyl_y(s * hw, s * (by2 - 7.0), P["idler_x"], iz_hi, 6.0)],
+               mass=0.045, moving=True, mates={"tub", "belt2_" + side, "idler_travel_" + side},
+               note="2 x 608-2RS side by side (14 mm under the 9 mm belt) on an M8 x 55 hex bolt; head held in the "
+                    "pad's hex channel, so the outside nyloc tightens it; 8 x 12 shims against the inner races")
+        m.part("idler_travel_" + side, "keepout", COL["keepout"],
+               [cyl_y(s * (by2 - 7.0), s * (by2 + 7.0), P["idler_x"], iz_lo, P["idler_r"]),
+                box(P["idler_x"] - P["idler_r"], P["idler_x"] + P["idler_r"], min(s * (by2 - 7), s * (by2 + 7)),
+                    max(s * (by2 - 7), s * (by2 + 7)), iz_lo, iz_hi)],
+               note="idler swept over its tension slot (%.1f-%.1f mm take-up)" % P["belt2_take_up_range"],
+               mates={"idler_" + side, "belt2_" + side, "tub"})
+        m.info.setdefault("idler", {})[side] = (P["idler_x"], iz_hi)
     m.part("battery", H, COL["battery"], [box(P["bat_x0"], P["bat_x0"] + P["bat_l"], -P["bat_w"] / 2, P["bat_w"] / 2, zf1, zf1 + P["bat_h"])],
            mass=0.40, mates={"tub", "bumper_door"}, note="3S 5000 mAh hard case <= 145 x 50 x 30 [M]")
     m.part("pi5", H, COL["pcb_green"], [box(pi_x0, pi_x1, -28, 28, dz1 + 6, dz1 + 7.6),
@@ -949,9 +963,13 @@ def build_model(P=None):
             k = nm + side
             m.removals += [
                 (["axle_" + k], (0, sgn, 0), 150, ["axle_nut_" + k, "wheel_" + k, "spacer_" + k]),
-                (["wheel_" + k, "wheel_pulley_" + k], (0, sgn, 0), 120,
-                 ["axle_" + k, "axle_nut_" + k, "spacer_" + k, "belt_" + side, "belt2_" + side, "idler_" + side]),
+                (["axle_nut_" + k], (0, -sgn, 0), 25, ["axle_" + k, "spacer_" + k, "battery", "bumper_door"]),
             ]
+        m.removals.append((["wheel_F" + side, "wheel_pulley_F" + side, "wheel_R" + side, "wheel_pulley_R" + side,
+                            "belt2_" + side], (0, sgn, 0), 120,
+                           ["axle_" + a_ + side for a_ in "FR"] + ["axle_nut_" + a_ + side for a_ in "FR"]
+                           + ["spacer_" + a_ + side for a_ in "FR"] + ["belt_" + side, "idler_" + side,
+                                                                      "idler_travel_" + side]))
         m.removals.append((["motor_" + side, "motor_plate_" + side, "motor_pulley_" + side], (0, sgn, 0), 120,
                            ["wheel_F" + side, "wheel_pulley_F" + side, "belt_" + side, "belt2_" + side, "shell",
                             "axle_F" + side, "axle_nut_F" + side, "spacer_F" + side] + bolts))

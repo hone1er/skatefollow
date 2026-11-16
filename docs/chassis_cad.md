@@ -16,7 +16,7 @@ Files:
 
 > **Run it:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> **"built 75 of 75 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
+> **"built 77 of 77 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
 > the same API calls. If any part or boolean fails, the message box names it: send the text back.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
 
@@ -30,7 +30,7 @@ Files:
 |---|---|---|---|
 | Wheels | 2 driven front wheels + swivel caster at the rear (tail module) | **4 wheels, all driven**. Each side has one motor: motor → 28T:56T belt → front wheel; the front wheel's **double pulley** (56T + 36T) → **1:1 belt** (HTD 510-3M-09) → 36T on the rear wheel | Fewer, simpler parts: no caster fork, swivel bearings, M12 pivot, tail, hood or lap joint. The caster parts carried the lowest safety factors (1.5); they are gone. No shimmy. All four wheels brake. Diff-drive software is unchanged |
 | Frame | Tub + bolted tail + hood + lid + 2 pods | **One 300 mm tub**, both axles in it. **One shell** (lid + both motor pods, 4 screws). ESP32 cradle printed on the deck. UWB plate printed on the mast | Printed parts **20 → 15**. One lap joint and ~20 screws fewer |
-| Rear-belt tension | — | **608-2RS idler** on an M8 bolt in a vertical wall slot, pressing the 1:1 belt's upper run down at mid-span. The wheelbase (**200.5 mm**) is solved from the belt length; the slot covers 0.2–2.0 mm of take-up (belt and print tolerance) | Rear axle stays a fixed captive-nut stub axle like the front one |
+| Rear-belt tension | — | **Idler (2 × 608-2RS side by side)** on an M8 hex bolt in a vertical wall slot, pressing the 1:1 belt's upper run down at mid-span. The wheelbase (**200.0 mm**) is solved from the belt length for 2 mm of take-up; the 15.6 mm slot covers 0.3–4.5 mm (±0.3 % print shrink on 200 mm is ±1.2 mm of belt path, plus belt tolerance). The bolt head sits in a hex channel inside, so the nyloc tightens from outside | Rear axle stays a fixed captive-nut stub axle like the front one |
 | Pulley fixing | M3 × 80 through the wheel core into nylocs | **Heat-set inserts in the pulleys**, M3 screws from the wheel's outer face | The 36T neck left no room for a nut; 16 nuts fewer |
 | Axle sleeves | 7075 turned 18 mm | **Stock steel tubes**: 12 × 2 inside 16 × 2 (E355, no lathe) | Buyable; SF 2.0 |
 | Size / mass | 399 × 343 × 173 mm, 3.4 kg | **343 × 343 × 147 mm** (mast off), 288 mm tall with the GoPro, **≈ 3.8 kg** (estimate) | Two more wheels, axles and belts (+0.4 kg); shorter (no tail) |
@@ -100,11 +100,12 @@ tension spec above, and the pull-screw stop, which keeps tension from creeping u
 
 **Rear (1:1) belt and idler.**
 - The loop is solved exactly: three pulleys, with tangent runs and wraps on the pitch line.
-- With the belt at its nominal 510 mm, the idler sits 10 mm below the straight run and takes up 1.0 mm.
-- Slot ends: 0.2 mm take-up (idler high) to 2.0 mm (idler low).
+- With the belt at its nominal 510 mm, the idler sits ~14 mm below the straight run and takes up 2.0 mm.
+- Slot ends: 0.3 mm take-up (idler high, z 69.3) to 4.5 mm (idler low, z 53.7). Belt and idler are drawn at the
+  high end (closest to the motor); the swept idler travel is a checked keep-out.
 - **Tension:** slide the idler down until the upper run between the idler and either pulley deflects ~1.5 mm under
   2 N at its middle, then tighten the M8 nyloc.
-- The upper run passes 3–5 mm under the motor can at the nominal idler position. The checked can is the Ø62
+- The upper run passes 3–5 mm under the motor can even at the high end of the slot. The checked can is the Ø62
   envelope; the MAD motor is Ø56.
 - **The rear belt goes on together with the wheels** (it loops both wheel pulleys; see §7).
 
@@ -112,9 +113,9 @@ tension spec above, and the pull-screw stop, which keeps tension from creeping u
 
 | Item | Where | Notes |
 |---|---|---|
-| Wheels 90 × 52 | front (0, ±138.5, 45), rear (−200.5, ±138.5, 45) | track 277, wheelbase 200.5 |
+| Wheels 90 × 52 | front (0, ±138.5, 45), rear (−200.0, ±138.5, 45) | track 277, wheelbase 200.0 |
 | Motors (≤ Ø62 × 33) | centre (−40, ±62…95, 96), outside the walls under the shell pods | 28T bolted to the bell, belt plane y ±102; **HTD-3M 258 mm** → 64.6 mm centres |
-| Rear belt | plane y ±84, 36T:36T | **HTD 510-3M-09**; 608 idler at x −100.2, z 60.7–70.3 slot |
+| Rear belt | plane y ±84, 36T:36T | **HTD 510-3M-09**; 2 × 608 idler at x −100, slot z 53.7–69.3 |
 | Battery tunnel | x −141…4, \|y\| ≤ 26.5, z 32…62 | 3S 5000 hard case ≤ 145 × 50 × 30 |
 | Fuse + distribution | under the deck, x −180…−146 (behind the battery) | 20 A blade fuse, XT30/Wago; XT60 arming plug in the rear wall |
 | Deck (removable) | z 79…82 | Pi 5 (USB end to the rear), 2 regulators beside the mast socket, 2 ESCs zip-tied at the rear, **ESP32 slide-in cradle printed on** (x −195, PCB 30 mm above the deck so the jumper plugs on its downward pins clear), 10 mm M3 grid |
@@ -140,7 +141,8 @@ Power below the deck, signals above it:
   - Every thread in plastic is a heat-set insert.
   - The fastener schedule is in report §11.
 - **Assembly / service:** these slide out along their exit paths: mast, shell, deck, bumper-door, battery, each
-  wheel with its pulley, each axle bolt, each motor module.
+  axle bolt, **both wheels of a side together with their pulleys and the rear belt**, each motor module. Each axle
+  nyloc drops into its pocket from the battery tunnel (the battery rails are notched at the front axle).
 - **Camera:** 0 robot points in frame for pan ±45° in every mode (5° margin). Allowed down-tilt is in the report.
   ![camera](../cad/report/camera_views.png)
 - **Street → driveway** (up to a 20° slope change, lips up to 10 mm):
@@ -220,11 +222,11 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | M3 × 12 low-head (DIN 7984) | 8 | motor pulley → bell |
 | HTD-3M **258 mm (86T)** × 9 mm closed belt | 2 (+1) | motor → front wheel |
 | HTD-3M **510 mm (170T)** × 9 mm closed belt, e.g. Gates 510-3M-09 | 2 (+1) | front → rear wheel, 1:1 |
-| 608-2RS + M8 × 50 bolt + 18.5 mm spacer + washer + M8 nyloc | 2 | rear-belt idlers |
+| 2 × 608-2RS + M8 × 55 hex bolt + spacer (wall → bearings, ~15 mm) + 8 × 12 shims + washer + M8 nyloc | 2 sets | rear-belt idlers (14 mm wide under the 9 mm belt) |
 | AM32 ESC 30–40 A, 2–4S, PWM input, bidirectional | 2 | + USB linker; bidirectional, sine start-up, LVC 3.3 V/cell |
 | 90 × 52 longboard wheels (4-pack) with 12 × 8 bearing spacers + 8 × 608-2RS | 1 | solid core at Ø35 |
 | M8 × 140 hex bolt 12.9 + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 4 | stub axles |
-| Axle stack per wheel: steel tubes **16 × 2** (inner 30.3 mm through the boss + outer cut to measure) over **12 × 2** (full length), collar washer 8.4 × 30 × 2 | 4 sets | E355 or stainless stock tube, cut and deburred |
+| Axle stack per wheel: steel tubes **16 × 2** (inner 30.3 mm through the boss + outer cut to measure) over **12 × 2** (full length), collar washer 8.4 × 30 × 2 | 4 sets | E355 or stainless stock tube, cut and deburred. 12 × 2 in 16 × 2 and M8 in 12 × 2 are line-to-line nominal: plan to ream the 12 × 2 bore to 8.2 and sand the 12 mm OD to slide, or use a single 16 × 4 tube if you find one stocked |
 | M3 × 55–60 socket screws | 16 | wheel outer face → inserts in the pulleys (≥ 5 mm into the insert, must not bottom in the 8 mm hole) |
 | Heat-set inserts M3 × 5.7 (~40), M4 × 8.1 (~6) | | |
 | M3 screws (shell 4, deck 4, motor plates 6, belt pull 2 × M3 × 25, HC-SR04 2), M4 thumb screws (mast 2, door 2) | | |
@@ -238,20 +240,22 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 
 1. Inserts into the tub (shell, deck, motor-plate, door, HC-SR04, mast), motor plates and pulleys.
 2. Motor → plate; 28T pulley → bell; plate into the wall pocket, 3 × M3 from inside, loose; pull screw loose.
-3. Idlers: M8 bolt from inside the tub (head inside), spacer, 608, washer, nyloc; leave it at the top of the slot.
-4. Each axle: drop the M8 nyloc into its boss pocket from inside the tub; inner sleeve into the boss from outside, then
+3. Each axle: drop the M8 nyloc into its boss pocket from inside the tub; inner sleeve into the boss from outside, then
    the collar.
-5. **Per side, wheels and rear belt together:** screw each pulley to its wheel (4 × M3 from the outer face). Loop the
+4. **Per side, wheels and rear belt together:** screw each pulley to its wheel (4 × M3 from the outer face). Loop the
    510 mm belt around both 36T pulleys. Then fit both wheels onto their axle stacks at once (outer sleeve, speed
    washer, wheel, washer, M8 × 140 from outside; turn until solid). Motor belt over the 28T and the 56T.
-6. Tension: motor belt with the pull screw (2 N → ~1 mm at mid-span), then the three plate screws; rear belt with the
-   idler (2 N → ~1.5 mm), then its nyloc.
+5. Idlers (after the wheels: even at the top of the slot the idler sits inside the belt path): M8 hex bolt from
+   inside the tub (head in the hex channel), spacer, shim, 2 × 608, shim, washer, nyloc, loose.
+6. Tension: motor belt with the pull screw (2 N → ~1 mm at mid-span), then the three plate screws; rear belt: slide
+   the idler down (2 N → ~1.5 mm), then tighten its nyloc from outside.
 7. Fuse block below the deck; wiring in the side channels; deck with the Pi, regulators, ESCs and ESP32; shell
    (4 screws); mast (2 thumb screws); GoPro.
 8. Battery in from the front, bumper-door on (2 thumb screws).
 
-Removing a wheel: take the wheel bolt out. The front wheel slides off once the motor belt is off its 56T. Both
-wheels on a side come off together if the rear belt must come off.
+Removing wheels: **the two wheels of a side come off together** (the rear belt cannot pass the 36T flanges): idler
+up, motor belt off the 56T, both wheel bolts out, slide both wheels off with the belt. A motor-belt change therefore
+means pulling that side's pair.
 
 ## 8. Tests before and after building
 
