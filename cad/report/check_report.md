@@ -401,6 +401,27 @@ Motor shaft: the 5 mm shaft over ~14 mm is ~7044 N/mm stiff, so a printed outboa
 
 Mast first bending mode (E 3.5 GPa, ideal clamp): **118 Hz** (target > 30 Hz).
 
+## 7b. Prototype kit: printed sleeves + TPU belts (informational)
+
+**Axles.** A fully printed axle is not an option: the wheel bearings fix it at 8 mm, and an 8 mm PAHT-CF pin 76 mm out from the wall breaks at ~53 N (along layers) or ~20 N (across), against 12 N of static load per front wheel. Keep the M8 12.9 bolt and print only the sleeves: the plastic sleeve adds little stiffness, so the bolt carries the bending alone, 473 N per wheel at safety factor 1.5. With the lip-impact model (k = 50 N/mm) that is:
+
+| obstacle | max speed with printed sleeves |
+|---|---|
+| 6 mm crack / lip | 3.5 m/s (8 mph) |
+| 10 mm crack / lip | 2.8 m/s (6 mph) |
+
+Plastic in the clamped axle stack creeps: re-tighten the wheel bolts after the first runs.
+
+**TPU belts.** Without tension cords the belt stretches under load, so the teeth stop matching the pulley pitch. Model: EA = E x 9 mm x 2 mm = **468 N** (E = 26 MPa [M]); belts print short by T0/EA so they sit on pitch at the 5 N pretension; teeth start riding out when the tight-side stretch adds 0.5 mm over the ~13 teeth in mesh on the 28T.
+
+| case | thrust per side (N) | belt pull Te (N) | result |
+|---|---|---|---|
+| cruise 3 m/s on flat ground | 0.5 | 0.9 | OK |
+| accelerate at 1 m/s^2 | 2.3 | 3.9 | OK |
+| turn in place (mu 0.8) | 10.9 | 18.3 | **skips** |
+
+Limit: Te 12 N -> about **3.6 m/s^2** of acceleration. Pivot turns will skip TPU belts: turn in arcs and keep `THROTTLE_LIMIT` low. Pretension relaxes as TPU creeps: re-tension often. Order real HTD-3M belts (about $10-16 each) before driving fast.
+
 ## 8. HC-SR04 beam
 
 Sensor centre z = 102 mm, tilted up 12 deg; with a +/-15 deg beam the lower edge reaches the ground at **1.95 m** (must be beyond `slow_distance` = 1.0 m, otherwise the gate slows for the road). Lower beam edge height at 0.4 m (`stop_distance`): 81 mm, at 1.0 m: 50 mm -> kerbs taller than that are seen. The beam half-angle is a datasheet-style figure: confirm with the test in docs/chassis_cad.md.

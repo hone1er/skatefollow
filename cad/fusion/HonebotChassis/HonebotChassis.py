@@ -54,6 +54,9 @@ PARAMS = {
     "belt2_take_up": 2.0,       # [D] belt length the idler takes up at nominal; slot covers 0.3 ... 4.5 mm
     "belt2_take_up_range": (0.3, 4.5),   # +/-0.3 % print shrink on 200 mm centres is ~ +/-1.2 mm of belt path
     "idler_r": 11.0,            # 608-2RS outer radius
+    # prototype kit (hidden "Prototype kit" group): printed axle sleeves + TPU belts, to drive before buying metal
+    "tpu_E": 26.0,              # [M] TPU tensile modulus, MPa (95A class; hang 1 kg on a printed loop to measure, docs §8)
+    "tpu_T0": 5.0,              # [D] TPU belt pretension per strand, N; belts print short by T0 / EA so they sit on pitch
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
@@ -672,6 +675,35 @@ def build_model(P=None):
         ang = k * math.pi / 2 + math.pi / 4
         jig["cuts"].append(cyl_z(jz - co, jz + 5 + co, 17.5 * math.cos(ang), 17.5 * math.sin(ang), 1.5))
 
+    # ---------------- PROTOTYPE KIT (hidden): printed axle sleeves + TPU belts, laid out flat for printing ----------------
+    pz = -150.0
+    for i, (nm, _) in enumerate(AX * 2):
+        k = "%s%d" % (nm, i // 2 + 1)
+        cx, cy = 120.0 + 40 * i, 0.0
+        ins = m.part("proto_sleeve_in_" + k, "prototype", COL["accent"],
+                     [cyl_z(pz, pz + 2.0, cx, cy, 15.0), cyl_z(pz + 1.99, pz + 32.3, cx, cy, sd / 2)],
+                     [cyl_z(pz - co, pz + 32.3 + co, cx, cy, 4.2)], material="PAHT-CF", hidden=True,
+                     note="prototype: inner sleeve + collar in one, collar on the bed; replaces the steel tube + collar")
+        lo = wiy - 0.5 - 72.0
+        m.part("proto_sleeve_out_" + k, "prototype", COL["accent"],
+               [cyl_z(pz, pz + lo, cx, cy + 40, sd / 2), cyl_z(pz + lo - 0.01, pz + lo + 1.5, cx, cy + 40, 6.0)],
+               [cyl_z(pz - co, pz + lo + 1.5 + co, cx, cy + 40, 4.2)], material="PAHT-CF", hidden=True,
+               note="prototype: outer sleeve + inner-race lip (%.1f mm: set to your wheel's bearing inset)" % (lo + 1.5))
+    EA = P["tpu_E"] * P["belt_w"] * 2.0
+    for nm, L, cx, cy in (("motor", P["belt_len"], -100.0, 0.0), ("rear", P["belt2_len"], -100.0, 230.0)):
+        n_t = int(round(L / 3.0))
+        Lp = L / (1 + P["tpu_T0"] / EA)
+        R = Lp / (2 * math.pi)
+        teeth_ = [cyl_z(pz, pz + P["belt_w"], cx + (R - 0.62) * math.cos(2 * math.pi * j / n_t),
+                        cy + (R - 0.62) * math.sin(2 * math.pi * j / n_t), 0.85) for j in range(n_t)]
+        m.part("proto_belt_%s" % nm, "prototype", COL["belt"], teeth_,
+               pre=[([cyl_z(pz, pz + P["belt_w"], cx, cy, R + 1.62)], [cyl_z(pz - co, pz + P["belt_w"] + co, cx, cy, R - 0.38)])],
+               material="TPU (hardest you have)", hidden=True,
+               note="prototype HTD-3M %dT belt printed %.1f mm long (stretches to %.0f at %.0f N); print flat, 100 %% infill, x2"
+                    % (n_t, Lp, L, P["tpu_T0"]))
+        m.info.setdefault("proto_belts", {})[nm] = (n_t, Lp, L)
+    m.info["tpu_EA"] = EA
+
     # ---------------- BUMPER-DOOR ("mouth") ----------------
     bfront = x1 + 28
     bump = soft_slab(x1, bfront, -50, 50, 30, 76, 14, 12, top=True, bottom=True)
@@ -1112,7 +1144,7 @@ def run(context):
 
         groups = {}
         for gname, label in (("printed", "Printed parts"), ("hardware", "Reference hardware"), ("keepout", "Keep-out volumes"),
-                             ("tools", "Tools (print once)")):
+                             ("tools", "Tools (print once)"), ("prototype", "Prototype kit (printed sleeves, TPU belts)")):
             occ = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
             occ.component.name = label
             groups[gname] = occ.component

@@ -493,7 +493,7 @@ def camera_sweeps(report):
     for seat in (base - 60, base - 40, base - 20, base):
         for mx in (HC.PARAMS["mast_x"] - 10, HC.PARAMS["mast_x"]):
             M = HC.build_model({"servo_seat_z": seat, "mast_x": mx})
-            M.parts = [p for p in M.parts if p["group"] != "tools"]
+            M.parts = [p for p in M.parts if p["group"] not in ("tools", "prototype")]
             res, _ = check_camera(M, [], quiet=True)
             n = res["Wide 4:3"]
             rows.append((seat, M.info["camera"]["lens"][2], mx, n))
@@ -510,7 +510,7 @@ def tilt_sweep(report, pts):
         best = None
         for tilt in range(0, -31, -1):
             M = HC.build_model({"cam_tilt_deg": float(tilt)})
-            M.parts = [p for p in M.parts if p["group"] != "tools"]
+            M.parts = [p for p in M.parts if p["group"] not in ("tools", "prototype")]
             worst = 0
             for pan in range(-45, 46, 5):
                 vis, *_ = cam_project(M, pts, pan, mode)
@@ -782,6 +782,53 @@ def structural(M, report, mass, cg, dyn):
     return low
 
 
+def prototype(M, report, mass, dyn):
+    """Limits of the prototype kit: printed PAHT-CF sleeves (the M8 bolt carries the bending) and TPU belts."""
+    P = M.info["P"]; g = 9.81
+    report.append("## 7b. Prototype kit: printed sleeves + TPU belts (informational)\n")
+    rw = P["wheel_d"] / 2
+    lever = (P["wheel_inner_y"] + P["wheel_w"] / 2) - P["tub_hw"]
+    m_w = mass * max(dyn["fx"], 1 - dyn["fx"]) / 2 + 0.25
+    Z8 = math.pi * 8 ** 3 / 32
+    F_ok = 1080 / 1.5 * Z8 / lever
+    rows = []
+    for h in (6.0, 10.0):
+        th = math.acos((rw - h) / rw)
+        v = F_ok / (math.sin(th) * math.sqrt(K_LIP * m_w))
+        rows.append((h, v))
+    report.append("**Axles.** A fully printed axle is not an option: the wheel bearings fix it at 8 mm, and an 8 mm PAHT-CF "
+                  "pin %.0f mm out from the wall breaks at ~%.0f N (along layers) or ~%.0f N (across), against %.0f N of "
+                  "static load per front wheel. Keep the M8 12.9 bolt and print only the sleeves: the plastic sleeve adds "
+                  "little stiffness, so the bolt carries the bending alone, %.0f N per wheel at safety factor 1.5. With the "
+                  "lip-impact model (k = %.0f N/mm) that is:\n" % (lever, 80 * Z8 / lever, 30 * Z8 / lever,
+                                                                 mass * g * dyn["fx"] / 2, F_ok, K_LIP / 1000))
+    report.append("| obstacle | max speed with printed sleeves |\n|---|---|")
+    for h, v in rows:
+        report.append("| %.0f mm crack / lip | %.1f m/s (%.0f mph) |" % (h, v, v * 2.237))
+    report.append("\nPlastic in the clamped axle stack creeps: re-tighten the wheel bolts after the first runs.\n")
+    EA = M.info["tpu_EA"]
+    r56 = P["pul_w_pd"] / 2
+    teeth_mesh = P["pul_m_t"] * 0.45                  # ~160 deg wrap on the 28T motor pulley
+    err_ok = 0.5                                      # [assumption] cumulative pitch error before teeth ride out (mm)
+    Te_max = 2 * EA * err_ok / (3.0 * teeth_mesh)
+    F_side_max = Te_max * r56 / rw
+    a_max = (2 * F_side_max - 0.02 * mass * g) / mass
+    report.append("**TPU belts.** Without tension cords the belt stretches under load, so the teeth stop matching the pulley "
+                  "pitch. Model: EA = E x 9 mm x 2 mm = **%.0f N** (E = %.0f MPa [M]); belts print short by T0/EA so they "
+                  "sit on pitch at the %.0f N pretension; teeth start riding out when the tight-side stretch adds %.1f mm "
+                  "over the ~%.0f teeth in mesh on the 28T.\n" % (EA, P["tpu_E"], P["tpu_T0"], err_ok, teeth_mesh))
+    turn_side = 0.8 * mass * g * (M.info["P"]["wheelbase"] / 2) / (2 * (P["wheel_inner_y"] + P["wheel_w"] / 2))
+    report.append("| case | thrust per side (N) | belt pull Te (N) | result |\n|---|---|---|---|")
+    for name, F in (("cruise 3 m/s on flat ground", 0.5 * (0.02 * mass * g + 0.5 * 1.2 * 0.055 * 9)),
+                    ("accelerate at 1 m/s^2", 0.5 * mass * 1.0 + 0.5 * 0.02 * mass * g),
+                    ("turn in place (mu 0.8)", turn_side)):
+        Te = F * rw / r56
+        report.append("| %s | %.1f | %.1f | %s |" % (name, F, Te, "OK" if Te <= Te_max else "**skips**"))
+    report.append("\nLimit: Te %.0f N -> about **%.1f m/s^2** of acceleration. Pivot turns will skip TPU belts: turn in "
+                  "arcs and keep `THROTTLE_LIMIT` low. Pretension relaxes as TPU creeps: re-tension often. Order real "
+                  "HTD-3M belts (about $10-16 each) before driving fast.\n" % (Te_max, a_max))
+
+
 def terrain(M, report):
     """Approach, departure, breakover (crest) and gutter (valley) angles; climbable lip."""
     P = M.info["P"]
@@ -1030,7 +1077,7 @@ def plot_views(M, path):
 def main():
     os.makedirs(OUT, exist_ok=True)
     M = HC.build_model()
-    M.parts = [p for p in M.parts if p["group"] != "tools"]      # printed jigs are not part of the robot
+    M.parts = [p for p in M.parts if p["group"] not in ("tools", "prototype")]      # printed jigs are not part of the robot
     rep = ["# honebot chassis - automated design check\n",
            "Generated by `cad/check_design.py` from `cad/fusion/HonebotChassis/HonebotChassis.py` (same primitives "
            "Fusion builds). Re-run after any parameter change.\n",
@@ -1051,6 +1098,7 @@ def main():
     drivetrain(rep, mass)
     summary["terrain"] = terrain(M, rep)
     summary["structure (SF < 1.5)"] = structural(M, rep, mass, cg, dyn)
+    prototype(HC.build_model(), rep, mass, dyn)
     ultrasonic(M, rep)
     summary["sensor beam"] = beam_obstruction(M, rep)
     summary["routes"] = routes(M, rep)

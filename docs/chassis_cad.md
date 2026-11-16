@@ -16,7 +16,7 @@ Files:
 
 > **Run it:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> **"built 77 of 77 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
+> **"built 87 of 87 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
 > the same API calls. If any part or boolean fails, the message box names it: send the text back.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
 
@@ -235,6 +235,32 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
 | Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
 | 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
+
+## 6b. Prototype kit: drive it before buying the metal
+
+Hidden group **"Prototype kit"** in Fusion. Right-click → Save As Mesh, same as the printed parts. Limits are
+calculated in report §7b.
+
+| Part | Qty | Print | Replaces |
+|---|---|---|---|
+| proto_sleeve_in_* (inner sleeve + collar, 16 × 8.4 × 32.3) | 4 | PAHT-CF, collar on the bed, 100 % infill | steel 16 × 2 / 12 × 2 tubes + collar washer |
+| proto_sleeve_out_* (outer sleeve + inner-race lip) | 4 | PAHT-CF, 100 % infill. Length = your wheel's bearing inset: measure first | outer steel tube + speed washer |
+| proto_belt_motor (86T, printed 255.3 mm) | 2 | TPU, flat, 100 % infill, hardest TPU you have | HTD 258-3M-09 |
+| proto_belt_rear (170T, printed 504.6 mm) | 2 | same | HTD 510-3M-09 |
+
+- **Axles: keep the M8 × 140 12.9 bolts (about $2 each).** A fully printed axle can't work. The wheel bearings fix it
+  at 8 mm, and an 8 mm PAHT-CF pin 76 mm out from the wall breaks at 20–50 N; a front wheel already carries 12 N
+  standing still. With printed sleeves the bolt alone carries the bending: up to **~3.5 m/s (8 mph) over a 6 mm
+  crack, ~2.8 m/s (6 mph) over a 10 mm lip**. Re-tighten the wheel bolts after the first runs, because plastic in
+  the clamped stack creeps.
+- **TPU belts** have no tension cords, so they stretch under load and the teeth drift off the pulley pitch.
+  - They print short (by pretension / EA) so they sit on pitch at 5 N.
+  - With E = 26 MPa (assumed) they carry about **3.6 m/s² of acceleration** and easy cruising.
+  - **Turning in place will skip them**: drive arcs, keep `THROTTLE_LIMIT` low, and re-tension often (TPU creeps).
+  - Measure your TPU first: hang 1 kg on a printed motor belt looped over a broomstick, measure the stretch of the
+    loop, and set `tpu_E` = 9.81 × 128 / (stretch mm × 18) MPa. Then re-run the script so the belts print at the
+    right length.
+- Swap in steel tubes and real belts (about $10–16 each) before going faster than a jog.
 
 ## 7. Assembly order
 
