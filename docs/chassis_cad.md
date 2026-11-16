@@ -2,7 +2,7 @@
 
 Files:
 - `cad/fusion/HonebotChassis/HonebotChassis.py` (+ `.manifest`): **Fusion 360 script that builds the whole robot**
-  (18 printed parts, reference hardware, keep-out volumes). It is the single geometry source.
+  (20 printed parts, reference hardware, keep-out volumes). It is the single geometry source.
 - `cad/check_design.py`: offline checker. It imports the same file without Fusion and checks clearances, holes,
   assembly paths, the GoPro view, mass/CG, braking, structure, the sensor beam, wiring and printability. Output:
   `cad/report/check_report.md` + `views.png` + `camera_views.png`.
@@ -23,51 +23,59 @@ Files:
 
 | Topic | Before (2026-11-13 plan) | Now | Why |
 |---|---|---|---|
-| Wheel arrangement | Driven wheels **rear**, caster front | Driven wheels **front**, caster trails at the rear | Braking. Weight shifts forward when braking; with the driven wheels in front it lands on the wheels that brake. Checker: 0.62 g vs 0.48 g (μ 0.8), 5.6 m vs 7.7 m stop from 15 mph on a dusty surface. Front-wheel braking is also directionally stable: a rear-braked robot spins when its wheels slide. Steering is unaffected (the software already treats `base_link` as the axle centre). |
-| Motors | 5010 360KV + GT2 belt | Same motor class, **HTD-3M 9 mm** belt (20T Al → printed 48T), and a **replaceable round motor plate** with a universal slotted pattern | 5010 listings disagree on mounting pattern, shaft and weight, so the frame must not depend on one seller. HTD-3M's round tooth prints better and is less likely to skip than GT2. |
+| Wheel arrangement | Driven wheels **rear**, caster front | Driven wheels **front**, caster trails at the rear | Braking. Weight shifts forward when braking, onto the wheels that brake, and front-wheel braking is directionally stable (a rear-braked robot spins when its wheels slide). From 15 mph the checker gives **5.4 m vs 6.4 m** (good grip, μ 0.8) and **5.5 m vs 7.7 m** (dusty, μ 0.6). With the recommended 0.5 g software cap both layouts need ~6.3 m on good grip; front drive keeps that on poor grip, rear drive would not. Steering is unaffected (`base_link` = axle centre). |
+| Motors | generic 5010 360KV + GT2 belt, pulley on the shaft | **Reference motor MAD 5010 EEE V2.0 370KV** (published size, base and prop holes; "EEE" = the maker's weather-resistant industrial line). **Printed 24T HTD-3M pulley bolted to the bell's prop holes** → printed 48T on the wheel (2:1), 231 mm belt. Motor sits on a **replaceable round plate** with a universal slotted pattern | Generic 5010 listings disagree on pattern, shaft and weight, and none showed the ~25 mm of bare shaft a shaft-mounted pulley would need here. Bolting to the bell needs no shaft length. HTD-3M's round tooth prints better and skips less than GT2. |
 | Axle | One M8 × 300 rod through the frame | Two **M8 × 140 stub axles (12.9)**, head locked in a pocket in the boss, nyloc outside | Leaves the centre free for a battery tunnel, and each wheel comes off with one nut. |
 | Battery | Strapped on the plate | **Tunnel in the floor**, loaded from the front behind a bumper-door; two prongs hold it against the rear wall | Low CG, no strap, charging needs no tools (2 thumb screws). |
 | Camera | Damped mast above the axle | **Removable mast at the nose**, standard servo pan head, GoPro lens ahead of everything | With the lens ahead of the robot and high enough, nothing of the robot is in frame at ±45° pan, even in Wide 4:3 (see §3). |
 | Frame | One 330 × 260 plate | **Tub + tail module + lids + pods**, every part ≤ 222 mm | The 330 mm plate did not fit the 325 mm bed reliably; the tub (a box section) is much stiffer than a plate. |
-| Size / mass | ≈ 350 × 280 × 140 mm, ≈ 2.5 kg | **396 × 347 × 147 mm** (mast off), 288 mm tall with the mast, **≈ 3.0 kg** (estimate) | Front drive needs the CG well behind the axle (pitch-over), which needs length. Wheels off → 396 × 238 × 147 mm. **Measure your backpack** against this. |
+| Size / mass | ≈ 350 × 280 × 140 mm, ≈ 2.5 kg | **396 × 348 × 147 mm** (mast off), 288 mm tall with the mast, **≈ 3.1 kg** (estimate) | Front drive needs the CG well behind the axle (pitch-over), which needs length. Wheels off → 396 × 238 × 147 mm. **Measure your backpack** against this. |
 
 ### Drivetrain options checked (checker §6; 3S nominal, 90 mm wheels, needs ≥ 6.5 N at 15 mph)
 
 | Option | Top speed (no load) | Thrust at 15 mph | Motor mass | Verdict |
 |---|---|---|---|---|
-| **5010 360KV + 20T:48T HTD-3M** (chosen) | 17.6 mph | 31 N (21 N on a sagged pack) | 0.22 kg | OK, wide margin. Low-speed weakness handled by AM32 sine start-up (see below) |
+| **5010 370KV + 24T:48T HTD-3M** (chosen) | 21.6 mph | 52 N (48 N on a sagged pack) | ≈ 0.30 kg | OK, wide margin (software caps the speed). Low-speed weakness handled by AM32 sine start-up (see below) |
+| 5010 370KV + 20T:48T, pulley on a long shaft | 18.0 mph | 35 N | ≈ 0.30 kg | OK, but needs a motor with ~25 mm of free shaft |
 | goBILDA 5203 3.7:1 planetary (brushed), direct | 15.8 mph | 1.1 N | 0.80 kg | Fails: no torque left near 15 mph, ~19 W peak per motor |
 | same with 107 mm wheels | 18.8 mph | 3.7 N | 0.80 kg | Fails |
 | Hoverboard hub motors | ~10–12 mph | high | ~5–6 kg | Too heavy and too slow for a backpack robot |
 | e-skate 5055/5065 sensored + VESC | > 20 mph | high | ~1.2 kg | Best low-speed control, but ~$200+ in controllers and twice the weight |
 | Small servos / actuators | ~1 m/s | — | — | Not suitable for continuous wheel drive |
 
-Longevity measures for the chosen drive: motors sit inside printed **pod caps** (no direct spray of grit), sealed
-608 bearings, metal 20T pulley on the fast shaft, belt slots for tensioning, and AM32 **sine start-up**
-(slow-speed mode for crawlers, part of the AM32 firmware) for smooth starts. If start-up still stutters under load,
-the motor plate is the only part to change when you move to a sensored motor later.
+Longevity measures for the chosen drive:
+- **Pod caps** over the motors' upper half and the motor pulleys. They keep off spray from above; they are open
+  toward the wheel, so grit thrown by the wheel can still reach the lower half.
+- The weather-resistant reference motor and sealed 608 bearings.
+- Belt slots for tensioning.
+- AM32 **sine start-up** (a slow-speed mode for crawlers, part of the AM32 firmware) for smooth starts.
 
-**Speed vs ratio** (reprint only the 48T wheel pulley; belt length changes, see §6): 20T:40T ≈ 21 mph, 20T:48T ≈ 17.6
-(chosen), 20T:60T ≈ 14 mph no-load.
+If start-up still stutters under load, the motor plate and pulley are the only parts to change for a sensored motor later.
+
+**Speed vs ratio** (reprint the pulleys; change `pul_m_t`, `pul_w_t` and `belt_len`, then re-run the checker):
+24T:48T ≈ 21.6 mph no-load (chosen; plenty of thrust and headroom, cap the speed in software), 24T:60T ≈ 17.3 mph.
 
 ## 2. Layout (mm; x forward from the drive axle, y left, z up from the ground)
 
 | Item | Where | Notes |
 |---|---|---|
-| Drive wheels 90 × 52 | centre (0, ±138, 45) | track 276 mm |
-| Motors (≤ Ø62 × 30) | centre (−35, ±62…92, 94), outside the tub walls | 60 mm belt centre distance → HTD-3M **225 mm (75T)** belt |
+| Drive wheels 90 × 52 | centre (0, ±138.5, 45) | track 277 mm |
+| Motors (≤ Ø62 × 33) | centre (−35, ±62…95, 94), outside the tub walls | 24T pulley bolted to the bell, belt plane y = ±102; **HTD-3M 231 mm (77T)** belt → 60.4 mm centres |
 | Caster 70 × 51 | pivot x = −223, wheel trails 25 mm | wheelbase 248 mm; swept circle r 65 mm is a checked keep-out |
 | Battery tunnel | x −141…4, |y| ≤ 26.5, z 32…62 | 3S 5000 hard case ≤ 145 × 50 × 30 |
 | Deck (removable) | z 79…82 | Pi 5 (USB end to the rear), two regulators beside the mast socket, 10 mm M3 grid |
 | Tail deck | z 115 | ESP32 + SunFounder board (on 10 mm standoffs over the pivot nut), 2 ESCs, fuse + distribution, XT60 arming plug in the rear wall |
 | HC-SR04 "eyes" | front, z 102, tilted up 12° | ground return at 1.95 m (> `slow_distance` 1.0 m) |
 | Mast + pan head | x 38; servo seat z 195 | GoPro centre z 260, lens z 266 / x 60, ahead of the bumper line |
-| UWB anchor | plate in front of mast + pan head, z 151…192 | antenna faces forward, above the robot body |
+| UWB anchor | plate on 4 inserts in the pan-head front, z 151…192 | antenna faces forward, above the robot body; USB to the Pi (`uwb_node`, `/dev/ttyUSB1`) |
 
 Power below the deck, signals above it. The battery lead and ESC phase wires run in the side channels (|y| 30…58,
 under the deck, through Ø12 holes in the axle bridge beam), then up through the rear-corner deck slots and through
 the rear-wall window to the tail. Signal cables (GoPro USB-C and servo + UWB inside the hollow mast, ESP32 USB,
-HC-SR04) run over the deck. Lengths are in the report §9: cut about 30 % longer.
+HC-SR04) run over the deck. The mast has an **open rear channel** (and the socket an open rear slot): mast cables
+are laid in, not threaded, and lift out with the mast. Servo and UWB cables drop from under the pan head into the
+channel; the GoPro USB-C makes a service loop around the pan axis. Every route ends at its real connector,
+including the regulator inputs from the tail fuse and the servo's 6 V. Lengths are in the report §9: cut about 30 % longer.
 
 ## 3. Checks (all pass; full numbers in `cad/report/check_report.md`)
 
@@ -82,10 +90,13 @@ HC-SR04) run over the deck. Lengths are in the report §9: cut about 30 % longer
 - **Camera**: the robot was sampled every 3 mm and projected into the GoPro frame for pan −45…+45°. It was tested
   in Wide 4:3 / 16:9, SuperView and Linear, with a 5° margin, under both a rectilinear and a fisheye lens model.
   **0 points in frame** in all modes. The camera can go down to a lens height of ~226 mm before the robot shows.
+  Allowed down-tilt: **16° in Wide 4:3**, ≥ 30° in the 16:9 and Linear modes (tilting up is always fine).
   ![camera](../cad/report/camera_views.png)
 - **Stability**: 77 % of the weight on the drive wheels. Sideways tip needs 0.84 g; urethane slides first.
   Forward pitch-over starts at **0.62 g**. **Bumper skids** (16 mm off the ground) catch the nose after 10.8° of
   pitch, so a full-brake stop makes it skid on the bumper instead of flipping. Still do the firmware change in §8.
+  Trade-off: the skids leave 16 mm of clearance 39 mm ahead of the wheels, about a 22° approach angle. They clear
+  kerb ramps but may scrape a steep driveway lip.
 - **Structure**:
   - **M8 stub axle:** safety factor 3.9 (class 8.8) / 6.5 (12.9) for a 4 g bump; 1.8 / 3.0 for a 10 g kerb strike. Use **12.9**.
   - **Axle boss bearing:** factor > 10.
@@ -101,7 +112,7 @@ HC-SR04) run over the deck. Lengths are in the report §9: cut about 30 % longer
 | tub | 1 | PAHT-CF, 5–6 walls, 40 % infill, dry filament | Floor on the bed. Supports: under the axle bridge beam (116 mm span), top of the battery opening and of the rear tail window. Heat-set inserts after printing. |
 | tail | 1 | PAHT-CF | Rear wall vertical, skirt down; tree supports under the deck plate and pivot boss. |
 | motor_plate_L/R | 2 | PAHT-CF | Flat, counterbores up |
-| wheel_pulley_L/R | 2 | PAHT-CF, 0.4 nozzle, 0.12 mm layers | Axis vertical. **Tooth form is approximate** (round 1.14 mm grooves). For best belt life, regenerate the 48T HTD-3M profile with a pulley generator (e.g. the parametric OpenSCAD "Parametric Pulley" by droftarts, HTD 3 mm profile) and keep this part's hub, flanges and bolt circle. Or buy an aluminium 48T HTD-3M pulley and drill 4 × M3 on Ø33. |
+| wheel_pulley_L/R, motor_pulley_L/R | 2 + 2 | PAHT-CF, 0.4 nozzle, 0.12 mm layers | Axis vertical. **Tooth form is approximate** (round 1.14 mm grooves). For best belt life, regenerate the 48T/24T HTD-3M tooth profile with a pulley generator (e.g. the OpenSCAD "Parametric Pulley" by droftarts, HTD 3 mm) and keep these parts' hubs, flanges and bolt holes. Motor pulley: drill the centre bore to fit the shaft (5 mm on the MAD motor, 10 mm deep). |
 | caster_fork | 1 | PAHT-CF | Crown on the bed |
 | mast | 1 | PAHT-CF | Lying on its side; supports under the flange and pan head |
 | deck | 1 | PETG (or PAHT-CF) | Flat |
@@ -128,8 +139,9 @@ ears 54 mm · HTD-3M pitch diameters · goBILDA 5203 data (used only to reject i
    (`sg90_shaft_off`, 5.9 mm).
 4. GoPro lens centre relative to the body (`gopro_lens_dy/dz`). It only shifts the view check slightly.
 
-**Measure on arrival (then update PARAMS and re-run):** motor base hole pattern + free shaft length beyond the
-bell (**needs ≥ 21 mm** for the 20T pulley; buy-to-spec), ESC size (≤ 48 × 28 × 14), wheel bearing inset (sets
+**Measure on arrival (then update PARAMS and re-run):** motor: body length (≤ 33 mm), prop holes (pulley needs 4 × M3
+on D12; MAD 5010 EEE lists D12 and D18), shaft stub above the bell (≤ 9 mm, else drill the pulley through), M3 thread
+depth in the bell (screw length); ESC size (≤ 48 × 28 × 14), wheel bearing inset (sets
 the spacer length) and core material at Ø33 for the 4 pulley bolts, battery size (≤ 145 × 50 × 30),
 UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear height (`servo_ear_z`).
 
@@ -137,16 +149,16 @@ UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear
 
 | Item | Qty | Notes |
 |---|---|---|
-| 5010-class 300–400 KV outrunner, ≤ Ø62 × 30, M3 base holes on 16/19/25/30 mm, plain shaft Ø4–6 with ≥ 21 mm beyond the bell | 2 | ≈ $20–35 each. Ask the seller for a drawing. |
-| HTD-3M 20T 9 mm aluminium pulley, bore = motor shaft | 2 | |
-| HTD-3M **225 mm (75T)** 9 mm closed belt | 2 (+1 spare) | 222 or 228 mm fit too (58.5 / 61.5 mm centres) |
+| **MAD 5010 EEE V2.0 370KV** (reference), or any 5010-class 300–400 KV motor ≤ Ø62 × 33 with M3 base holes on 16–30 mm and **4 × M3 prop holes on D12** | 2 | Price not retrieved — check (industrial line, likely more than generic $20 motors). Generic 5010s fit the plate, but only use one with D12 prop holes. |
+| M3 × 12 low-head (DIN 7984) screws | 8 | motor pulley → bell |
+| HTD-3M **231 mm (77T)** 9 mm closed belt | 2 (+1 spare) | 228 or 234 mm also fit the ±4 mm slots |
 | AM32 ESC 30–40 A, 2–4S, PWM input, bidirectional | 2 | + USB linker. Set: bidirectional, sine start-up on, LVC 3.3 V/cell |
 | 90 × 52 longboard wheels (4-pack) + one 70 × ~51 wheel for the caster | 1 + 1 | Core must take 4 × M3 on Ø33 |
 | 608-2RS bearings | 2 | caster swivel (the wheels bring their own) |
 | M8 × 140 hex bolt **12.9** + washer + nyloc | 2 | stub axles |
 | M8 × 70 (caster pivot) + M8 × 80 (caster axle) + nylocs, PTFE + spring washer | 1 each | friction washer under the pivot nut damps shimmy |
 | Al tube 12 × 8.2 mm, ~50 mm | 2 | spacers, cut to measured length |
-| M3 × 70 bolts + nylocs | 8 | wheel pulley through the core |
+| M3 × 80 bolts + nylocs | 8 | wheel pulley through the core (stack ≈ 69.5 mm + washer + nut) |
 | Heat-set inserts M3 × 5.7 (~25), M4 × 8.1 (~12) | | |
 | M3/M4 screws, 2 × M4 thumb screws (mast), 2 × M4 thumb screws (door) | | |
 | Pololu D36V50F5 (5 V 5.5 A, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | zip-tied on the deck slots |
@@ -158,12 +170,14 @@ UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear
 ## 7. Assembly order
 
 1. Inserts into tub, tail, motor plates, mast. 608s into the tail boss.
-2. Motor → plate (screw heads in the counterbores) → plate into the wall pocket, 3 × M3 from inside, loose.
+2. Motor → plate (screw heads in the counterbores); 24T pulley → bell (4 × M3 low head) → plate into the wall
+   pocket, 3 × M3 from inside, loose.
 3. Stub axle from inside (head in its pocket) → spacer → wheel with pulley bolted on → washer, nyloc.
 4. Belt on, slide the motor plate up along its slots to tension (belt deflects ~3 mm under a finger), tighten.
 5. Tail onto the rear posts (4 × M4 sideways + 2 × M4 through the lip). Caster fork + pivot bolt + friction washer.
 6. Wiring in the side channels, deck with Pi/regulators in, lid, mast (2 thumb screws), GoPro.
-7. Battery in from the front (connector first), bumper-door on, 2 thumb screws.
+7. Battery in from the front, lead end last (the XT60 stays at the door, then is tucked up past the prongs), bumper-door
+   on, 2 thumb screws.
 
 ## 8. Tests before and after building
 
@@ -180,9 +194,22 @@ UWB anchor board size/holes (plate slots fit ≤ 50 mm wide), standard-servo ear
   zero at about 0.5 g instead (≈ 0.7 of full throttle per second at 15 mph). If your AM32 build has a brake
   strength setting, lower it too. The bumper skids are the backstop, not the plan.
 
+## Prior art consulted
+
+A short search found no published build that combines UWB following, outrunners with bell-mounted pulleys and a
+printed differential drive. What informed this design:
+- Makerfabs' UWB follow-me robot platform (in `hardware_plan.md`): one AoA anchor in front, following on range and bearing.
+- A Fab Academy belt-driven differential transport robot: wheels with integrated printed pulleys.
+- University capstone write-ups of UWB "follow-me wagons": tag on the user, anchors on the cart.
+- Standard DIY e-skate practice: a wheel pulley bolted through the urethane wheel core, slotted motor mounts for
+  belt tension.
+- Standard RC-crawler practice: ESC sine start-up for low-speed control, an arming plug as the main switch.
+
 ## Sources (retrieved 2026-11-16)
 
 - goBILDA 5203 3.7:1 data: [Abra Electronics](https://abra-electronics.com/robotics-actobotics-servocity/motion-en/dc-gear-motors-brushed/5203-series-yellow-jacket-planetary-gear-motors/5203-2402-0003-5203-series-yellow-jacket-planetary-gear-motor-3.7-1-ratio-24mm-length-8mm-rex-shaft-1620-rpm-3.3-5v-encoder-gobilda.html), [Core Electronics](https://core-electronics.com.au/5203-series-yellow-jacket-planetary-gear-motor-371-ratio-24mm-length-8mm-rex-shaft-1620-rpm-33-5v-encoder.html), [RobotShop](https://www.robotshop.com/products/5203-series-yellow-jacket-planetary-gear-motor-2691-223-rpm-33-5v-encoder)
+- MAD 5010 EEE V2.0 (KV options incl. 370, O56 x 32.7, 5 mm shaft, base D25/D30 M3, prop D12/D18 M3): [mybotshop](https://www.mybotshop.de/MAD-5010-EEE-V20-brushless-drone-motor_1), [rcdrone.top](https://rcdrone.top/products/src-mad-467-5010-eee-v2-0-brushless-drone-motor), [MAD Components USA](https://www.madcomponentsusa.com/5010-eee-v2-0-drone-motor.html)
+- Prior art: [Fab Academy belt-driven robot](https://fabacademy.org/2025/labs/bottrop/students/annasophia-brokuf/final-project/), [UIUC ECE445 UWB follow wagon](https://courses.grainger.illinois.edu/ece445/getfile.asp?id=24773)
 - 5010 360KV variation between sellers: [RCTimer](https://www.rctimer.com/rctimer-5010-360kv-multicopter-brushless-motor-p0233.html), [Zbotic](https://zbotic.in/product/5010-360kv-high-torque-brushless-motor-for-drone/), [Amovrobot](https://amovrobotlab.com/products/5010-360kv-750kv-brushless-motor-motors); T-Motor MN5008: [GetFPV](https://www.getfpv.com/motors/commercial-cinematography-motors/t-motor-antigravity-mn5008-motor.html)
 - AM32 (sine start-up, configurator): [am32-firmware/AM32](https://github.com/am32-firmware/AM32)
 - Hobbywing QuicRun 1060 (brushed ESC, considered): [Hobbywing](https://www.hobbywingdirect.com/products/quicrun-10-esc-2-3s-brushed)

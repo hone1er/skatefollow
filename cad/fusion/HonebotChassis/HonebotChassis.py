@@ -32,7 +32,7 @@ PARAMS = {
     "slip": 0.6,          # [D] gap for parts that slide into each other (mast in socket, deck between walls)
     "cut_over": 0.6,      # [D] cut tools overshoot faces by this much (robust booleans)
     # drive wheels: 90 x 52 mm longboard wheels with 608 bearings [M: core holes / bearing inset]
-    "wheel_d": 90.0, "wheel_w": 52.0, "axle_z": 45.0, "wheel_inner_y": 112.0,
+    "wheel_d": 90.0, "wheel_w": 52.0, "axle_z": 45.0,
     # tub (main printed body, PAHT-CF)
     "tub_x0": -150.0, "tub_x1": 58.0, "tub_hw": 62.0, "wall": 4.0, "floor_z0": 28.0, "floor_t": 4.0,
     "tub_top": 140.0, "front_t": 6.0, "rear_t": 6.0,
@@ -41,10 +41,12 @@ PARAMS = {
     # electronics deck (removable tray, PETG or PAHT-CF)
     "deck_z0": 79.0, "deck_t": 3.0, "grid_pitch": 10.0,
     # drive: 5008/5010-class outrunner (envelope, [M]) -> HTD-3M 9 mm belt -> printed 48T wheel pulley
-    "motor_env_d": 62.0, "motor_env_l": 30.0,
-    "motor_dx": -35.0, "belt_cc": 60.0,          # [D] motor centre 35 mm behind the axle, 60 mm centre distance
-    "pul_m_pd": 19.10, "pul_w_pd": 45.84,          # [V] HTD-3M PD = 3*T/pi : 20T, 48T
-    "belt_w": 9.0, "belt_plane_y": 101.5,
+    # reference motor: MAD 5010 EEE V2.0 370KV - O56 x 32.7, 5 mm shaft, base M3 on D25/D30, prop M3 on D12/D18
+    # [V, retailer listings]; envelope below leaves margin. Any motor with M3 prop holes on D12 fits the pulley.
+    "motor_env_d": 62.0, "motor_env_l": 33.0, "motor_shaft_d": 5.0, "motor_prop_pcd": 12.0,
+    "motor_dx": -35.0,                              # [D] motor centre 35 mm behind the axle
+    "pul_m_t": 24, "pul_w_t": 48, "belt_len": 231.0,   # [D] HTD-3M teeth (PD = 3*T/pi [V]); 231 mm = 77T belt
+    "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     # caster (rear): 70 mm wheel, 51 wide [M], 25 mm trail
     "caster_d": 70.0, "caster_w": 51.0, "caster_trail": 25.0, "pivot_x": -223.0,
@@ -212,7 +214,17 @@ def build_model(P=None):
     az = P["axle_z"]; wr = P["wheel_d"] / 2
     dz0, dz1 = P["deck_z0"], P["deck_z0"] + P["deck_t"]
 
-    # drive geometry
+    # drive geometry (all derived): belt centre distance from the belt length, belt plane from the motor length
+    P["pul_m_pd"] = 3.0 * P["pul_m_t"] / math.pi
+    P["pul_w_pd"] = 3.0 * P["pul_w_t"] / math.pi
+    lo_, hi_ = 20.0, 200.0
+    for _ in range(80):
+        cc = (lo_ + hi_) / 2
+        Lc = 2 * cc + math.pi * (P["pul_m_pd"] + P["pul_w_pd"]) / 2 + (P["pul_w_pd"] - P["pul_m_pd"]) ** 2 / (4 * cc)
+        lo_, hi_ = (cc, hi_) if Lc < P["belt_len"] else (lo_, cc)
+    P["belt_cc"] = cc
+    P["belt_plane_y"] = hw + P["motor_env_l"] + 1.5 + 5.5      # pulley bolted to the bell: flange 1.5 + half tooth width
+    P["wheel_inner_y"] = P["belt_plane_y"] + 7.0 + 3.5         # wheel pulley half width + adapter disc
     mdx = P["motor_dx"]; mdz = math.sqrt(P["belt_cc"] ** 2 - mdx ** 2)
     mc_x, mc_z = mdx, az + mdz
     bu = norm((mdx, 0.0, mdz))                 # belt direction (axle -> motor)
@@ -270,6 +282,7 @@ def build_model(P=None):
     ms = P["mast_sq"] + P["slip"]
     tub_cuts.append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, 92, top + co))
     tub_cuts.append(box(P["mast_x"] - 17 - co, P["mast_x"], -7, 7, 92, 104))
+    tub_cuts.append(box(P["mast_x"] - 17 - co, P["mast_x"], -5, 5, 92, top + co))     # rear slot: cables lift out with the mast
     for s in (1, -1):   # mast flange thumb screws (M4 inserts in the socket top)
         m.hole("tub", "mast_flange_" + ("L" if s > 0 else "R"), (P["mast_x"], s * 17.65, top + co),
                (P["mast_x"], s * 17.65, top - P["ins_m4_depth"]), P["ins_m4"], kind="insert", for_item="mast flange M4")
@@ -593,7 +606,8 @@ def build_model(P=None):
     mc.append(box(mx - sq / 2 + mw, mx + sq / 2 - mw, -sq / 2 + mw, sq / 2 - mw, 92 - co, head_z0 + 6))  # bore
     mc.append(box(mx - sq / 2 - co, mx, -6, 6, 92 - co, 104))                    # bottom cable exit (rear)
     mc.append(box(sbx - sl / 2 - 0.4, sbx + sl / 2 + 0.4, -sw / 2 - 0.4, sw / 2 + 0.4, head_z0 + 4, seat + co))   # servo pocket
-    mc.append(box(sbx - sl / 2 - 0.4, sbx - sl / 2 + 6, -5, 5, head_z0 + 4, seat + co))   # servo cable notch
+    mc.append(box(sbx - sl / 2 - 6, sbx - sl / 2 + 6, 4, 12, head_z0 - co, seat + co))    # servo cable notch (beside the ear screw), through the floor
+    mc.append(box(mx - sq / 2 - co, mx - sq / 2 + mw + co, -5, 5, 92 - co, head_z0 + 0.5))  # open rear channel: cables lay in
     for s in (1, -1):
         m.slot_hole("mast", "servo_ear_" + ("A" if s > 0 else "B"), (sbx + s * 24.0, 0, seat), (sbx + s * 27.0, 0, seat),
                     2.4, (0, 0, 1), 12, centre_depth=-6 + co / 2, for_item="servo ear screw (self-tapping)")
@@ -605,20 +619,14 @@ def build_model(P=None):
     uwz0, uwz1 = top + 11, seat - 3
     hx1 = sbx + sl / 2 + 10                    # front face of the pan head
     upx = max(mx + sq / 2, hx1) + 0.5
-    uwb = m.part("uwb_plate", "printed", COL["light"],
-                 [box(upx, upx + 4, -28, 28, uwz0, uwz1), box(mx + sq / 2, upx + 0.01, -11, 11, uwz0, head_z0 - 2)],
+    uwb = m.part("uwb_plate", "printed", COL["light"], [box(upx, upx + 4, -28, 28, uwz0, uwz1)],
                  material="PETG", mates={"mast"}, note="slots fit the UWB anchor board (measure on arrival)")
-    zz = (uwz0 + head_z0 - 2) / 2
-    m.hole("uwb_plate", "mast_bolt", (mx + sq / 2 - co, 0, zz), (upx + 4 + co, 0, zz), P["clr_m3"],
-           for_item="M3 x 40 across the mast")
-    m.hole("mast", "uwb_bolt", (mx - sq / 2 - co, 0, zz), (mx + sq / 2 + co, 0, zz), P["clr_m3"],
-           for_item="M3 x 40 across the mast", audit=False)
     for sy_ in (1, -1):
-        hz = head_z0 + 15
-        m.hole("uwb_plate", "head_%d" % sy_, (upx - co, sy_ * 5, hz), (upx + 4 + co, sy_ * 5, hz), P["clr_m3"],
-               for_item="UWB plate -> pan head M3")
-        m.hole("mast", "uwb_ins_%d" % sy_, (hx1 + co, sy_ * 5, hz), (hx1 - P["ins_m3_depth"], sy_ * 5, hz), P["ins_m3"],
-               kind="insert", for_item="UWB plate M3")
+        for hz in (head_z0 + 6, head_z0 + 14):
+            m.hole("uwb_plate", "head_%d_%d" % (sy_, int(hz)), (upx - co, sy_ * 5, hz), (upx + 4 + co, sy_ * 5, hz),
+                   P["clr_m3"], for_item="UWB plate -> pan head M3")
+            m.hole("mast", "uwb_ins_%d_%d" % (sy_, int(hz)), (hx1 + co, sy_ * 5, hz), (hx1 - P["ins_m3_depth"], sy_ * 5, hz),
+                   P["ins_m3"], kind="insert", for_item="UWB plate M3")
     for sy_ in (1, -1):
         for zz in (uwz0 + 5, uwz1 - 5):
             m.slot_hole("uwb_plate", "board_%d_%d" % (sy_, int(zz)), (upx + 2, sy_ * 14, zz), (upx + 2, sy_ * 23, zz),
@@ -674,18 +682,38 @@ def build_model(P=None):
                mass=0.01, mates={"tub", "wheel_" + side, "wheel_pulley_" + side, "axle_" + side},
                note="Al tube 12/8.2 (clears the 608 shield), cut to measured length: boss ring -> inner 608 race")
         my0, my1 = (hw, hw + P["motor_env_l"]) if s > 0 else (-hw - P["motor_env_l"], -hw)
-        m.part("motor_" + side, H, COL["hw_metal"], [cyl_y(my0, my1, mc_x, mc_z, P["motor_env_d"] / 2)], mass=0.11,
+        m.part("motor_" + side, H, COL["hw_metal"], [cyl_y(my0, my1, mc_x, mc_z, P["motor_env_d"] / 2)], mass=0.15,
                moving=True, mates={"motor_plate_" + side, "tub", "pod_" + side, "motor_pulley_" + side},
-               note="5008/5010-class outrunner envelope O62 x 30 [M]")
-        m.part("motor_pulley_" + side, H, COL["hw_metal"],
-               [cyl_y(s * (by - 5.5) if s > 0 else -(by + 11.5), (by + 11.5) if s > 0 else -(by - 5.5), mc_x, mc_z, 11.0)],
-               mass=0.01, moving=True, mates={"motor_" + side}, note="HTD-3M 20T 9 mm Al, bore = motor shaft")
+               note="MAD 5010 EEE V2.0 370KV (O56 x 32.7) inside a O62 x 33 envelope [mass M]")
+        # motor pulley: printed 24T HTD-3M, bolted to the bell's prop holes (no long shaft needed)
+        mpn = "motor_pulley_" + side
+        mpr = P["pul_m_pd"] / 2 - 0.38
+        y0p = hw + P["motor_env_l"]
+        m.part(mpn, "printed", COL["accent"],
+               [cyl_y(s * y0p, s * (y0p + 1.5), mc_x, mc_z, mpr + 2.5),
+                cyl_y(s * (y0p + 1.49), s * (y0p + 12.51), mc_x, mc_z, mpr),
+                cyl_y(s * (y0p + 12.5), s * (y0p + 14.0), mc_x, mc_z, mpr + 2.5)],
+               material="PAHT-CF", moving=True, mates={"motor_" + side},
+               note="24T HTD-3M, 4 x M3 low-head screws into the bell's prop holes on D12, centred on the shaft")
+        m.hole(mpn, "bore", (mc_x, s * (y0p - co), mc_z), (mc_x, s * (y0p + 10), mc_z), P["motor_shaft_d"] + 0.1,
+               for_item="motor shaft stub (centres the pulley; drill to fit)", audit=False)
+        for k in range(4):
+            ang = math.pi / 4 + k * math.pi / 2
+            hx_, hz_ = mc_x + P["motor_prop_pcd"] / 2 * math.cos(ang), mc_z + P["motor_prop_pcd"] / 2 * math.sin(ang)
+            m.hole(mpn, "prop_%d" % k, (hx_, s * (y0p - co), hz_), (hx_, s * (y0p + 14 + co), hz_), P["clr_m3"],
+                   for_item="M3 x 12 low head into the bell")
+            m.get(mpn)["cuts"].append(cyl_y(s * (y0p + 10), s * (y0p + 14 + co), hx_, hz_, 2.9))   # head counterbore
+        for k in range(P["pul_m_t"]):
+            ang = 2 * math.pi * k / P["pul_m_t"]
+            rc = mpr - 1.14 + 0.9
+            m.get(mpn)["cuts"].append(cyl_y(s * (y0p + 1.5), s * (y0p + 12.5), mc_x + rc * math.cos(ang),
+                                            mc_z + rc * math.sin(ang), 0.9))
         # belt envelope (two pulleys + straight runs)
         bc = (mc_x / 2, s * by, (az + mc_z) / 2)
         m.part("belt_" + side, H, COL["belt"], [obox(bc, P["belt_cc"], 2 * (wpr + 1.5), P["belt_w"], bu, bv),
                                                cyl_y(s * (by - 4.5) if s > 0 else -(by + 4.5), (by + 4.5) if s > 0 else -(by - 4.5), 0, az, wpr + 1.5)],
                mass=0.01, moving=True, mates={"wheel_pulley_" + side, "motor_pulley_" + side, "pod_" + side, "motor_" + side, "axle_" + side, "spacer_" + side},
-               note="HTD-3M 225 mm (75T) x 9 mm closed belt")
+               note="HTD-3M %d mm (%dT) x 9 mm closed belt" % (P["belt_len"], P["belt_len"] / 3))
     m.part("battery", H, COL["battery"], [box(P["bat_x0"], P["bat_x0"] + P["bat_l"], -P["bat_w"] / 2, P["bat_w"] / 2, zf1, zf1 + P["bat_h"])],
            mass=0.40, mates={"tub", "bumper_door"}, note="3S 5000 mAh hard case <= 145 x 50 x 30 [M]")
     m.part("pi5", H, COL["pcb_green"], [box(pi_x0, pi_x1, -28, 28, dz1 + 6, dz1 + 7.6),
@@ -784,6 +812,9 @@ def build_model(P=None):
          ["wheel_R", "wheel_pulley_R", "belt_R", "pod_R", "axle_R", "spacer_R"] + bolts),
     ]
     sx = mx - 20   # cable drop point behind the socket
+    ch = (mx - sq / 2 + mw / 2, 0.0)     # mast rear cable channel (x, y)
+    cz = head_z0 - 7                      # level where cables turn into the channel, under the pan head
+    pz = dz1 + 12                         # Pi USB plug height
     m.routes = [
         ("battery main 12 AWG", [(48, -20, 64), (42, -45, 72), (xr_in + 30, -45, 72), (xr_in + 19, -38, 72),
                                  (xr_in + 19, -38, 118), (x0 - 10, -36, 118), (px + 40, -47, 120), (px + 40, -47, tz + 8)]),
@@ -791,12 +822,19 @@ def build_model(P=None):
                                (x0 - 10, 30, 118), (tx0 + 60, 47, tz + 8)]),
         ("ESC R phase wires", [(-66, -(inner - 12), 72), (-80, -45, 75), (xr_in + 30, -45, 75), (xr_in + 19, -34, 75),
                                (xr_in + 19, -34, 121), (x0 - 10, -26, 121), (tx0 + 60, -47, tz + 8)]),
-        ("GoPro USB-C (inside mast)", [(mx, 0, 170), (mx, 0, 98), (sx, 0, 98), (sx, 0, 120),
-                                       (pi_x0 - 12, -10, 120), (pi_x0 - 12, -10, dz1 + 12)]),
-        ("ESP32 USB", [(px - 30, 0, tz + 16), (x0 - 10, 10, 120), (pi_x0 - 12, 10, 120), (pi_x0 - 12, 10, dz1 + 12)]),
+        ("regulator inputs 18 AWG (fuse -> regs)", [(px + 60, 47, tz + 8), (x0 - 10, 20, 122), (xr_in + 30, 20, 122),
+                                                     (20, 24, 100), (20, 24, dz1 + 11)]),
+        ("GoPro USB-C (service loop around the pan)", [(mx - 6, 38, cam_bot + 20), (mx - 30, 38, cam_bot + 10), (mx - 30, 30, cz),
+                                                      (ch[0], 0, cz), (ch[0], 0, 120), (sx, 0, 120),
+                                                      (pi_x0 - 12, -10, 120), (pi_x0 - 12, -10, pz)]),
+        ("servo signal + 6 V (pan)", [(sbx - sl / 2 - 3, 8, head_z0 + 10), (sbx - sl / 2 - 3, 8, cz), (ch[0], 2, cz),
+                                      (ch[0], 2, 124), (x0 - 10, 0, 124), (px - 30, 0, tz + 16)]),
+        ("servo 6 V from reg R", [(20, -39, dz1 + 11), (20, -24, 110), (ch[0] - 10, -3, 110), (ch[0], -3, 115)]),
+        ("UWB anchor USB -> Pi", [(upx + 8, 22, uwz0 + 6), (upx + 8, 33, uwz0 + 6), (upx - 3, 33, uwz0 + 6), (mx, 26, cz),
+                                  (mx - 16, 26, cz), (mx - 16, 0, cz), (ch[0], -2, cz),
+                                  (ch[0], -2, 118), (sx, -3, 118), (pi_x0 - 12, 0, 118), (pi_x0 - 12, 0, pz)]),
+        ("ESP32 USB", [(px - 30, 0, tz + 16), (x0 - 10, 10, 120), (pi_x0 - 12, 10, 120), (pi_x0 - 12, 10, pz)]),
         ("Pi 5 V from reg L", [(20, 39, dz1 + 11), (20, 30, 116), (pi_x0 + 40, 26, 116), (pi_x0 + 40, 26, dz1 + 12)]),
-        ("servo + UWB (inside mast)", [(mx, 4, 170), (mx, 4, 98), (sx, 4, 98), (sx, 4, 124),
-                                       (x0 - 10, 0, 124), (px - 30, 0, tz + 16)]),
         ("HC-SR04", [(x1 + 8, -20, 100), (x1 + 4, -27, 100), (xf_in - 8, -28, 100), (xf_in - 20, -29, 128),
                      (x0 - 10, -20, 124), (px - 30, -10, tz + 16)]),
     ]
@@ -815,9 +853,12 @@ def run(context):
     try:
         doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
         design = adsk.fusion.Design.cast(app.activeProduct)
-        design.designType = adsk.fusion.DesignTypes.DirectDesignType
+        try:
+            design.designType = adsk.fusion.DesignTypes.DirectDesignType
+        except Exception:
+            pass
+        direct = design.designType == adsk.fusion.DesignTypes.DirectDesignType
         root = design.rootComponent
-        root.name = "honebot"
         tbm = adsk.fusion.TemporaryBRepManager.get()
         model = build_model()
         S = 0.1  # mm -> cm
@@ -899,7 +940,13 @@ def run(context):
                 if part["cuts"]:
                     tool = merge(part["cuts"])
                     tbm.booleanOperation(body, tool, adsk.fusion.BooleanTypes.DifferenceBooleanType)
-                b = comp.bRepBodies.add(body)
+                if direct:
+                    b = comp.bRepBodies.add(body)
+                else:   # parametric design: bodies must live in a base feature
+                    bf = comp.features.baseFeatures.add()
+                    bf.startEdit()
+                    b = comp.bRepBodies.add(body, bf)
+                    bf.finishEdit()
                 b.name = part["name"]
                 ap = appearance("honebot %d-%d-%d" % part["color"], part["color"])
                 if ap is not None:

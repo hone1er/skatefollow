@@ -394,6 +394,25 @@ def camera_sweeps(report):
     return rows
 
 
+def tilt_sweep(report, pts):
+    """Largest downward camera tilt (deg) that keeps the robot out of frame, per lens mode."""
+    report.append("### Camera tilt allowance\n")
+    report.append("| lens mode | max down-tilt with the robot out of frame (deg, incl. 5 deg margin) |\n|---|---|")
+    for mode in FOV_MODES:
+        best = None
+        for tilt in range(0, -31, -1):
+            M = HC.build_model({"cam_tilt_deg": float(tilt)})
+            worst = 0
+            for pan in range(-45, 46, 5):
+                vis, *_ = cam_project(M, pts, pan, mode)
+                worst = max(worst, int(vis.sum()))
+            if worst:
+                break
+            best = tilt
+        report.append("| %s | %s |" % (mode, ("%d" % -best + (" or more" if best == -30 else "")) if best is not None else "none (in view level)"))
+    report.append("\nTilting **up** never brings the robot into view. Set the GoPro's tilt (M5 thumb screw) within these limits.\n")
+
+
 def plot_camera(M, pts, path):
     import matplotlib
     matplotlib.use("Agg")
@@ -529,12 +548,15 @@ def drivetrain(report, mass):
         F = 2 * T0 * max(0.0, 1 - v / vmax) / (wd / 2000)
         report.append("| %s | %.1f | %.1f | %.0f | %.2f | %s |" % (name, vmax * 2.237, F, 2 * T0 / (wd / 2000), 2 * mm, "OK" if F >= need else "FAIL"))
 
-    bldc("**5010 360KV + 20T:48T HTD-3M, 90 mm (chosen)**", 360, 0.15, 30, 48 / 20, 90, 0.11)
-    bldc("5010 360KV + 20T:48T, 83 mm wheels", 360, 0.15, 30, 48 / 20, 83, 0.11)
-    bldc("5010 360KV + 20T:48T, 90 mm, pack sagged to 3.5 V/cell", 360 * 10.5 / 11.1, 0.15, 30, 48 / 20, 90, 0.11)
+    P = HC.build_model().info["P"]
+    r = P["pul_w_t"] / P["pul_m_t"]; tag = "%dT:%dT" % (P["pul_m_t"], P["pul_w_t"])
+    bldc("**5010 370KV + %s HTD-3M, 90 mm (chosen)**" % tag, 370, 0.15, 30, r, 90, 0.15)
+    bldc("same, 83 mm wheels", 370, 0.15, 30, r, 83, 0.15)
+    bldc("same, pack sagged to 3.5 V/cell", 370 * 10.5 / 11.1, 0.15, 30, r, 90, 0.15)
+    bldc("5010 370KV + 20T:48T (shaft-mounted pulley variant)", 370, 0.15, 30, 2.4, 90, 0.15)
     brushed("goBILDA 5203 3.7:1 planetary, direct, 90 mm", 1620, 0.53, 90, 0.40)
     brushed("goBILDA 5203 3.7:1 planetary, direct, 107 mm", 1620, 0.53, 107, 0.40)
-    report.append("\nMotor model: Kv 360, phase resistance 0.15 ohm (typical 5010 class, [M]), 30 A ESC limit. The "
+    report.append("\nMotor model: Kv 370 (MAD 5010 EEE 370KV), phase resistance 0.15 ohm (typical 5010 class, [M]), 30 A ESC limit. The "
                   "sag row scales Kv to mimic 10.5 V. goBILDA figures: 1620 rpm and 5.4 kg-cm stall at 12 V [V].\n")
 
 
@@ -763,6 +785,7 @@ def main():
     res, pts = check_camera(M, rep)
     summary["camera"] = sum(1 for v in res.values() if v)
     camera_sweeps(rep)
+    tilt_sweep(rep, pts)
     rep.append("![camera](camera_views.png)\n")
     plot_camera(M, pts, os.path.join(OUT, "camera_views.png"))
     mass, cg = mass_props(M, rep)
