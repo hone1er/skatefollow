@@ -257,8 +257,8 @@ calculated in report §7b.
   - They print short (by pretension / EA) so they sit on pitch at 5 N.
   - With E = 26 MPa (assumed) they carry about **3.6 m/s² of acceleration** and easy cruising.
   - **Turning in place will skip them**: drive arcs, keep `THROTTLE_LIMIT` low, and re-tension often (TPU creeps).
-  - Measure your TPU first: hang 1 kg on a printed motor belt looped over a broomstick, measure the stretch of the
-    loop, and set `tpu_E` = 9.81 × 128 / (stretch mm × 18) MPa. Then re-run the script so the belts print at the
+  - Measure your TPU first: hang 1 kg on a printed motor belt looped over a broomstick, measure how many mm the
+    hanging loop gets longer (d), and set `tpu_E` = 35 / d MPa (d = 1.3 mm → 26 MPa). Then re-run the script so the belts print at the
     right length.
 - Swap in steel tubes and real belts (about $10–16 each) before going faster than a jog.
 
