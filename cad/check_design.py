@@ -40,7 +40,37 @@ def _frame(p):
     return u, v, w
 
 
+_BB = {}
+
+
+def _prim_bb(p):
+    k = id(p)
+    if k not in _BB:
+        c = prim_corners(p)
+        _BB[k] = (c.min(0), c.max(0), p)     # keep p alive so id() stays unique
+    return _BB[k][0], _BB[k][1]
+
+
 def inside_prim(p, pts, grow=0.0):
+    """Point-in-primitive with bounding-box culling (most primitives are small holes)."""
+    lo, hi = _prim_bb(p)
+    g = abs(grow) + 1e-9
+    sel = np.all((pts >= lo - g) & (pts <= hi + g), axis=1)
+    out = np.zeros(len(pts), bool)
+    if sel.any():
+        out[sel] = _inside_prim(p, pts[sel], grow)
+    return out
+
+
+def _inside_prim(p, pts, grow=0.0):
+    if p["t"] == "sph":
+        d = pts - np.array(p["c"])
+        return np.einsum("ij,ij->i", d, d) <= (p["r"] + grow) ** 2
+    if p["t"] == "diff":
+        m = inside_prim(p["a"], pts, grow)
+        for q in p["b"]:
+            m &= ~inside_prim(q, pts, -grow)
+        return m
     if p["t"] == "box":
         u, v, w = _frame(p)
         d = pts - np.array(p["c"])
@@ -56,6 +86,14 @@ def inside_prim(p, pts, grow=0.0):
 
 def inside_part(part, pts, grow=0.0, use_cuts=True):
     m = np.zeros(len(pts), bool)
+    for st_adds, st_cuts in part.get("pre", []):
+        sm = np.zeros(len(pts), bool)
+        for p in st_adds:
+            sm |= inside_prim(p, pts, grow)
+        if use_cuts:
+            for p in st_cuts:
+                sm &= ~inside_prim(p, pts, -grow)
+        m |= sm
     for p in part["adds"]:
         m |= inside_prim(p, pts, grow)
     if use_cuts and part["cuts"]:
@@ -66,7 +104,19 @@ def inside_part(part, pts, grow=0.0, use_cuts=True):
     return m
 
 
+def all_adds(part):
+    out = list(part["adds"])
+    for a, _ in part.get("pre", []):
+        out += a
+    return out
+
+
 def prim_corners(p):
+    if p["t"] == "diff":
+        return prim_corners(p["a"])
+    if p["t"] == "sph":
+        c = np.array(p["c"]); r = p["r"]
+        return np.array([c + r * np.array([i, j, k]) for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)])
     if p["t"] == "box":
         u, v, w = _frame(p)
         c = np.array(p["c"]); s = np.array(p["s"]) / 2
@@ -80,8 +130,31 @@ def prim_corners(p):
     return np.vstack([a + p["r"] * ring, b + p["r"] * ring])
 
 
+_D = np.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+              + [[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float)
+DIRS = _D / np.linalg.norm(_D, axis=1)[:, None]
+
+
+def near(part, pts, g):
+    """True for points of `pts` that come within g of `part` (dilate the points, not the part: exact for holes)."""
+    if g <= 0:
+        return inside_part(part, pts)
+    m = inside_part(part, pts)
+    for dvec in DIRS:
+        m |= inside_part(part, pts + g * dvec)
+    return m
+
+
+def deep_inside(part, pts, depth):
+    """True for points that are inside `part` by more than `depth` in every sampled direction."""
+    m = inside_part(part, pts)
+    for dvec in DIRS:
+        m &= inside_part(part, pts + depth * dvec)
+    return m
+
+
 def aabb(part):
-    pts = np.vstack([prim_corners(p) for p in part["adds"]])
+    pts = np.vstack([prim_corners(p) for p in all_adds(part)])
     return pts.min(0), pts.max(0)
 
 
@@ -121,8 +194,9 @@ def check_clearance(M, report):
                 if small["name"] not in samples:
                     samples[small["name"]] = sample(small, 1.5, use_cuts=True)
                 pts = samples[small["name"]]
-                if len(pts) and inside_part(big, pts, grow=-0.3).any():
-                    n = int(inside_part(big, pts, grow=-0.3).sum())
+                deep = deep_inside(big, pts, 0.3) if len(pts) else np.zeros(0, bool)
+                if deep.any():
+                    n = int(deep.sum())
                     mate_rows.append((a["name"], b["name"], n))
                     fails += 1
                 continue
@@ -141,13 +215,18 @@ def check_clearance(M, report):
             pts = samples[key]
             if len(pts) == 0:
                 continue
+            # only points that can be near `big` at all
+            lb2, hb2 = boxes[big["name"]]
+            pts = pts[np.all((pts > lb2 - 9) & (pts < hb2 + 9), axis=1)]
+            if len(pts) == 0:
+                continue
             gap = None
+            if not near(big, pts, 8.0).any():
+                continue
             for g in (0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0):
-                if inside_part(big, pts, grow=g, use_cuts=big["group"] != "keepout").any():
+                if near(big, pts, g).any():
                     gap = g
                     break
-            if gap is None:
-                continue
             ok = gap >= need
             # gap = first inflation that touches -> real clearance is between previous step and gap
             prev = {0.0: 0.0, 0.5: 0.0, 1.0: 0.5, 2.0: 1.0, 3.0: 2.0, 5.0: 3.0, 8.0: 5.0}[gap]
@@ -245,6 +324,17 @@ def _hole_core(h, step=0.5):
     return (axis[:, None, :] + offs[None, :, :]).reshape(-1, 3)
 
 
+def _hole_surface(h, step=0.5, nang=16):
+    a = np.array(h["a"], float); b = np.array(h["b"], float)
+    ax = b - a; L = np.linalg.norm(ax); ax /= L
+    t1 = np.cross(ax, [1, 0, 0]) if abs(ax[0]) < 0.9 else np.cross(ax, [0, 1, 0]); t1 /= np.linalg.norm(t1)
+    t2 = np.cross(ax, t1)
+    ang = np.linspace(0, 2 * np.pi, nang, endpoint=False)
+    ring = (h["d"] / 2) * (np.outer(np.cos(ang), t1) + np.outer(np.sin(ang), t2))
+    core = _hole_core(h, step)
+    return (core[:, None, :] + ring[None, :, :]).reshape(-1, 3)
+
+
 def check_hole_spacing(M, report):
     report.append("### Hole-to-hole spacing\n")
     report.append("Every pair of fastener holes in the same part must keep >= 1.5 mm of material between them.\n")
@@ -258,10 +348,21 @@ def check_hole_spacing(M, report):
             for j in range(i + 1, len(hs)):
                 if "seat" in (hs[i]["kind"], hs[j]["kind"]):
                     continue   # bearing seats are coaxial with their bolt by design
+                ai, bi = np.array(hs[i]["a"], float), np.array(hs[i]["b"], float)
+                aj, bj = np.array(hs[j]["a"], float), np.array(hs[j]["b"], float)
+                ui = (bi - ai) / np.linalg.norm(bi - ai); uj = (bj - aj) / np.linalg.norm(bj - aj)
+                if abs(abs(ui @ uj) - 1) < 1e-6 and np.linalg.norm(np.cross(aj - ai, ui)) < 1e-6:
+                    continue   # coaxial (counterbore on its own hole, insert under a clearance hole ...)
                 A, B = cores[i], cores[j]
                 if np.any(A.min(0) - 25 > B.max(0)) or np.any(B.min(0) - 25 > A.max(0)):
                     continue
                 d = np.min(np.linalg.norm(A[:, None, :] - B[None, :, :], axis=2)) - hs[i]["d"] / 2 - hs[j]["d"] / 2
+                if d < 1.5:     # axis estimate is conservative: confirm with the true surface-to-surface distance
+                    SA, SB = _hole_surface(hs[i]), _hole_surface(hs[j])
+                    near_b = SB[np.linalg.norm(SB - A.mean(0), axis=1) < np.linalg.norm(A.max(0) - A.min(0)) + hs[i]["d"] + 4]
+                    if len(near_b):
+                        d = min(np.min(np.linalg.norm(SA[k:k + 400, None, :] - near_b[None, :, :], axis=2))
+                                for k in range(0, len(SA), 400))
                 if d < 1.5:
                     fails += 1
                     rows.append((host, hs[i]["id"], hs[j]["id"], d))
@@ -283,14 +384,20 @@ def check_removals(M, report):
     fast = {p["name"] for p in M.parts if p["name"].startswith(("plate_bolt", "pi_standoff"))}
     for grp, d, travel, before in M.removals:
         d = np.array(d, float)
-        pts = np.vstack([sample(M.get(n), 1.5) for n in grp if len(sample(M.get(n), 1.5))])
+        pts = np.vstack([sample(M.get(n), 2.0) for n in grp if len(sample(M.get(n), 2.0))])
         stay = [p for p in M.parts if p["group"] != "keepout" and p["name"] not in grp and p["name"] not in before
                 and p["name"] not in fast]
+        boxes = {p["name"]: aabb(p) for p in stay}
         hit = None
-        for t in np.arange(2.0, travel + 0.1, 2.0):
+        for t in np.arange(3.0, travel + 0.1, 3.0):
             q = pts + t * d
+            qlo, qhi = q.min(0), q.max(0)
             for p in stay:
-                if inside_part(p, q, grow=-0.2).any():
+                lo, hi = boxes[p["name"]]
+                if np.any(qlo > hi) or np.any(lo > qhi):
+                    continue
+                sel = np.all((q >= lo) & (q <= hi), axis=1)
+                if sel.any() and deep_inside(p, q[sel], 0.2).any():
                     hit = (p["name"], t)
                     break
             if hit:
@@ -497,10 +604,14 @@ def dynamics(M, report, mass, cg):
     report.append("- Static load on the drive wheels: **%.0f %%** (traction and braking come only from them).\n" % (100 * fx))
     report.append("- Sideways tip-over needs **%.2f g** (urethane on asphalt slides at ~0.7-0.9 g, so it slides first%s).\n" %
                   (lat_g, "" if lat_g > 0.9 else " ONLY JUST - keep heavy parts low"))
-    report.append("- Forward pitch-over about the drive axle under braking starts at **%.2f g**. The bumper skids "
-                  "(bottom z = 16 mm at x = 84 mm) touch down after %.1f deg of pitch, so the robot then rides on the "
-                  "skids instead of flipping. Software should still cap deceleration at ~0.5 g (see docs).\n" %
-                  (pitch_g, math.degrees(math.atan2(16.0, 84.0))))
+    nose = sample(M.get("bumper_door"), 2.0)
+    nose = nose[nose[:, 0] > 0]
+    touch = math.degrees(np.min(np.arctan2(nose[:, 2], nose[:, 0])))
+    tip_deg = math.degrees(math.atan2(-cg[0], h))
+    report.append("- Forward pitch-over about the drive axle under braking starts at **%.2f g**. If it does pitch, the "
+                  "rounded bumper nose touches down after **%.1f deg**, well before the %.0f deg at which the CG would pass "
+                  "over the axle, so it rides on the bumper instead of flipping. Software should still cap deceleration "
+                  "at ~0.5 g (see docs).\n" % (pitch_g, touch, tip_deg))
     rows = []
     for mu in (0.8, 0.6):
         a_fd = mu * 9.81 * (cg[0] - xc_tr) / (L - mu * h)          # drive front (this design)
@@ -560,51 +671,125 @@ def drivetrain(report, mass):
                   "sag row scales Kv to mimic 10.5 V. goBILDA figures: 1620 rpm and 5.4 kg-cm stall at 12 V [V].\n")
 
 
+K_LIP = 50e3      # N/m, urethane wheel contact stiffness on a sharp lip edge [assumption - measure: load a wheel on a 10 mm bar]
+
+
+def lip_impact(m_eff, r_mm, h_mm, v):
+    """Peak contact force when a wheel of radius r meets a square lip of height h at speed v (no suspension):
+    the wheel must gain v*sin(theta) upward, cushioned only by the urethane (spring k)."""
+    th = math.acos((r_mm - h_mm) / r_mm)
+    vv = v * math.sin(th)
+    return vv * math.sqrt(K_LIP * m_eff), th
+
+
 def structural(M, report, mass, cg, dyn):
-    P = M.info["P"]
-    report.append("## 7. Structural checks (hand calculations)\n")
-    g = 9.81
-    fx = dyn["fx"]
-    Fw = mass * g * fx / 2                     # static per drive wheel
-    k_imp = 4.0                                # impact factor: curb drop / pothole on urethane
-    lever = (P["wheel_inner_y"] + P["wheel_w"] / 2) - P["tub_hw"]   # wall outer face -> wheel centre
-    lat = 0.9 * Fw * 2                          # worst lateral (sliding) force on one wheel ~ 0.9 x its share x 2
-    M_b = (k_imp * Fw) * lever + lat * P["wheel_d"] / 2
-    d_minor = 6.47
-    Zb = math.pi * d_minor ** 3 / 32
-    sig = M_b / Zb
-    rows = [("M8 stub axle, 4 g bump (class 8.8: 640 MPa / 12.9: 1080 MPa)", "%.0f N x4 at %.0f mm + %.0f N side at r" % (Fw, lever, lat),
-             "%.0f MPa" % sig, "%.1f / %.1f" % (640 / sig, 1080 / sig))]
-    M10 = (10 * Fw) * lever + lat * P["wheel_d"] / 2
-    s10 = M10 / Zb
-    rows.append(("M8 stub axle, 10 g kerb strike", "%.0f N x10 at %.0f mm" % (Fw, lever), "%.0f MPa" % s10,
-                 "%.1f / %.1f" % (640 / s10, 1080 / s10)))
-    # boss bearing (PAHT-CF, across layers ~ compressive 40 MPa conservative)
-    Lb = 26.0 + 4.0
-    sig_b = 6 * M_b / (8.0 * Lb ** 2) + (k_imp * Fw) / (8.0 * Lb)
-    rows.append(("axle boss bearing in PAHT-CF (allow 40 MPa)", "moment couple over %.0f mm boss" % Lb, "%.0f MPa" % sig_b, 40 / sig_b))
-    # caster
-    Fc = mass * g * (1 - fx)
-    Mc = k_imp * Fc * P["caster_trail"]
-    Fbr = Mc / 24.0 + k_imp * Fc / 2
-    rows.append(("608 swivel bearings (C0 ~1370 N)", "trail moment over 24 mm spacing", "%.0f N" % Fbr, 1370 / Fbr))
-    t = 7.5; b = P["caster_w"] + 18
-    sig_c = 6 * Mc / (b * t ** 2)
-    rows.append(("caster fork crown, PAHT-CF (allow 25 MPa in Z)", "%.0f N x4 x %.0f mm trail" % (Fc, P["caster_trail"]), "%.1f MPa" % sig_c, 25 / sig_c))
-    # belt: traction-limited wheel torque
+    P = M.info["P"]; g = 9.81; fx = dyn["fx"]
+    report.append("## 7. Structural checks (hand calculations) at the worst road event\n")
+    cases = [("6 mm crack at 15 mph", 6.0, 6.7), ("10 mm lip at 3 m/s (driveway, slowed down)", 10.0, 3.0)]
+    m_w = mass * fx / 2 + 0.25
+    m_c = mass * (1 - fx) + 0.12
+    rw = P["wheel_d"] / 2; rc = P["caster_d"] / 2
+    report.append("Design event: a wheel hits a square lip. Peak force = v sin(theta) x sqrt(k m), with the urethane "
+                  "contact stiffness k = %.0f N/mm [assumption] and the mass riding on that wheel (drive %.2f kg, caster "
+                  "%.2f kg). The skater will not cross a 10 mm lip at 15 mph either; the follower must slow for driveways.\n"
+                  % (K_LIP / 1000, m_w, m_c))
+    report.append("| event | drive wheel force (N) | caster force (N) |\n|---|---|---|")
+    Fw = Fc = 0.0; thw = thc = 0.0
+    for name, h, v in cases:
+        a, ta = lip_impact(m_w, rw, h, v); b, tb = lip_impact(m_c, rc, h, v)
+        report.append("| %s | %.0f | %.0f |" % (name, a, b))
+        if a > Fw:
+            Fw, thw = a, ta
+        if b > Fc:
+            Fc, thc = b, tb
+    rows = []
+    # ---- stub axle: M8 12.9 bolt inside a steel sleeve (wall -> wheel) ----
+    lever = (P["wheel_inner_y"] + P["wheel_w"] / 2) - P["tub_hw"]
+    sd = P["axle_sleeve_d"]
+    E_al, E_st = 71e3, 210e3
+    I_sl = math.pi / 64 * (sd ** 4 - 8.2 ** 4); I_b = math.pi / 64 * 6.47 ** 4
+    M_root = Fw * lever
+    kappa = M_root / (E_al * I_sl + E_st * I_b)
+    s_root = E_al * kappa * sd / 2
+    rows.append(("stub axle root: 7075-T6 sleeve 18x8.2 over M8 (sleeve yield 460 MPa)", "%.0f N at %.0f mm" % (Fw, lever),
+                 "%.0f MPa" % s_root, 460 / s_root))
+    s_bolt_root = E_st * kappa * 6.47 / 2
+    rows.append(("M8 12.9 at the root (shares the sleeve's curvature)", "", "%.0f MPa" % s_bolt_root, 1080 / s_bolt_root))
+    span = P["wheel_w"] - 8
+    I_sp = math.pi / 64 * (12 ** 4 - 8.2 ** 4)
+    s_bolt = (Fw / 2 * span) / ((I_sp + I_b) / 6.0)
+    rows.append(("M8 + the wheel's 12 x 8 bearing spacer, between the 608s", "F/2 x %.0f mm bearing span" % span,
+                 "%.0f MPa" % s_bolt, 1080 / s_bolt))
+    Lb = (P["tub_hw"] + 8) - 37.0
+    s_boss = 6 * M_root / ((sd + 0.4) * Lb ** 2) + Fw / ((sd + 0.4) * Lb)
+    rows.append(("axle boss bearing on the sleeve, PAHT-CF (allow 40 MPa)", "moment over a %.0f mm boss" % Lb,
+                 "%.0f MPa" % s_boss, 40 / s_boss))
+    s_blk = M_root / (36.0 * 44.0 ** 2 / 6)
+    rows.append(("boss block root into floor + bridge beam (allow 40 MPa)", "36 x 44 mm section", "%.1f MPa" % s_blk, 40 / s_blk))
+    # ---- caster ----
+    ci = M.info["caster"]
+    Fh, Fv = Fc * math.sin(thc), Fc * math.cos(thc)
+    sw = M.info["swivel"]
+    zb = (sw["z_low"] + sw["z_high"]) / 2; spn = sw["z_high"] - sw["z_low"]
+    Mb = Fh * zb + Fv * P["caster_trail"]
+    Rb = Mb / spn + Fh / 2
+    rows.append(("6001 swivel bearings %.0f mm apart, static rating C0 %.0f N" % (spn, P["swivel_bearing_c0"]),
+                 "%.0f N back + %.0f N up at the contact" % (Fh, Fv), "%.0f N per bearing" % Rb, P["swivel_bearing_c0"] / Rb))
+    Mpost = Rb * (sw["z_high"] - P["tail_deck_z"] - 3)
+    Zp = math.pi * (44 ** 4 - (P["swivel_bearing_od"] + 0.2) ** 4) / (32 * 44)
+    rows.append(("pivot post above the deck, across layers (allow 20 MPa)", "top bearing load x height", "%.1f MPa" % (Mpost / Zp),
+                 20 / (Mpost / Zp)))
+    leg_l = ci["leg_root_z"] - rc
+    s_leg = (Fh / 2 * leg_l) / (ci["leg_t"] * ci["leg_b"] ** 2 / 6)
+    rows.append(("fork leg, fore-aft (printed on its side: in-plane, allow 50 MPa)", "%.0f mm lever per leg" % leg_l,
+                 "%.1f MPa" % s_leg, 50 / s_leg))
+    s_lat = (0.8 * Fv / 2 * ci["leg_root_z"]) / (ci["leg_b"] * ci["leg_t"] ** 2 / 6)
+    rows.append(("fork leg, sideways skid 0.8 x vertical (allow 50 MPa)", "", "%.1f MPa" % s_lat, 50 / s_lat))
+    s_cr = (Fv * P["caster_trail"]) / (ci["crown_w"] * ci["crown_t"] ** 2 / 6)
+    rows.append(("fork crown (allow 50 MPa)", "vertical x trail", "%.1f MPa" % s_cr, 50 / s_cr))
+    s_rib = (Fc * 2 * P["tail_hw"] / 4) / (10 * 25 ** 2 / 6)
+    rows.append(("tail cross rib 10 x 25 (pivot -> side walls, allow 50 MPa)", "centre load", "%.1f MPa" % s_rib, 50 / s_rib))
+    lp = M.info["lap"]
+    xs, zs = lp["x"], lp["z"]
+    xcen, zcen = sum(xs) / 2, sum(zs) / 2
+    M_lap = Fv * abs(P["pivot_x"] - xcen) + Fh * zcen
+    r2 = sum((xx - xcen) ** 2 + (zz - zcen) ** 2 for xx in xs for zz in zs)
+    rmax = max(math.hypot(xx - xcen, zz - zcen) for xx in xs for zz in zs)
+    F_bolt = (M_lap / 2) * rmax / r2 + Fc / 8
+    cap = lp["d"] * lp["t"] * 50
+    rows.append(("tail -> tub lap: 2 x 4 x M%d, bearing in the %d mm tail wall (%.0f N)" % (lp["d"], lp["t"], cap),
+                 "moment %.0f N m on two bolt groups" % (M_lap / 1000), "%.0f N per bolt" % F_bolt, cap / F_bolt))
+    # ---- motor shaft (pulley bolted to the bell) ----
     mu = 0.9
-    Tw = mu * (Fw * 1.3) * P["wheel_d"] / 2000     # N m, with braking weight transfer ~ +30 %
-    Fbelt = Tw / (P["pul_w_pd"] / 2000)
-    rows.append(("HTD-3M 9 mm belt effective pull", "traction-limited wheel torque %.2f N m" % Tw, "%.0f N" % Fbelt,
-                 None))
-    # mast: cantilever from the lid top
+    Tw = mu * (mass * g * fx / 2 * 1.3) * rw / 1000
+    Te = Tw / (P["pul_w_pd"] / 2000)
+    T0 = P["belt_pretension_n"]
+    F_sh = (T0 + Te / 2) + max(0.0, T0 - Te / 2)
+    a_oh = 14.0
+    s_sh = F_sh * a_oh / (math.pi * P["motor_shaft_d"] ** 3 / 32)
+    rows.append(("motor shaft bending (5 mm, %d mm overhang [M]); endurance ~250 MPa" % a_oh,
+                 "belt %.0f N set + %.0f N pull" % (T0, Te), "%.0f MPa" % s_sh, 250 / s_sh))
+    k_sh = 3 * 210e3 * (math.pi * P["motor_shaft_d"] ** 4 / 64) / a_oh ** 3
+    report.append("")
+    report.append("| item | load case | result | safety factor |\n|---|---|---|---|")
+    for r in rows:
+        sf = ("%.1f" % r[3]) if r[3] else "-"
+        bad = r[3] is not None and r[3] < 1.5
+        report.append("| %s | %s | %s | %s |" % (r[0], r[1], r[2], ("**%s (LOW)**" % sf) if bad else sf))
+    report.append("\nMotor shaft: the 5 mm shaft over ~%d mm is ~%.0f N/mm stiff, so a printed outboard bearing (well under "
+                  "1000 N/mm through the bracket) would carry <10 %% of the belt load and add misalignment stress. The "
+                  "shaft is protected instead by: pulley bolted straight to the bell (shortest overhang), belt set to "
+                  "%.0f N per strand (deflection spec in docs), and the pull-screw stop so tension cannot creep up.\n"
+                  % (a_oh, k_sh, T0))
+    low = sum(1 for r in rows if r[3] is not None and r[3] < 1.5)
+    # mast (unchanged model)
     mi = M.info["mast"]; cam = M.info["camera"]
     E = 3.5e9
     so, si = mi["sq"] / 1000, (mi["sq"] - 2 * mi["wall"]) / 1000
     I = (so ** 4 - si ** 4) / 12
     masses = [(P["gopro_mass"] + 0.015, cam["centre"][2]), (0.055 + 0.03, mi["z_head"] + 20), (0.03 + 0.02, mi["z0"] + 40)]
     z0 = mi["z0"]
-    # Rayleigh with the static deflection shape of point loads
+
     def defl(zq, zl, F):
         a = (zl - z0) / 1000; x = (zq - z0) / 1000
         if x <= a:
@@ -612,21 +797,112 @@ def structural(M, report, mass, cg, dyn):
         return F * a * a * (3 * x - a) / (6 * E * I)
     ys = [sum(defl(zq, zl, mm * g) for mm, zl in masses) for _, zq in masses]
     num = sum(mm * g * y for (mm, _), y in zip(masses, ys)); den = sum(mm * y * y for (mm, _), y in zip(masses, ys))
-    f1 = math.sqrt(num / den) / (2 * math.pi) if den > 0 else float("nan")   # Rayleigh: w^2 = sum(F y) / sum(m y^2)
-    Mroot = sum(mm * g * 3.0 * (zl - z0) / 1000 for mm, zl in masses)
-    sig_m = Mroot / (I / (so / 2)) / 1e6
-    rows.append(("mast first bending mode (E 3.5 GPa)", "GoPro + servo + head + UWB on a %.0f mm tube" % mi["sq"], "%.0f Hz" % f1, None))
-    rows.append(("mast root stress at 3 g sideways (allow 40 MPa)", "", "%.1f MPa" % sig_m, 40 / sig_m))
-    report.append("| item | load case | result | safety factor |\n|---|---|---|---|")
-    for r in rows:
-        sf = r[3] if isinstance(r[3], str) else (("%.1f" % r[3]) if r[3] else "-")
-        report.append("| %s | %s | %s | %s |" % (r[0], r[1], r[2], sf))
-    report.append("\nNotes: the axle boss figure assumes the wheel load reaches the bolt through the 14 mm spacer and the boss "
-                  "and wall pad act together; the bridge beam ties both bosses so they do not rotate the side walls. "
-                  "Belt: HTD-3M 9 mm belts are sold for loads well above this pull (check your supplier's rating); the "
-                  "48T printed pulley carries ~%d teeth in mesh. Mast mode should stay above ~30 Hz so road vibration "
-                  "does not excite it; HyperSmooth handles the rest.\n" % int(round(48 * 0.45)))
-    return f1
+    f1 = math.sqrt(num / den) / (2 * math.pi) if den > 0 else float("nan")
+    report.append("Mast first bending mode (E 3.5 GPa, ideal clamp): **%.0f Hz** (target > 30 Hz).\n" % f1)
+    return low
+
+
+def terrain(M, report):
+    """Approach, departure, breakover (crest) and gutter (valley) angles; climbable lip."""
+    P = M.info["P"]
+    skip = ("wheel_L", "wheel_R", "caster_wheel")
+    pts = []
+    for p in M.parts:
+        if p["group"] == "keepout" or p["name"] in skip:
+            continue
+        sp = sample(p, 3.0, use_cuts=False)
+        if len(sp):
+            pts.append(sp[sp[:, 2] < 90])
+    pts = np.vstack(pts)
+    x, z = pts[:, 0], pts[:, 2]
+    xc = M.info["caster"]["wheel_x"]
+
+    def ok(gfun):
+        g0, gc = gfun(np.array([0.0]))[0], gfun(np.array([xc]))[0]
+        slope = (g0 - gc) / (0 - xc)
+        zw = z + gc + (x - xc) * slope
+        return np.all(zw - gfun(x) >= 0.0)
+
+    res = {}
+    def search(make, positions):
+        best = 0
+        for d in np.arange(1, 46, 1.0):
+            t = math.tan(math.radians(d))
+            if all(ok(make(t, xa)) for xa in positions):
+                best = d
+            else:
+                break
+        return best
+    res["approach (ramp ahead of the front wheels)"] = search(lambda t, xa: (lambda xx: t * np.maximum(0, xx - xa)),
+                                                              np.arange(0, 121, 10))
+    res["departure (ramp behind the caster)"] = search(lambda t, xa: (lambda xx: t * np.maximum(0, xa - xx)),
+                                                       np.arange(xc - 120, xc + 1, 10))
+    res["breakover (crest between the wheels)"] = search(lambda t, xa: (lambda xx: -np.tan(math.atan(t) / 2) * np.abs(xx - xa)),
+                                                         np.arange(xc, 1, 10))
+    res["gutter / valley"] = search(lambda t, xa: (lambda xx: np.tan(math.atan(t) / 2) * np.abs(xx - xa)),
+                                    np.arange(xc - 60, 101, 10))
+    mu = 0.8
+    lip_w = P["wheel_d"] / 2 * (1 - 1 / math.sqrt(1 + mu * mu))
+    report.append("## 5b. Street -> driveway\n")
+    report.append("Assumed driveway profile: a gutter/apron transition with up to **20 deg** of slope change (15 % apron "
+                  "plus the gutter dip) and lips up to **10 mm**. Each angle below is the largest slope change the "
+                  "chassis clears with nothing but the wheels touching (small-angle model, every body point checked).\n")
+    report.append("| case | clears up to | need | result |\n|---|---|---|---|")
+    fails = 0
+    for k, v in res.items():
+        okk = v >= 20
+        fails += 0 if okk else 1
+        report.append("| %s | %.0f deg | 20 deg | **%s** |" % (k, v, "OK" if okk else "FAIL"))
+    report.append("\nLowest points: under the floor %.0f mm, wheel-pulley flange %.0f mm (inside the wheel's shadow), caster "
+                  "legs %.0f mm. A driven 90 mm wheel climbs a square lip of about **%.0f mm** from standstill (mu 0.8); "
+                  "more with momentum. Treat 10 mm lips as a slow-down event (section 7).\n" %
+                  (P["floor_z0"], P["axle_z"] - M.info["wheel_pulley_flange_r"], M.info["caster"]["r"] - 13, lip_w))
+    return fails
+
+
+def beam_obstruction(M, report):
+    u = M.info["us"]
+    c = np.array(u["c"]); n = np.array(u["n"])
+    t1 = np.array([0.0, 1.0, 0.0]); t2 = np.cross(n, t1)
+    pts = []
+    half = math.radians(u["half"])
+    for dist in np.arange(3, 400, 3):
+        rr = dist * math.tan(half)
+        for ang in np.linspace(0, 2 * np.pi, 24, endpoint=False):
+            for f in (0.33, 0.66, 1.0):
+                pts.append(c + dist * n + f * rr * (math.cos(ang) * t1 + math.sin(ang) * t2))
+    pts = np.array(pts)
+    hits = set()
+    for p in M.parts:
+        if p["group"] == "keepout" or p["name"] in ("hcsr04",):
+            continue
+        if inside_part(p, pts).any():
+            hits.add(p["name"])
+    report.append("Beam obstruction (cone sampled to 0.4 m): %s\n" % ("**none**" if not hits else "**HITS " + ", ".join(sorted(hits)) + "**"))
+    return len(hits)
+
+
+FASTENERS = {
+    "insert": "heat-set insert (M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw",
+    "clear": "clearance hole, screw passes through (nut, insert or threaded part on the far side)",
+    "slot": "slotted clearance, adjust then tighten",
+    "seat": "bearing seat, press in with a drop of retaining compound",
+    "cbore": "counterbore for a low-head screw",
+}
+
+
+def fastener_schedule(M, report):
+    report.append("## 11. Fastener schedule (generated from the model)\n")
+    report.append("Threads in printed parts are always heat-set inserts (never tapped plastic); servo ear screws are the "
+                  "servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.\n")
+    report.append("| for | hole | Ø (mm) | count | method |\n|---|---|---|---|---|")
+    groups = {}
+    for h in M.holes:
+        key = (h["for"], h["kind"], round(h["d"], 1))
+        groups[key] = groups.get(key, 0) + 1
+    for (f, k, d), cnt in sorted(groups.items()):
+        report.append("| %s | %s | %.1f | %d | %s |" % (f, k, d, cnt, FASTENERS.get(k, "")))
+    report.append("")
 
 
 def ultrasonic(M, report):
@@ -741,7 +1017,9 @@ def plot_views(M, path):
         items = []
         for p in M.parts:
             col = np.array(p["color"]) / 255.0
-            for q in p["adds"]:
+            for q in all_adds(p):
+                if q["t"] == "sph":
+                    continue
                 c = prim_corners(q)
                 items.append((c[:, k].mean(), c, col, p["group"]))
         items.sort(key=lambda t: t[0] if k != 1 else -t[0])
@@ -791,10 +1069,13 @@ def main():
     mass, cg = mass_props(M, rep)
     dyn = dynamics(M, rep, mass, cg)
     drivetrain(rep, mass)
-    structural(M, rep, mass, cg, dyn)
+    summary["terrain"] = terrain(M, rep)
+    summary["structure (SF < 1.5)"] = structural(M, rep, mass, cg, dyn)
     ultrasonic(M, rep)
+    summary["sensor beam"] = beam_obstruction(M, rep)
     summary["routes"] = routes(M, rep)
     summary["print"], env, env2 = printability(M, rep)
+    fastener_schedule(M, rep)
     plot_views(M, os.path.join(OUT, "views.png"))
     head = ["## Summary\n", "| check | failures |\n|---|---|"] + ["| %s | %d |" % kv for kv in summary.items()] + [
         "\nMass %.2f kg, CG (%.0f, %.0f, %.0f) mm, %.0f %% on the drive wheels, sideways tip at %.2f g.\n" %

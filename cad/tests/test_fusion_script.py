@@ -68,6 +68,11 @@ def _fake_adsk():
             LOG["cyls"] += 1
             return Body("cyl")
 
+        def createSphere(self, c, r):
+            assert r > 0
+            LOG["spheres"] = LOG.get("spheres", 0) + 1
+            return Body("sph")
+
         def booleanOperation(self, target, tool, op):
             assert isinstance(target, Body) and isinstance(tool, Body)
             LOG["bool"] += 1
