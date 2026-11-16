@@ -106,9 +106,25 @@ def check_clearance(M, report):
     def mates(a, b):
         return b["name"] in a["mates"] or a["name"] in b["mates"]
 
+    nests = {frozenset((x, y)) for x, y, _ in M.nests}
+    mate_rows = []
     for i, a in enumerate(parts):
         for b in parts[i + 1:]:
             if mates(a, b):
+                # mates may touch but must not interpenetrate (unless declared as a nest)
+                if "keepout" in (a["group"], b["group"]) or frozenset((a["name"], b["name"])) in nests:
+                    continue
+                la, ha = boxes[a["name"]]; lb, hb = boxes[b["name"]]
+                if np.any(la > hb) or np.any(lb > ha):
+                    continue
+                small, big = (a, b) if np.prod(ha - la) < np.prod(hb - lb) else (b, a)
+                if small["name"] not in samples:
+                    samples[small["name"]] = sample(small, 1.5, use_cuts=True)
+                pts = samples[small["name"]]
+                if len(pts) and inside_part(big, pts, grow=-0.3).any():
+                    n = int(inside_part(big, pts, grow=-0.3).sum())
+                    mate_rows.append((a["name"], b["name"], n))
+                    fails += 1
                 continue
             if a["group"] == "keepout" and b["group"] == "keepout":
                 continue
@@ -147,6 +163,14 @@ def check_clearance(M, report):
     report.append("| Part A | Part B | type | need (mm) | measured gap (mm) | result |\n|---|---|---|---|---|---|")
     for r in rows:
         report.append("| %s | %s | %s | %.1f | %s | **%s** |" % r)
+    report.append("\nMated pairs (bolted / resting on each other) are checked for interpenetration deeper than 0.3 mm; "
+                  "%d declared nests are exempt (%s).\n" % (len(M.nests), "; ".join(sorted({w for _, _, w in M.nests}))))
+    if mate_rows:
+        report.append("| mated part A | mated part B | overlapping samples |\n|---|---|---|")
+        for r in mate_rows:
+            report.append("| %s | %s | **%d (FAIL)** |" % r)
+    else:
+        report.append("Mated pairs: no interpenetration.\n")
     report.append("\nClearance failures: **%d**\n" % fails)
     return fails
 
@@ -205,6 +229,78 @@ def check_holes(M, report):
                       (h["host"], h["id"], h["for"], h["kind"], h["d"], good, need, round(100 * worst), "OK" if ok else "FAIL"))
     report.append("\nHole failures: **%d** (holes for seller-dependent parts are slots or the 10 mm grid and are listed in "
                   "docs/chassis_cad.md)\n" % fails)
+    return fails
+
+
+def _hole_core(h, step=0.5):
+    a = np.array(h["a"], float); b = np.array(h["b"], float)
+    n = max(2, int(np.linalg.norm(b - a) / step))
+    axis = a + np.linspace(0, 1, n)[:, None] * (b - a)
+    if h["kind"] != "slot" or "slot" not in h:
+        return axis
+    p0, p1 = np.array(h["slot"][0], float), np.array(h["slot"][1], float)
+    mid = (p0 + p1) / 2
+    k = max(2, int(np.linalg.norm(p1 - p0) / step))
+    offs = (p0 - mid) + np.linspace(0, 1, k)[:, None] * (p1 - p0)
+    return (axis[:, None, :] + offs[None, :, :]).reshape(-1, 3)
+
+
+def check_hole_spacing(M, report):
+    report.append("### Hole-to-hole spacing\n")
+    report.append("Every pair of fastener holes in the same part must keep >= 1.5 mm of material between them.\n")
+    fails = 0; rows = []
+    by_host = {}
+    for h in M.holes:
+        by_host.setdefault(h["host"], []).append(h)
+    for host, hs in by_host.items():
+        cores = [_hole_core(h) for h in hs]
+        for i in range(len(hs)):
+            for j in range(i + 1, len(hs)):
+                if "seat" in (hs[i]["kind"], hs[j]["kind"]):
+                    continue   # bearing seats are coaxial with their bolt by design
+                A, B = cores[i], cores[j]
+                if np.any(A.min(0) - 25 > B.max(0)) or np.any(B.min(0) - 25 > A.max(0)):
+                    continue
+                d = np.min(np.linalg.norm(A[:, None, :] - B[None, :, :], axis=2)) - hs[i]["d"] / 2 - hs[j]["d"] / 2
+                if d < 1.5:
+                    fails += 1
+                    rows.append((host, hs[i]["id"], hs[j]["id"], d))
+    if rows:
+        report.append("| part | hole | hole | web (mm) |\n|---|---|---|---|")
+        for r in rows:
+            report.append("| %s | %s | %s | **%.1f FAIL** |" % r)
+    else:
+        report.append("All hole pairs keep >= 1.5 mm web.\n")
+    return fails
+
+
+def check_removals(M, report):
+    report.append("## 2b. Assembly and service: can each part come out?\n")
+    report.append("Each group is slid along its exit direction (2 mm steps) after its fasteners and the listed parts "
+                  "are removed; it must not hit anything that stays (fasteners and keep-outs ignored).\n")
+    report.append("| group | direction | travel (mm) | removed first | result |\n|---|---|---|---|---|")
+    fails = 0
+    fast = {p["name"] for p in M.parts if p["name"].startswith(("plate_bolt", "pi_standoff"))}
+    for grp, d, travel, before in M.removals:
+        d = np.array(d, float)
+        pts = np.vstack([sample(M.get(n), 1.5) for n in grp if len(sample(M.get(n), 1.5))])
+        stay = [p for p in M.parts if p["group"] != "keepout" and p["name"] not in grp and p["name"] not in before
+                and p["name"] not in fast]
+        hit = None
+        for t in np.arange(2.0, travel + 0.1, 2.0):
+            q = pts + t * d
+            for p in stay:
+                if inside_part(p, q, grow=-0.2).any():
+                    hit = (p["name"], t)
+                    break
+            if hit:
+                break
+        ok = hit is None
+        fails += 0 if ok else 1
+        report.append("| %s | %s | %d | %s | %s |" % (", ".join(grp[:3]) + (" ..." if len(grp) > 3 else ""),
+                                                     tuple(int(v) for v in d), travel, ", ".join(before[:4]) + (" ..." if len(before) > 4 else "") or "-",
+                                                     "**OK**" if ok else "**FAIL: hits %s after %.0f mm**" % hit))
+    report.append("")
     return fails
 
 
@@ -382,7 +478,10 @@ def dynamics(M, report, mass, cg):
     report.append("- Static load on the drive wheels: **%.0f %%** (traction and braking come only from them).\n" % (100 * fx))
     report.append("- Sideways tip-over needs **%.2f g** (urethane on asphalt slides at ~0.7-0.9 g, so it slides first%s).\n" %
                   (lat_g, "" if lat_g > 0.9 else " ONLY JUST - keep heavy parts low"))
-    report.append("- Forward pitch-over about the drive axle under braking needs **%.2f g**.\n" % pitch_g)
+    report.append("- Forward pitch-over about the drive axle under braking starts at **%.2f g**. The bumper skids "
+                  "(bottom z = 16 mm at x = 84 mm) touch down after %.1f deg of pitch, so the robot then rides on the "
+                  "skids instead of flipping. Software should still cap deceleration at ~0.5 g (see docs).\n" %
+                  (pitch_g, math.degrees(math.atan2(16.0, 84.0))))
     rows = []
     for mu in (0.8, 0.6):
         a_fd = mu * 9.81 * (cg[0] - xc_tr) / (L - mu * h)          # drive front (this design)
@@ -452,7 +551,12 @@ def structural(M, report, mass, cg, dyn):
     d_minor = 6.47
     Zb = math.pi * d_minor ** 3 / 32
     sig = M_b / Zb
-    rows = [("M8 stub axle (8.8, yield 640 MPa)", "%.0f N x4 at %.0f mm + %.0f N side at r" % (Fw, lever, lat), "%.0f MPa" % sig, 640 / sig)]
+    rows = [("M8 stub axle, 4 g bump (class 8.8: 640 MPa / 12.9: 1080 MPa)", "%.0f N x4 at %.0f mm + %.0f N side at r" % (Fw, lever, lat),
+             "%.0f MPa" % sig, "%.1f / %.1f" % (640 / sig, 1080 / sig))]
+    M10 = (10 * Fw) * lever + lat * P["wheel_d"] / 2
+    s10 = M10 / Zb
+    rows.append(("M8 stub axle, 10 g kerb strike", "%.0f N x10 at %.0f mm" % (Fw, lever), "%.0f MPa" % s10,
+                 "%.1f / %.1f" % (640 / s10, 1080 / s10)))
     # boss bearing (PAHT-CF, across layers ~ compressive 40 MPa conservative)
     Lb = 26.0 + 4.0
     sig_b = 6 * M_b / (8.0 * Lb ** 2) + (k_imp * Fw) / (8.0 * Lb)
@@ -493,7 +597,8 @@ def structural(M, report, mass, cg, dyn):
     rows.append(("mast root stress at 3 g sideways (allow 40 MPa)", "", "%.1f MPa" % sig_m, 40 / sig_m))
     report.append("| item | load case | result | safety factor |\n|---|---|---|---|")
     for r in rows:
-        report.append("| %s | %s | %s | %s |" % (r[0], r[1], r[2], ("%.1f" % r[3]) if r[3] else "-"))
+        sf = r[3] if isinstance(r[3], str) else (("%.1f" % r[3]) if r[3] else "-")
+        report.append("| %s | %s | %s | %s |" % (r[0], r[1], r[2], sf))
     report.append("\nNotes: the axle boss figure assumes the wheel load reaches the bolt through the 14 mm spacer and the boss "
                   "and wall pad act together; the bridge beam ties both bosses so they do not rotate the side walls. "
                   "Belt: HTD-3M 9 mm belts are sold for loads well above this pull (check your supplier's rating); the "
@@ -653,6 +758,8 @@ def main():
     summary = {}
     summary["clearance"] = check_clearance(M, rep)
     summary["holes"] = check_holes(M, rep)
+    summary["hole spacing"] = check_hole_spacing(M, rep)
+    summary["assembly"] = check_removals(M, rep)
     res, pts = check_camera(M, rep)
     summary["camera"] = sum(1 for v in res.values() if v)
     camera_sweeps(rep)
