@@ -35,18 +35,11 @@ Every pair of parts that are not declared mates (bolted/sitting on each other) i
 | deck | idler_L | moving | 3.0 | 3.0-5.0 | **OK** |
 | deck | idler_R | moving | 3.0 | 3.0-5.0 | **OK** |
 | deck | usb_keepout | moving | 3.0 | 2.0-3.0 | **OK** |
-| deck | esp_ext_standoff_1 | static | 0.5 | 5.0-8.0 | **OK** |
-| deck | esp_ext_standoff_2 | static | 0.5 | 5.0-8.0 | **OK** |
-| deck | esp_ext_standoff_3 | static | 0.5 | 5.0-8.0 | **OK** |
-| deck | esp_ext_standoff_4 | static | 0.5 | 5.0-8.0 | **OK** |
 | deck | esp_ext_board | static | 0.5 | 5.0-8.0 | **OK** |
 | esp_ext_board | esp32_usb | moving | 3.0 | 5.0-8.0 | **OK** |
 | esp_ext_plate | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
 | esp_ext_plate | xt60_plug | static | 0.5 | 5.0-8.0 | **OK** |
-| esp_ext_standoff_1 | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
-| esp_ext_standoff_2 | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
-| esp_ext_standoff_3 | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
-| esp_ext_standoff_4 | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
+| esp_ext_standoffs | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
 | motor_L | belt_L | moving | 3.0 | 3.0-5.0 | **OK** |
 | motor_L | belt2_L | moving | 3.0 | 3.0-5.0 | **OK** |
 | motor_R | belt_R | moving | 3.0 | 3.0-5.0 | **OK** |
@@ -90,7 +83,7 @@ Every pair of parts that are not declared mates (bolted/sitting on each other) i
 | wheel_pulley_RR | axle_RR | moving | 3.0 | 5.0-8.0 | **OK** |
 | wheel_pulley_RR | spacer_RR | moving | 3.0 | 3.0-5.0 | **OK** |
 
-Mated pairs (bolted / resting on each other) are checked for interpenetration deeper than 0.3 mm; 22 declared nests are exempt (alternatives: only one is fitted; bolt through the spacer; bolt through the wheel bearings; camera fingers interleave the buckle prongs; nut on its bolt; spacer reaches the recessed inner race; standoff shank threads into the adapter).
+Mated pairs (bolted / resting on each other) are checked for interpenetration deeper than 0.3 mm; 19 declared nests are exempt (alternatives: only one is fitted; bolt through the spacer; bolt through the wheel bearings; camera fingers interleave the buckle prongs; nut on its bolt; spacer reaches the recessed inner race; standoff studs in the heat-set inserts).
 
 Mated pairs: no interpenetration.
 
@@ -188,14 +181,10 @@ For every hardware fastener hole: the hole axis must run through its host part f
 | motor_pulley_R | prop_1 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
 | motor_pulley_R | prop_2 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
 | motor_pulley_R | prop_3 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
-| esp_ext_plate | standoff_1 | standoff M8 shank (printed thread) | thread | 6.8 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_standoff_1 | m25_1 | board M2.5 x 8 screw (printed thread) | thread | 2.1 | 8.7 (need 4.0) | 100 % | **OK** |
-| esp_ext_plate | standoff_2 | standoff M8 shank (printed thread) | thread | 6.8 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_standoff_2 | m25_2 | board M2.5 x 8 screw (printed thread) | thread | 2.1 | 8.7 (need 4.0) | 100 % | **OK** |
-| esp_ext_plate | standoff_3 | standoff M8 shank (printed thread) | thread | 6.8 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_standoff_3 | m25_3 | board M2.5 x 8 screw (printed thread) | thread | 2.1 | 8.7 (need 4.0) | 100 % | **OK** |
-| esp_ext_plate | standoff_4 | standoff M8 shank (printed thread) | thread | 6.8 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_standoff_4 | m25_4 | board M2.5 x 8 screw (printed thread) | thread | 2.1 | 8.7 (need 4.0) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_1 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_2 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_3 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_4 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
 
 Hole failures: **0** (holes for seller-dependent parts are slots or the 10 mm grid and are listed in docs/chassis_cad.md)
 
@@ -312,10 +301,10 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | wheel_pulley_RR | printed | 27 | -200, -99, 45 |
 | belt2_L | hardware | 20 | -101, 84, 44 |
 | belt2_R | hardware | 20 | -101, -84, 44 |
-| esp_ext_plate | printed | 19 | -195, -0, 117 |
 | motor_plate_L | printed | 18 | -41, 58, 97 |
 | motor_plate_R | printed | 18 | -41, -58, 97 |
 | servo9g_adapter | printed | 16 | 26, -1, 188 |
+| esp_ext_plate | printed | 15 | -195, -0, 116 |
 | belt_L | hardware | 12 | -13, 102, 61 |
 | belt_R | hardware | 12 | -13, -102, 61 |
 | esp32 | hardware | 12 | -197, -0, 135 |
@@ -329,6 +318,7 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | axle_nut_RL | hardware | 5 | -200, 36, 45 |
 | axle_nut_FR | hardware | 5 | -0, -36, 45 |
 | axle_nut_RR | hardware | 5 | -200, -36, 45 |
+| esp_ext_standoffs | hardware | 4 | -197, -0, 119 |
 | pan_buckle | printed | 4 | 38, 0, 224 |
 | plate_bolt_L0 | hardware | 3 | -13, 49, 96 |
 | plate_bolt_L1 | hardware | 3 | -40, 49, 123 |
@@ -336,10 +326,6 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | plate_bolt_R0 | hardware | 3 | -13, -48, 96 |
 | plate_bolt_R1 | hardware | 3 | -40, -48, 123 |
 | plate_bolt_R2 | hardware | 3 | -67, -48, 96 |
-| esp_ext_standoff_1 | printed | 0 | -223, -30, 119 |
-| esp_ext_standoff_2 | printed | 0 | -166, -30, 119 |
-| esp_ext_standoff_3 | printed | 0 | -166, 30, 119 |
-| esp_ext_standoff_4 | printed | 0 | -223, 30, 119 |
 
 **Total 4.02 kg, CG at x = -71, y = 0.0, z = 81 mm** (x from the front axle, + forward).
 
@@ -418,7 +404,7 @@ Design event: a wheel hits a square lip. Peak force = v sin(theta) x sqrt(k m), 
 | axle tie beam, 24 x 6.5 under the harness notch (allow 40 MPa) | couple 1674 N over 42 mm | 10.7 MPa | 3.7 |
 | floor under the boss, the other half of the couple (allow 40 MPa) | 36 x 4 mm | 11.6 MPa | 3.4 |
 | idler M8 clamped in a 6 mm wall slot (bearing, allow 40 MPa) | rear belt tight side 60 N | 0.6 MPa | 61.6 |
-| 608-2RS idler, static rating C0 1370 N |  | 31 N | 43.9 |
+| 608-2RS idler, static rating C0 1370 N |  | 31 N | 44.0 |
 | motor shaft bending (5 mm, 14 mm overhang [M]); endurance ~250 MPa | belt 30 N set + 39 N pull | 68 MPa | 3.7 |
 | turn in place: motor current vs 30 A ESC (wheelbase/track 0.72) | mu 0.8 scrub | 10 A | 2.9 |
 | pulley tooth root to bore wall (need 3 mm) |  | 4.7 mm | 2.3 |
@@ -499,16 +485,12 @@ Add ~30 % for slack and service loops when cutting wires. Power runs under the d
 | motor_pulley_L | PAHT-CF | 32 x 14 x 32 | yes |
 | motor_pulley_R | PAHT-CF | 32 x 14 x 32 | yes |
 | esp_ext_plate | PETG | 70 x 74 x 8 | yes |
-| esp_ext_standoff_1 | PETG | 9 x 10 x 9 | yes |
-| esp_ext_standoff_2 | PETG | 9 x 10 x 9 | yes |
-| esp_ext_standoff_3 | PETG | 9 x 10 x 9 | yes |
-| esp_ext_standoff_4 | PETG | 9 x 10 x 9 | yes |
 
 Overall: **343 long x 343 wide x 293 tall mm** with the camera mast; 343 x 343 x 150 mm with the mast removed (backpack). Taking both wheels off (one nyloc each, pulleys stay on the wheels) brings the width to 238 mm.
 
 ## 11. Fastener schedule (generated from the model)
 
-Threads in printed parts are heat-set inserts, except the ESP32 extension adapter: its standoffs have a printed M8 x 1.25 shank into a printed thread and a printed M2.5 bore (light load, owner's choice); servo ear screws are the servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.
+Threads in printed parts are always heat-set inserts (never tapped plastic); servo ear screws are the servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.
 
 | for | hole | Ø (mm) | count | method |
 |---|---|---|---|---|
@@ -516,18 +498,19 @@ Threads in printed parts are heat-set inserts, except the ESP32 extension adapte
 | HC-SR04 bracket M3 | insert | 4.0 | 2 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | HC-SR04 cable | clear | 9.0 | 1 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | HC-SR04 transducer | clear | 18.0 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
+| M2.5 hex standoff seat | cbore | 6.4 | 4 | counterbore for a low-head screw |
 | M3 low-head counterbore | cbore | 5.8 | 8 | counterbore for a low-head screw |
 | M3 x 12 low head into the bell | clear | 3.4 | 8 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 16 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | M4 thumb screw | clear | 4.5 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | Raspberry Pi 5 M2.5 x 6 screw into a printed standoff | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | SG90 ear screw | slot | 2.0 | 2 | slotted clearance, adjust then tighten |
+| SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | UWB board M3 [M] | slot | 3.4 | 4 | slotted clearance, adjust then tighten |
 | XT60 arming plug (panel) | slot | 16.4 | 1 | slotted clearance, adjust then tighten |
 | adapter -> head (servo ear slots) | slot | 2.4 | 2 | slotted clearance, adjust then tighten |
 | belt pull screw M3 insert | insert | 4.0 | 2 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | belt pull screw M3 x 25 (head on the boss) | clear | 3.4 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
-| board M2.5 x 8 screw (printed thread) | thread | 2.1 | 4 | modeled thread printed in the part (Fusion thread feature on a tap-drill hole); export from Fusion |
 | bracket M3 | clear | 3.4 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | bumper-door M4 thumb screw | insert | 5.6 | 2 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | clears the axle sleeve | clear | 22.0 | 4 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
@@ -549,6 +532,5 @@ Threads in printed parts are heat-set inserts, except the ESP32 extension adapte
 | servo ear screw (self-tapping) | slot | 2.4 | 2 | slotted clearance, adjust then tighten |
 | shell M3 | clear | 3.4 | 4 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | shell M3 | insert | 4.0 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
-| standoff M8 shank (printed thread) | thread | 6.8 | 4 | modeled thread printed in the part (Fusion thread feature on a tap-drill hole); export from Fusion |
 | zip tie holding the HC-SR04 PCB | slot | 2.5 | 2 | slotted clearance, adjust then tighten |
 

@@ -2,7 +2,7 @@
 
 Files:
 - `cad/fusion/HonebotChassis/HonebotChassis.py` (+ `.manifest`): **Fusion 360 script that builds the whole robot**:
-  15 printed parts on the robot + the 5-piece ESP32 extension adapter (+ a bench-only 9 g servo adapter and a drill jig, both hidden), reference hardware and
+  15 printed parts on the robot + the ESP32 extension adapter (+ a bench-only 9 g servo adapter and a drill jig, both hidden), reference hardware and
   keep-out volumes. It is the single geometry source.
 - `cad/check_design.py`: offline checker. It imports the same file without Fusion and checks:
   - clearances, holes and assembly paths;
@@ -16,7 +16,7 @@ Files:
 
 > **Run it:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> **"built 89 of 89 parts"** and **"Modeled threads: 12"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
+> **"built 86 of 86 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
 > the same API calls. If any part or boolean fails, the message box names it: send the text back.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
 
@@ -189,8 +189,7 @@ face-down orientations of each part.
 | tub | 1 | PAHT-CF (PETG is fine for a walking/jogging-speed prototype) | Floor on the bed | Tree supports from the floor under the two axle tie beams (62 mm bridges over the battery tunnel), the short ledge under the mast socket (12 × 48 mm) and the two belt pull-screw bosses. Everything else hanging off a wall runs to the floor or has a 45° underside. Put **support blockers** in the 4 axle holes and the 2 motor-plate pockets: they print as arches |
 | shell (lid + pods) | 1 | PETG | **Lid on the bed** (flat top) | None |
 | deck (with ESP32 cradle) | 1 | PETG | Flat, cradle up | None |
-| esp_ext_plate (SunFounder extension adapter) | 1 | PETG, 0.12 mm layers (threads) | **Top face down** (tongue and bosses up) | None (the 1.2 mm flange lip is a short overhang). **Export from Fusion**: the checker's STL has plain holes, no threads |
-| esp_ext_standoff_1…4 | 4 | PETG, 0.12 mm layers, 100 % infill | Upright, head on the bed | None. Export from Fusion (threads) |
+| esp_ext_plate (SunFounder extension adapter) | 1 | PETG | **Top face down** (tongue and bosses up) | None (the 1.2 mm flange lip and the 6.4 mm counterbore roofs print as short overhangs/bridges) |
 | motor_plate_L/R | 2 | PAHT-CF | Motor face down, counterbores up | None |
 | wheel_pulley_FL/FR/RL/RR | 4 | PAHT-CF, 0.12 mm layers | Wheel-side disc down (axis vertical) | None. The upper 3 mm flange of each tooth section is a short overhang that prints |
 | motor_pulley_L/R | 2 | PAHT-CF, 0.12 mm layers | Bell side down | None |
@@ -201,16 +200,18 @@ face-down orientations of each part.
 | servo9g_adapter, pulley_drill_jig | 1 each | PETG | Bench only / tool (hidden in Fusion) | |
 | prototype kit (sleeves, TPU belts) | | see §6b | Flat as laid out | None |
 
-**ESP32 extension adapter (2026-11-17).** The SunFounder ESP32 extension board sits on a printed plate whose
-T-tongue slides into the deck cradle (the grooves the bare DevKit used). Fit: tongue web and flange **0.20 mm per
-side** narrower than the channel and groove, flange 1.6 mm in a 2.1 mm groove (**0.25 mm above and below**); the plate
-rests on the rail tops. Change `ext_fit_side` / `ext_fit_vert` in PARAMS if your printer runs tight or loose.
-Four separate standoffs screw into the plate with an **M8 × 1.25 printed thread** (6 mm of engagement in the plate
-and its bosses) and take the board's **M2.5 screws** in a printed M2.5 bore (2.1 mm; at that size FDM threads are
-rough, so the screw effectively finishes the thread: drive it in once by hand). Fusion applies the threads as
-modeled thread features after the bodies exist; if your Fusion refuses one, the message box names it and the hole
-stays at tap-drill size (6.8 / 2.1 mm), which you can tap. **Print the plate and one standoff first** and test both
-fits before the rest. Stack (z above the ground): plate top 119.5, board underside 123.5, DevKit underside 133.6, module top 138.4, micro-USB plug keep-out to 141.6, lid underside 145 (the 3 mm keep-out rule passes).
+**ESP32 extension adapter (2026-11-17, v2: inserts instead of printed threads).** The SunFounder ESP32 extension
+board sits on **one printed plate** whose T-tongue slides into the deck cradle (the grooves the bare DevKit used). Fit:
+tongue web and flange **0.20 mm per side** narrower than the channel and groove, flange 1.6 mm in a 2.1 mm groove
+(**0.25 mm above and below**); the plate rests on the rail tops. Change `ext_fit_side` / `ext_fit_vert` in PARAMS if
+your printer runs tight or loose. Four **M2.5 heat-set inserts** (same as the Pi's) go into bosses under the plate,
+pressed in from the top; the holes run through, so a stud longer than the insert just passes out the bottom. Stock
+**M2.5 × 6 male-female hex standoffs** screw in, seated in 2 mm counterbores, which leaves a 4 mm air gap under the
+board for its through-hole solder joints; six vent slots beside the tongue let air through. Standoffs are still
+needed: the board's underside has solder joints and pins, and the gap is what keeps them off the plate. Print the plate
+top face down, no supports, and test the slide fit before pressing the inserts. Stack (z above the ground): plate top
+119.5, board underside 123.5, DevKit underside 133.6, module top 138.4, micro-USB plug keep-out to 141.6, lid
+underside 145 (the 3 mm keep-out rule passes).
 
 **Slicer settings (Bambu Studio).** These matter more than geometry for cost and time:
 - Walls: 3. Top/bottom: 5 layers. Sparse infill: 15 % gyroid.
@@ -280,13 +281,13 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | M8 × 140 hex bolt 12.9 + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 4 | stub axles |
 | Axle stack per wheel: steel tubes **16 × 2** (inner 30.3 mm through the boss + outer cut to measure) over **12 × 2** (full length), collar washer 8.4 × 30 × 2 | 4 sets | E355 or stainless stock tube, cut and deburred. 12 × 2 in 16 × 2 and M8 in 12 × 2 are line-to-line nominal: plan to ream the 12 × 2 bore to 8.2 and sand the 12 mm OD to slide, or use a single 16 × 4 tube if you find one stocked |
 | M3 × 60 socket screws | 16 | wheel outer face → inserts in the pulleys (14 mm deep holes in the pulleys: the screw passes through the insert with room to spare) |
-| Heat-set inserts M3 × 5.7 (34 + spares), M4 × 8.1 (4), **M2.5 × 4 (4, Pi standoffs)** | | |
+| Heat-set inserts M3 × 5.7 (34 + spares), M4 × 8.1 (4), **M2.5 × 4 (8: 4 Pi standoffs + 4 ESP32 extension adapter)** | | |
 | M3 screws (shell 4, deck 4, motor plates 6, belt pull 2 × M3 × 25, HC-SR04 2), M4 thumb screws (mast 2, door 2) | | |
 | Pololu D36V50F5 (5 V, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | |
 | XT60 pigtails, 20 A blade fuse holder, panel XT60 as arming plug | | pull the plug = everything off |
 | MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
 | Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
-| SunFounder ESP32 camera extension board + 4 × M2.5 × 8 screws | 1 | screws go into the printed standoffs' M2.5 bores |
+| SunFounder ESP32 camera extension board; 4 × M2.5 × 6 male-female hex standoffs (6 mm body, ≤ 6 mm stud) + 4 × M2.5 × 6 screws; 4 more M2.5 × 4 heat-set inserts | 1 | standoffs from any M2.5 standoff kit (brass or nylon) |
 | 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
 
 ## 6b. Prototype kit: drive it before buying the metal
@@ -347,7 +348,7 @@ the motor plates, and the mast's servo-lead notch.
 |---|---|---|
 | tub | 1 | PAHT-CF (or PETG at walking/jogging speeds) |
 | shell, deck (with Pi standoffs and ESP32 cradle), bumper_door, us_bracket, pan_buckle | 1 each | PETG |
-| esp_ext_plate + esp_ext_standoff_1…4 (from Fusion, threads modeled) | 1 + 4 | PETG |
+| esp_ext_plate (SunFounder ESP32 extension adapter) | 1 | PETG |
 | motor_plate_L/R, motor_pulley_L/R, wheel_pulley_FL/FR/RL/RR | 1 each | PAHT-CF |
 | mast | 1 | PAHT-CF (only needed for the camera) |
 | pulley_drill_jig | 1 | PETG, to drill the 4 wheel cores |

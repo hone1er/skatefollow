@@ -63,14 +63,14 @@ PARAMS = {
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
-    # SunFounder ESP32 extension adapter (slides into the cradle grooves; threaded standoffs printed separately)
+    # SunFounder ESP32 extension adapter: one printed plate that slides into the cradle grooves, M2.5 heat-set
+    # inserts in bosses under it, stock M2.5 hex standoffs (male-female) sitting in counterbores, vent slots
     "ext_board_x": 64.0, "ext_board_y": 67.0, "ext_hole_dx": 57.0, "ext_hole_dy": 60.0,   # [V] SunFounder drawing
     "ext_fit_side": 0.2,   # [D] clearance per side, tongue web/flange to the cradle rails (snug slide, PETG on PETG)
     "ext_fit_vert": 0.25,  # [D] clearance above and below the 1.6 mm flange (groove roofs sag a little when printed)
-    "ext_tongue_l": 50.0, "ext_plate_t": 2.5, "ext_boss_d": 13.0, "ext_boss_h": 3.5,
-    "ext_standoff_h": 4.0, "ext_head_d": 11.0, "ext_head_flats": 9.0, "ext_shank_d": 8.0,
-    "ext_thread_tap": 6.8,  # [D] M8 x 1.25 internal: hole at tap-drill size, the modeled thread cuts to profile
-    "ext_m25_tap": 2.1,     # [D] M2.5 x 0.45 internal (tap drill 2.05)
+    "ext_tongue_l": 50.0, "ext_plate_t": 2.5, "ext_boss_d": 13.0, "ext_boss_h": 5.5,
+    "ext_standoff_h": 6.0,   # [V] stock M2.5 x 6 mm male-female hex standoff (5 mm across flats), in every M2.5 kit
+    "ext_cbore_d": 6.4, "ext_cbore_depth": 2.0,   # [D] standoff seat: sinks the 6 mm standoff to a 4 mm gap
     # front: HC-SR04 bracket tilted up so the beam's lower edge meets the ground beyond slow_distance
     "us_z": 102.0, "us_tilt_deg": 12.0, "us_beam_half_deg": 15.0,   # [M] beam half-angle: measure (see docs)
     # camera mast (removable), standard servo pan head, GoPro HERO9
@@ -363,7 +363,7 @@ class Model:
         adds are then unioned and its cuts (holes, pockets) applied last: body = U(A_i - C_i) U A - C."""
         p = {"name": name, "group": group, "color": color, "adds": list(adds), "cuts": list(cuts or []),
              "mass": mass, "material": material, "moving": moving, "note": note, "mates": set(mates),
-             "hidden": hidden, "pre": [(list(a), list(c)) for a, c in (pre or [])], "threads": []}
+             "hidden": hidden, "pre": [(list(a), list(c)) for a, c in (pre or [])]}
         self.parts.append(p)
         return p
 
@@ -378,17 +378,6 @@ class Model:
         self.get(host)["cuts"].append(cyl(a, b, d / 2))
         self.holes.append({"host": host, "id": hid, "a": a, "b": b, "d": d, "kind": kind, "for": for_item,
                            "audit": audit})
-
-    def thread(self, host, hid, a, b, d, designation, thread_class, internal=True, for_item="", hole=True):
-        """Modeled ISO metric thread on the cylinder a->b of diameter d in host (Fusion thread feature, applied after
-        the body exists). internal: d is the pre-hole (tap-drill size; also what is printed if the feature fails).
-        external: d is the nominal diameter of a cylinder the part already has (no cut)."""
-        if hole:
-            self.get(host)["cuts"].append(cyl(a, b, d / 2))
-            self.holes.append({"host": host, "id": hid, "a": a, "b": b, "d": d, "kind": "thread", "for": for_item,
-                               "audit": True})
-        self.get(host)["threads"].append({"a": tuple(a), "b": tuple(b), "d": d, "designation": designation,
-                                          "cls": thread_class, "internal": internal})
 
     def slot_hole(self, host, hid, p0, p1, w, depth_dir, depth, for_item="", centre_depth=0.0, audit=True):
         self.get(host)["cuts"].extend(slot(p0, p1, w, depth_dir, depth, centre_depth))
@@ -974,17 +963,20 @@ def build_model(P=None):
         m.part("esc_" + side, H, COL["hw_dark"], [box(-179, -131, ey0, ey1, dz1 + 0.01, dz1 + 14)],
                mass=0.03, mates={"deck"}, note="AM32 ESC envelope 48 x 28 x 14 [M], zip-tied to the deck")
     # ---------------- SunFounder ESP32 extension board on a slide-in adapter ----------------
-    # The adapter's T-tongue slides into the deck cradle (the grooves the bare DevKit used to slide in); four
-    # printed standoffs with an M8 x 1.25 shank thread into the plate and take the board's M2.5 screws in their
-    # threaded bore. Board 64 (x) x 67 (y), holes 57 x 60 [V, SunFounder drawing]; screw terminals along the 64 mm
-    # edges (wires leave sideways, +/-y), DevKit on female headers along x, its micro-USB toward the Pi (+x).
+    # One printed plate: its T-tongue slides into the deck cradle (the grooves the bare DevKit used to slide in).
+    # Four M2.5 heat-set inserts (same as the Pi's) sit in bosses under the plate; stock M2.5 x 6 male-female hex
+    # standoffs screw into them from the top, seated in 2 mm counterbores, so the board floats 4 mm above the plate
+    # (room for its through-hole solder joints) and the vent slots let air through. No printed threads.
+    # Board 64 (x) x 67 (y), holes 57 x 60 [V, SunFounder drawing]; screw terminals along the 64 mm edges (wires
+    # leave sideways, +/-y), DevKit on female headers along x, its micro-USB toward the Pi (+x).
     fs, fv = P["ext_fit_side"], P["ext_fit_vert"]
     rail_in = ew / 2 + 0.3                          # cradle channel half-width (rail inner face)
     g_lo, g_hi, g_out = pcb_z - 0.2, pcb_z + 1.9, ew / 2 + 0.3 + 1.2   # cradle groove (see the deck cuts)
     rail_top = pcb_z + 5
-    pl_t, so_h = P["ext_plate_t"], P["ext_standoff_h"]
+    pl_t = P["ext_plate_t"]
     pl_z1 = rail_top + pl_t
-    bd_z0 = pl_z1 + so_h                            # extension board underside
+    seat_z = pl_z1 - P["ext_cbore_depth"]           # standoff seat (counterbore floor)
+    bd_z0 = seat_z + P["ext_standoff_h"]            # extension board underside
     hx, hy = P["ext_hole_dx"] / 2, P["ext_hole_dy"] / 2
     bx, by = P["ext_board_x"] / 2, P["ext_board_y"] / 2
     boss_r, boss_z0 = P["ext_boss_d"] / 2, rail_top - P["ext_boss_h"]
@@ -999,34 +991,31 @@ def build_model(P=None):
                       for sx in (-1, 1) for sy in (-1, 1)],
                    material="PETG", mates={"deck"},
                    note="slide-in adapter for the SunFounder ESP32 extension: T-tongue in the cradle grooves, "
-                        "%.2f mm clearance per side, %.2f mm above/below the flange; print top face down" % (fs, fv))
+                        "%.2f mm clearance per side, %.2f mm above/below the flange; 4 M2.5 inserts; vent slots; "
+                        "print top face down, one piece, no supports" % (fs, fv))
     assert g_lo + fv + 1.6 <= g_hi - fv + 1e-6, "flange does not fit the cradle groove"
+    for xc in (17.5, 22.0, 26.5):                   # vent slots beside the tongue, clear of the bosses
+        for sx in (-1, 1):
+            plate["cuts"].append(box(ecx + sx * xc - 1.25, ecx + sx * xc + 1.25, -21, 21, rail_top - co, pl_z1 + co))
     for k, (sx, sy) in enumerate(((-1, -1), (1, -1), (1, 1), (-1, 1))):
         hc = (ecx + sx * hx, sy * hy)
-        m.thread("esp_ext_plate", "standoff_%d" % (k + 1), (hc[0], hc[1], boss_z0 - co), (hc[0], hc[1], pl_z1 + co),
-                 P["ext_thread_tap"], "M8x1.25", "6H", internal=True, for_item="standoff M8 shank (printed thread)")
-        sn = "esp_ext_standoff_%d" % (k + 1)
-        shank_z0 = boss_z0 + 0.5
-        m.part(sn, "printed", COL["accent"],
-               [cyl((hc[0], hc[1], pl_z1 - 0.01), (hc[0], hc[1], bd_z0), P["ext_head_d"] / 2),
-                cyl((hc[0], hc[1], shank_z0), (hc[0], hc[1], pl_z1), P["ext_shank_d"] / 2)],
-               [box(*sorted((hc[0] + sg * P["ext_head_flats"] / 2, hc[0] + sg * P["ext_head_d"])),
-                    hc[1] - P["ext_head_d"], hc[1] + P["ext_head_d"], pl_z1 - co, bd_z0 + co) for sg in (1, -1)],
-               material="PETG", mates={"esp_ext_plate", "esp_ext_board"},
-               note="threaded standoff: M8 x 1.25 shank screws into the adapter, M2.5 bore takes the board screw; "
-                    "print upright, head on the bed; 9 mm flats for a spanner")
-        m.thread(sn, "m25_%d" % (k + 1), (hc[0], hc[1], shank_z0 - co), (hc[0], hc[1], bd_z0 + co),
-                 P["ext_m25_tap"], "M2.5x0.45", "6H", internal=True, for_item="board M2.5 x 8 screw (printed thread)")
-        m.thread(sn, "shank_%d" % (k + 1), (hc[0], hc[1], shank_z0), (hc[0], hc[1], pl_z1),
-                 P["ext_shank_d"], "M8x1.25", "6g", internal=False, for_item="M8 shank (external, printed)", hole=False)
-        m.nests.append(("esp_ext_plate", sn, "standoff shank threads into the adapter"))
+        m.hole("esp_ext_plate", "ext_insert_%d" % (k + 1), (hc[0], hc[1], seat_z + 0.01), (hc[0], hc[1], boss_z0 - co),
+               P["ins_m25"], kind="insert", for_item="SunFounder board standoff (M2.5 insert, through for the stud)")
+        m.hole("esp_ext_plate", "ext_cbore_%d" % (k + 1), (hc[0], hc[1], seat_z), (hc[0], hc[1], pl_z1 + co),
+               P["ext_cbore_d"], kind="cbore", for_item="M2.5 hex standoff seat", audit=False)
+    m.part("esp_ext_standoffs", H, COL["hw_metal"],
+           [cyl((ecx + sx * hx, sy * hy, seat_z), (ecx + sx * hx, sy * hy, bd_z0), 2.9) for sx in (-1, 1) for sy in (-1, 1)]
+           + [cyl((ecx + sx * hx, sy * hy, seat_z - 6), (ecx + sx * hx, sy * hy, seat_z), 1.25) for sx in (-1, 1) for sy in (-1, 1)],
+           mass=0.004, mates={"esp_ext_plate", "esp_ext_board"},
+           note="4 x M2.5 x 6 male-female hex standoffs (brass or nylon) + 4 x M2.5 x 6 screws for the board")
+    m.nests.append(("esp_ext_plate", "esp_ext_standoffs", "standoff studs in the heat-set inserts"))
     term_h, hdr_h = 9.5, 8.5
     hdr_y = ew / 2 - 2.5
     m.part("esp_ext_board", H, COL["pcb_blue"],
            rbox(ecx - bx, ecx + bx, -by, by, bd_z0, bd_z0 + 1.6, 3)
            + [box(ecx - 23, ecx + 23, s * (by - 7.5), s * (by - 0.5), bd_z0 + 1.6, bd_z0 + 1.6 + term_h) for s in (1, -1)]
            + [box(ecx - 24.2, ecx + 24.2, s * hdr_y - 1.27, s * hdr_y + 1.27, bd_z0 + 1.6, bd_z0 + 1.6 + hdr_h) for s in (1, -1)],
-           mass=0.03, mates={"esp_ext_plate", "esp32", "esp_ext_wires"} | {"esp_ext_standoff_%d" % k for k in range(1, 5)},
+           mass=0.03, mates={"esp_ext_plate", "esp32", "esp_ext_wires", "esp_ext_standoffs"},
            note="SunFounder ESP32 camera extension 64 x 67, screw terminals + female headers [V drawing, heights M]")
     dk_z = bd_z0 + 1.6 + hdr_h                      # DevKit PCB underside, sitting on the female headers
     m.part("esp32", H, COL["pcb_blue"],
@@ -1089,8 +1078,8 @@ def build_model(P=None):
     m.nests += [("gopro", "pan_buckle", "camera fingers interleave the buckle prongs"),
                 ("servo", "servo9g_adapter", "alternatives: only one is fitted")]
     mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_anchor", "servo9g_adapter"]
-    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp_ext_plate", "esp_ext_board", "esp32"] + [
-        "esp_ext_standoff_%d" % k for k in range(1, 5)]
+    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp_ext_plate", "esp_ext_standoffs", "esp_ext_board",
+                "esp32"]
     bolts = ["plate_bolt_%s%d" % (sd_, k) for sd_ in "LR" for k in range(3)]
     m.removals = [
         (mast_grp, (0, 0, 1), 170, []),
@@ -1232,60 +1221,6 @@ def run(context):
                     boolop(body, b, adsk.fusion.BooleanTypes.UnionBooleanType)
             return body
 
-        thread_ok, thread_fail = [], []
-        METRIC = "ISO Metric profile"
-
-        def cyl_faces(body, t):
-            """Cylindrical faces of body lying on the thread's axis with its diameter."""
-            a = [v * S for v in t["a"]]; bb = [v * S for v in t["b"]]
-            ax = norm((bb[0] - a[0], bb[1] - a[1], bb[2] - a[2]))
-            want = t["d"] / 2 * S
-            found = adsk.core.ObjectCollection.create()
-            n = 0
-            for i in range(body.faces.count):
-                f = body.faces.item(i)
-                g = f.geometry
-                if g.surfaceType != adsk.core.SurfaceTypes.CylinderSurfaceType or abs(g.radius - want) > 0.003:
-                    continue
-                gx = norm((g.axis.x, g.axis.y, g.axis.z))
-                if abs(abs(gx[0] * ax[0] + gx[1] * ax[1] + gx[2] * ax[2]) - 1.0) > 1e-4:
-                    continue
-                rel = (g.origin.x - a[0], g.origin.y - a[1], g.origin.z - a[2])
-                along = rel[0] * ax[0] + rel[1] * ax[1] + rel[2] * ax[2]
-                off = math.sqrt(max(0.0, sum(c * c for c in rel) - along * along))
-                if off > 0.003:
-                    continue
-                found.add(f)
-                n += 1
-            if n == 0:
-                raise RuntimeError("no cylindrical face of %.2f mm found for the thread" % t["d"])
-            return found
-
-        def add_thread(comp, body, t):
-            tf = comp.features.threadFeatures
-            faces = cyl_faces(body, t)
-            tries = [(METRIC, t["designation"], t["cls"])]
-            q = tf.threadDataQuery
-            for ttype in (METRIC, q.defaultMetricThreadType):
-                try:
-                    ok, dsg, cls = q.recommendThreadData(t["d"] * S, t["internal"], ttype)
-                    if ok and (ttype, dsg, cls) not in tries:
-                        tries.append((ttype, dsg, cls))
-                except Exception:
-                    pass
-            err = None
-            for ttype, dsg, cls in tries:
-                try:
-                    info = tf.createThreadInfo(t["internal"], ttype, dsg, cls)
-                    inp = tf.createInput(faces, info)
-                    inp.isFullLength = True
-                    inp.isModeled = True
-                    if tf.add(inp) is not None:
-                        return
-                except Exception as e:
-                    err = e
-            raise RuntimeError("thread feature refused (%s)" % err)
-
         appearances = {}
 
         def appearance(name, rgb):
@@ -1372,13 +1307,6 @@ def run(context):
                     occ.isLightBulbOn = False
                 if part.get("hidden"):
                     occ.isLightBulbOn = False
-                for t in part.get("threads", []):    # own try: a failed thread keeps the part (plain tap-drill hole)
-                    try:
-                        add_thread(comp, b, t)
-                        thread_ok.append(1)
-                    except Exception:
-                        thread_fail.append("%s %s: %s" % (part["name"], t["designation"],
-                                                          traceback.format_exc().splitlines()[-1]))
             except Exception:
                 failures.append("%s: %s" % (part["name"], traceback.format_exc().splitlines()[-1]))
         try:
@@ -1390,12 +1318,6 @@ def run(context):
             msg += "\n\nFailed parts:\n" + "\n".join(failures)
         if bool_fail:
             msg += "\n\n%d boolean operations failed and were skipped (a part may miss a hole or a rounded edge)." % len(bool_fail)
-        if thread_fail:
-            msg += ("\n\n%d of %d modeled threads failed; those holes stay at tap-drill size (tap them, or let the "
-                    "screw cut its own thread):\n" % (len(thread_fail), len(thread_fail) + len(thread_ok))
-                    + "\n".join(thread_fail))
-        elif thread_ok:
-            msg += "\n\nModeled threads: %d (export the adapter + standoffs from Fusion: the checker STLs have none)." % len(thread_ok)
         if sphere_fail:
             msg += "\n\n(Spheres unavailable in this Fusion version: %d rounded corners were skipped.)" % len(sphere_fail)
         msg += ("\n\nKeep-out volumes are hidden (turn on 'Keep-out volumes' to see swept envelopes)."
