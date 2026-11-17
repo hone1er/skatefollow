@@ -111,6 +111,12 @@ def sph(c, r):
     return {"t": "sph", "c": tuple(c), "r": r}
 
 
+def tor(c, R, r):
+    """Torus around a vertical (z) axis through c: ring radius R, tube radius r. Needs R >= r (no spindle torus)."""
+    assert R >= r, "spindle torus (R %.2f < r %.2f): use a smaller edge radius or a larger corner radius" % (R, r)
+    return {"t": "tor", "c": tuple(c), "R": R, "r": r}
+
+
 def pdiff(a, bs):
     """a minus every primitive in bs (used for edge-rounding cutters and true belt wrap arcs)."""
     return {"t": "diff", "a": a, "b": list(bs)}
@@ -232,6 +238,10 @@ def belt_loop_n(circles, t, y, w):
 def soft_slab(x0, x1, y0, y1, z0, z1, R, r, top=True, bottom=False, nseg=5):
     """Plan-rounded slab (corner radius R) whose top (and/or bottom) edges are rounded with radius r."""
     r = min(r, (z1 - z0) / 2 - 0.01, R)
+    # clean-mesh rules: straight edges must exist between the corners (no duplicate corner surfaces) and the corner
+    # torus must not be a spindle/horn torus
+    assert x1 - x0 > 2 * R + 0.5 and y1 - y0 > 2 * R + 0.5, "soft_slab: corner radius %.1f too big for %.1f x %.1f" % (R, x1 - x0, y1 - y0)
+    assert R - r >= r or R - r < 0.6, "soft_slab: edge radius %.1f too big for corner radius %.1f (need r <= R/2)" % (r, R)
     zc0 = z0 + (r if bottom else 0.0)
     zc1 = z1 - (r if top else 0.0)
     out = list(rbox(x0, x1, y0, y1, zc0, zc1, R)) if zc1 - zc0 > 0.05 else []
@@ -250,14 +260,9 @@ def soft_slab(x0, x1, y0, y1, z0, z1, R, r, top=True, bottom=False, nseg=5):
         if y1 - y0 - 2 * R > 0.1:
             for xx in (x0 + r, x1 - r):
                 out.append(cyl_y(y0 + R, y1 - R, xx, ze, r))
-        # corners: spheres along the corner arc (centre radius R - r)
-        for cx, cy, ax, ay in ((x0 + R, y0 + R, -1, -1), (x1 - R, y0 + R, 1, -1), (x0 + R, y1 - R, -1, 1), (x1 - R, y1 - R, 1, 1)):
-            n = 1 if Ri < 0.6 else nseg
-            for k in range(n):
-                t = (math.pi / 2) * (k / (n - 1) if n > 1 else 0.5)
-                out.append(sph((cx + ax * Ri * math.cos(t), cy + ay * Ri * math.sin(t), ze), r))
-            if Ri >= 0.6:   # torus-like ring between the spheres
-                pass
+        # corners: an exact torus (one clean surface; a chain of spheres meshes badly). Small corner radius: a sphere.
+        for cx, cy in ((x0 + R, y0 + R), (x1 - R, y0 + R), (x0 + R, y1 - R), (x1 - R, y1 - R)):
+            out.append(tor((cx, cy, ze), Ri, r) if Ri >= 0.6 else sph((cx, cy, ze), r))
     return out
 
 
@@ -433,20 +438,30 @@ def build_model(P=None):
         box(x0, xr_in + 0.01, -hw, hw, zf0, top),                        # rear wall
         box(P["mast_x"] - 17, xf_in + 0.01, -24, 24, dz1, top),          # mast socket block (behind front wall)
     ]
-    for _, ax in AX:
-        tub_adds.append(box(ax - 12, ax + 12, -inner, inner, 66, dz0))   # bridge beam (ties the bosses, carries the deck)
+    # print floor-down without supports: everything hanging off a wall either runs to the floor or has a 45 deg underside.
+    # 45 deg wedge under the mast socket block (rotated square, clipped inside the front wall)
+    hd = xf_in - (P["mast_x"] - 17) - 0.2
+    tub_adds.append(pdiff(obox((xf_in, 0.0, dz1), 2 * hd / math.sqrt(2), 48.0, 2 * hd / math.sqrt(2),
+                               norm((1, 0, 1)), Y), [box(x1 - 0.5, x1 + 2 * hd, -30, 30, 0, 250),
+                                                     box(P["mast_x"] - 40, x1 + 2 * hd, -30, 30, 0, zf1 + P["bat_h"] + 1.5)]))
+    # (clipped 1.5 mm above the battery so the pack still slides out of the front: a 12 mm ledge remains)
     for s in (1, -1):
         for _, ax in AX:
             tub_adds += [box(ax - 18, ax + 18, s * 31, s * (inner + 0.01), zf0, 72),       # axle boss
-                         cyl_y(s * (hw - 0.01), s * (hw + 7.8), ax, az, 15)]                # boss ring (0.2 below the collar)
+                         cyl_y(s * (hw - 0.01), s * (hw + 7.8), ax, az, 15),                # boss ring (0.2 below the collar)
+                         box(ax - 15, ax + 15, min(s * (hw - 0.01), s * (hw + 7.8)), max(s * (hw - 0.01), s * (hw + 7.8)),
+                             zf0, az),                                                       # ring's flat foot (no bed overhang)
+                         box(ax - 6, ax + 6, s * 31.5, s * 41, 72 - 0.01, dz0)]              # deck pillar on the boss
         tub_adds += [
             box(xr_in, xf_in, s * (inner - 4), s * inner, dz0 - 4, dz0),               # deck ledge
-            box(xf_in - 12, xf_in, s * 46, s * inner, dz1, top),                       # front shell post
-            box(xr_in, xr_in + 14, s * 50, s * inner, dz1, top),                       # rear shell post
-            box(xf_in - 8, xf_in + 0.01, s * 34, s * 46, 40, 58),                      # door-insert boss
+            obox(((xr_in + xf_in) / 2, s * inner, dz0 - 4), xf_in - xr_in, 3.8 * math.sqrt(2), 3.8 * math.sqrt(2),
+                 X, norm((0, 1, 1))),                                                  # 45 deg underside of the ledge
+            box(xf_in - 12, xf_in, s * 46, s * inner, zf1 - 0.01, top),                # front shell post (floor to top)
+            box(xr_in, xr_in + 14, s * 50, s * inner, zf1 - 0.01, top),                # rear shell post (floor to top)
+            box(xf_in - 8, xf_in + 0.01, s * 34, s * 46, zf1 - 0.01, P["us_z"] + 8),  # door + HC-SR04 insert column
             box(P["bat_x0"], xf_in, s * (P["bat_w"] / 2 + 1.5), s * (P["bat_w"] / 2 + 5), zf1 - 0.01, zf1 + 8),  # rails
-            box(xf_in - 6, xf_in + 0.01, s * 34, s * 46, P["us_z"] - 8, P["us_z"] + 8),  # HC-SR04 insert boss
-            box(P["idler_x"] - 10, P["idler_x"] + 10, s * (inner - 6), s * (inner + 0.01), iz_lo - 10, dz0 - 0.01),  # idler pad
+            box(P["idler_x"] - 10, P["idler_x"] + 10, s * (inner - 6), s * (inner + 0.01), zf1 - 0.01, dz0 - 0.01),  # idler pad
+            box(mc_x - 30, mc_x + 30, s * (inner - 8), s * (inner + 0.01), zf1 - 0.01, mc_z - 10),  # under the motor pad
         ]
         for k in (-1, 1):                                                              # pad behind the motor plate
             cc = vadd((mc_x, 0, mc_z), vmul(bu, k * P["tension_travel"] / 2))
@@ -461,13 +476,11 @@ def build_model(P=None):
         tub_cuts.append(chamfer_cut((x0, s * hw, zf0), (x1, s * hw, zf0), (0, -s, 0), (0, 0, 1), 2.5))
     tub_cuts.append(chamfer_cut((x1, -hw, zf0), (x1, hw, zf0), (-1, 0, 0), (0, 0, 1), 2.5))
     tub_cuts.append(chamfer_cut((x0, -hw, zf0), (x0, hw, zf0), (1, 0, 0), (0, 0, 1), 2.5))
-    tub_cuts.append(box(xf_in - co, x1 + co, -28, 28, zf1 - co, 66))                 # battery door opening
+    tub_cuts.append(box(xf_in - co, x1 + co, -28, 28, zf1 - co, 62.7))               # battery door opening ...
+    tub_cuts.append(pdiff(obox(((xf_in + x1) / 2, 0.0, 62.5), x1 - xf_in + 2 * co, 28 * math.sqrt(2), 28 * math.sqrt(2),
+                               X, norm((0, 1, 1))), [box(xf_in - 5, x1 + 5, -40, 40, 76, 200)]))   # ... with a 45 deg top
     for s_ in (1, -1):                         # notch the battery rails so the front axle nylocs drop into their pockets
         tub_cuts.append(box(-9.5, 9.5, min(s_ * 26.0, s_ * 30.5), max(s_ * 26.0, s_ * 30.5), zf1, zf1 + 8 + co))
-    for s in (1, -1):
-        for nm, ax in AX:
-            m.hole("tub", "beam_pass_%s%s" % (nm, "L" if s > 0 else "R"), (ax - 18 - co, s * 45, 73),
-                   (ax + 18 + co, s * 45, 73), 12, for_item="harness side channel", audit=False)
     ms = P["mast_sq"] + P["slip"]
     tub_cuts.append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, 92, top + co))
     tub_cuts.append(box(P["mast_x"] - 17 - co, P["mast_x"], -7, 7, 92, 104))
@@ -502,7 +515,7 @@ def build_model(P=None):
         tab_c = vadd((mc_x, s * (inner - 4), mc_z), vmul(bu, P["motor_plate"] / 2 - 6))
         tub_cuts.append(obox(tab_c, 12 + P["tension_travel"] + 2, 12, 12, bu, bv))
         boss_c = vadd((mc_x, s * (inner - 9), mc_z), vmul(bu, P["motor_plate"] / 2 + P["tension_travel"] + 4))
-        tub["adds"].append(obox(boss_c, 8, 14, 10, bu, bv))
+        tub["adds"].append(obox((boss_c[0], s * (inner - 6.995), boss_c[2]), 8, 14, 14.01, bu, bv))   # boss reaches the wall
         a_ = vadd(boss_c, vmul(bu, 4 + co)); b_ = vadd(boss_c, vmul(bu, -4 - co))
         m.hole("tub", "pull_" + side, a_, b_, P["clr_m3"], for_item="belt pull screw M3 x 25 (head on the boss)")
         m.hole("tub", "motor_wire_" + side, (-80, s * (inner - 10), 62), (-80, s * (hw + co), 62), 12,   # fully clear of the plate pad
@@ -511,7 +524,7 @@ def build_model(P=None):
         for kx in (-1, 1):                     # hex channel: holds the M8 head (13 AF) so the nyloc tightens from outside
             tub["adds"].append(box(min(P["idler_x"] + kx * 6.8, P["idler_x"] + kx * 10), max(P["idler_x"] + kx * 6.8, P["idler_x"] + kx * 10),
                                    min(s * (inner - 11.5), s * (inner - 5.99)), max(s * (inner - 11.5), s * (inner - 5.99)),
-                                   iz_lo - 9, dz0 - 0.01))
+                                   zf1 - 0.01, dz0 - 0.01))
         m.slot_hole("tub", "idler_" + side, (P["idler_x"], s * (inner - 1), iz_lo), (P["idler_x"], s * (inner - 1), iz_hi),
                     P["clr_m8"], (0, ys, 0), 10 + 2 * co, for_item="idler M8 (vertical tension slot)")
         # shell inserts (front + rear posts), deck inserts, door + bracket inserts
@@ -520,7 +533,7 @@ def build_model(P=None):
         m.hole("tub", "lid_r_" + side, (xr_in + 7, s * 54, top + co), (xr_in + 7, s * 54, top - P["ins_m3_depth"]),
                P["ins_m3"], kind="insert", for_item="shell M3")
         for nm, ax in AX:
-            m.hole("tub", "deck_%s%s" % (nm, side), (ax, s * 28, dz0 + co), (ax, s * 28, dz0 - P["ins_m3_depth"]),
+            m.hole("tub", "deck_%s%s" % (nm, side), (ax, s * 36, dz0 + co), (ax, s * 36, dz0 - P["ins_m3_depth"]),
                    P["ins_m3"], kind="insert", for_item="deck M3")
         m.hole("tub", "door_" + side, (x1 + co, s * 40, 49), (x1 - P["ins_m4_depth"] - 4, s * 40, 49), P["ins_m4"],
                kind="insert", for_item="bumper-door M4 thumb screw")
@@ -586,7 +599,7 @@ def build_model(P=None):
         dc.append(box(mc_x - 44, mc_x + 44, s * 47.5 if s > 0 else -inner - co, s * (inner + co) if s > 0 else -47.5, dz0 - co, dz1 + co))
         dc.append(box(mc_x - 40, mc_x - 3, s * 42.5, s * (inner + co), dz0 - co, dz1 + co))   # belt-tension tab + pull boss
         dc.append(box(-130, -112, s * 30 if s > 0 else -47, s * 47 if s > 0 else -30, dz0 - co, dz1 + co))   # cable pass
-        dc.append(box(xf_in - 6.5, xf_in + co, s * 33.5, s * 46.5, dz0 - co, dz1 + co))       # HC-SR04 boss notch
+        dc.append(box(xf_in - 8.5, xf_in + co, s * 33.5, s * 46.5, dz0 - co, dz1 + co))       # insert column notch
     dc.append(box(P["mast_x"] - 17.5, xf_in + co, -24.5, 24.5, dz0 - co, dz1 + co))     # mast socket notch
     pi_x0 = P["pi_x0"]; pi_x1 = pi_x0 + 85.0
     pi_holes = [(pi_x1 - 3.5, -24.5), (pi_x1 - 3.5, 24.5), (pi_x1 - 61.5, -24.5), (pi_x1 - 61.5, 24.5)]
@@ -604,7 +617,7 @@ def build_model(P=None):
                 continue
             if gx > P["mast_x"] - 21 and abs(gy) < 28 or gx > xf_in - 16:
                 continue
-            if any(abs(gx - ax) < 6 and abs(abs(gy) - 28) < 6 for _, ax in AX):
+            if any(abs(gx - ax) < 6 and abs(abs(gy) - 36) < 6 for _, ax in AX):
                 continue
             if xr_in + 6 < gx < xr_in + 22 and abs(gy) > 44 or (-134 < gx < -108 and 26 < abs(gy) < 51):
                 continue
@@ -616,7 +629,7 @@ def build_model(P=None):
     for s in (1, -1):
         side = "L" if s > 0 else "R"
         for nm, ax in AX:
-            m.hole("deck", "screw_%s%s" % (nm, side), (ax, s * 28, dz0 - co), (ax, s * 28, dz1 + co), P["clr_m3"],
+            m.hole("deck", "screw_%s%s" % (nm, side), (ax, s * 36, dz0 - co), (ax, s * 36, dz1 + co), P["clr_m3"],
                    for_item="deck M3")
         for zx in (12, 30):                     # zip-tie slots for the regulators
             dc.append(box(zx - 1.5, zx + 1.5, s * 29, s * 49, dz0 - co, dz1 + co))
@@ -713,10 +726,12 @@ def build_model(P=None):
 
     # ---------------- BUMPER-DOOR ("mouth") ----------------
     bfront = x1 + 28
-    bump = soft_slab(x1, bfront, -50, 50, 30, 76, 14, 12, top=True, bottom=True)
+    bz0 = zf1 + 0.5                            # bumper bottom = prong bottom: both on the bed when printed upright
+    bump = soft_slab(x1, bfront, -50, 50, bz0, 76, 13, 5.5, top=True, bottom=True)   # R < half the 28 mm depth: no duplicate corners
     bd = m.part("bumper_door", "printed", COL["accent"],
-                bump + [box(x1, x1 + 14, -38, 38, 30, 76)]
-                + [box(P["bat_x0"] + P["bat_l"] + 0.5, x1 + 0.01, sy_ * 12, sy_ * 22, zf1 + 4, zf1 + 20) for sy_ in (1, -1)],
+                bump + [box(x1, x1 + 14, -50, 50, bz0, 76)]      # flat square back, flush on the tub
+                + [box(P["bat_x0"] + P["bat_l"] + 0.5, x1 + 0.01, min(sy_ * 12, sy_ * 22), max(sy_ * 12, sy_ * 22), bz0, zf1 + 20)
+                   for sy_ in (1, -1)],
                 material="PETG (hollow crush zone; optional TPU skin)",
                 note="battery door + front bumper; two prongs hold the pack against the rear wall", mates={"tub", "battery"})
     for s in (1, -1):
@@ -725,7 +740,7 @@ def build_model(P=None):
         bd["cuts"].append(cyl_x(x1 + 10, bfront + co, s * 40, 49, 6.0))
     for zz in (60, 67):
         bd["cuts"].append(box(bfront - 1.5, bfront + co, -30, 30, zz - 1, zz + 1))
-    bd["cuts"].append(box(x1 + 3, bfront - 3, -32, 32, 33, 56))
+    bd["cuts"].append(box(x1 + 3, bfront - 3, -32, 32, bz0 + 3, 56))
 
     # ---------------- HC-SR04 bracket ("eyes") ----------------
     t = math.radians(P["us_tilt_deg"]); n = (math.cos(t), 0.0, math.sin(t)); tv = (-math.sin(t), 0.0, math.cos(t))
@@ -754,10 +769,9 @@ def build_model(P=None):
         sy = lambda a, b: (s * a, s * b) if s > 0 else (-b, -a)  # noqa: E731
         ya, yb = sy(hw - 0.01, 119)
         ia, ib = sy(hw - 6, 116.5)
-        shell_pre.append((soft_slab(mc_x - 37, mc_x + 47, ya, yb, 98, top + 5, 10, 7),
-                          soft_slab(mc_x - 34.5, mc_x + 44.5, ia, ib, 60, top - 0.5, 7.5, 4.5)))
-    shell_adds = soft_slab(x0, x1, -hw, hw, top, top + 5, 10, 2.4) \
-        + soft_slab(x0 + 30, P["mast_x"] - 24, -22, 22, top + 4.99, top + 7, 8, 1.0)
+        shell_pre.append((soft_slab(mc_x - 37, mc_x + 47, ya, yb, 98, top + 5, 10, 1.5),   # small top edge: it is the bed edge
+                          soft_slab(mc_x - 34.5, mc_x + 44.5, ia, ib, 60, top - 0.5, 7.5, 3.0)))
+    shell_adds = soft_slab(x0, x1, -hw, hw, top, top + 5, 10, 1.0)    # flat top: prints lid-down, no supports
     shell = m.part("shell", "printed", COL["shell"], shell_adds, pre=shell_pre, material="PETG",
                    mates={"tub"}, note="one-piece top: lid + both motor pods; 4 screws; remove the mast first, then lift")
     shell["cuts"].append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, top - co, top + 7 + co))
@@ -1019,7 +1033,7 @@ def build_model(P=None):
     ein = [(ecx + 22, 36, esp_pin[2]), (esp_pin[0], 36, esp_pin[2]), esp_pin]   # into the cradle from its open +y end
     fz = (-163, 0, zf1 + 14)                                                    # fuse / distribution block
     m.routes = [
-        ("battery main 12 AWG", [(48, -20, 64), (42, -45, 73), (-150, -45, 73), (-163, -20, zf1 + 20), fz]),
+        ("battery main 12 AWG", [(48, -26, 48), (38, -26, 60), (30, -45, 73), (-150, -45, 73), (-163, -20, zf1 + 20), fz]),
         ("ESC L power + phase", [(-80, inner - 12, 62), (-118, 40, 70), (-121, 40, 90), (-134, 42, dz1 + 7)]),
         ("ESC R power + phase", [(-80, -(inner - 12), 62), (-118, -40, 70), (-121, -40, 90), (-134, -42, dz1 + 7)]),
         ("regulator inputs 18 AWG", [fz, (-163, 20, zf1 + 20), (-150, 35, 73), (-121, 35, 73), (-121, 35, 92), (-110, 30, 112), (20, 30, 112), (20, 39, dz1 + 11)]),
@@ -1079,6 +1093,22 @@ def run(context):
                 bool_fail.append(1)
 
         def prim(p):
+            if p["t"] == "tor":
+                try:
+                    return tbm.createTorus(P3(p["c"]), V3((0.0, 0.0, 1.0)), p["R"] * S, p["r"] * S)
+                except Exception:          # fallback: chain of spheres along the ring
+                    sphere_fail.append(1)
+                    body = None
+                    for k in range(12):
+                        a_ = 2 * math.pi * k / 12
+                        sb = prim(sph((p["c"][0] + p["R"] * math.cos(a_), p["c"][1] + p["R"] * math.sin(a_), p["c"][2]), p["r"]))
+                        if sb is None:
+                            continue
+                        if body is None:
+                            body = sb
+                        else:
+                            boolop(body, sb, adsk.fusion.BooleanTypes.UnionBooleanType)
+                    return body
             if p["t"] == "sph":
                 try:
                     return tbm.createSphere(P3(p["c"]), p["r"] * S)

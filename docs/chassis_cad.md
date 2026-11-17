@@ -180,21 +180,55 @@ Power below the deck, signals above it:
 
 ## 4. Printing
 
-| Part | Qty | Material | Orientation / supports |
-|---|---|---|---|
-| tub | 1 | PAHT-CF, 5–6 walls, 40 % infill, dry filament | Floor on the bed (300 × 140 fits straight). Supports under both axle bridge beams and the battery opening top. Inserts after printing |
-| shell (lid + pods) | 1 | PETG, bright colour | Flat top down; supports inside the pods |
-| motor_plate_L/R | 2 | PAHT-CF | Flat, counterbores up |
-| wheel_pulley_FL/FR (56T + 36T), wheel_pulley_RL/RR (36T), motor_pulley_L/R (28T) | 4 + 2 | PAHT-CF, 0.4 nozzle, 0.12 mm layers | Axis vertical. Tooth form is approximate (round grooves); for best belt life regenerate the HTD-3M teeth with a pulley generator and keep hubs, flanges and holes. Motor pulley: drill the centre bore to the shaft |
-| mast (with UWB plate) | 1 | PAHT-CF | Lying on its side; supports under the flange, head and plate |
-| deck (with ESP32 cradle) | 1 | PETG (or PAHT-CF) | Flat, cradle up |
-| bumper_door | 1 | PETG (TPU skin optional) | Back face on the bed |
-| us_bracket, pan_buckle | 1 each | PETG | Plate down |
-| servo9g_adapter, pulley_drill_jig | 1 each | PETG | Bench only / tool (hidden in Fusion) |
+**Every printed part is a clean, watertight mesh** (0 non-manifold and 0 open edges), checked with a real CAD
+kernel by `cad/check_mesh.py` (below). Orientations were chosen by measuring the overhang area of all six
+face-down orientations of each part.
+
+| Part | Qty | Material | Orientation | Supports |
+|---|---|---|---|---|
+| tub | 1 | PAHT-CF (PETG is fine for a walking/jogging-speed prototype) | Floor on the bed | Only the short ledge under the mast socket (12 × 48 mm) and the two belt pull-screw bosses. Everything else hanging off a wall runs to the floor or has a 45° underside. Put **support blockers** in the 4 axle holes and the 2 motor-plate pockets: they print as arches |
+| shell (lid + pods) | 1 | PETG | **Lid on the bed** (flat top) | None |
+| deck (with ESP32 cradle) | 1 | PETG | Flat, cradle up | None |
+| motor_plate_L/R | 2 | PAHT-CF | Motor face down, counterbores up | None |
+| wheel_pulley_FL/FR/RL/RR | 4 | PAHT-CF, 0.12 mm layers | Wheel-side disc down (axis vertical) | None. The upper 3 mm flange of each tooth section is a short overhang that prints |
+| motor_pulley_L/R | 2 | PAHT-CF, 0.12 mm layers | Bell side down | None |
+| bumper_door | 1 | PETG | **Upright** (bottom down): the battery prongs now reach the bed | None. The sealed crush cavity's roof is a 22 mm bridge |
+| mast (with UWB plate) | 1 | PAHT-CF | Lying on its side (layers along the mast: strength) | Tree supports under the flange and head |
+| us_bracket | 1 | PETG | On its side | A little under the brow |
+| pan_buckle | 1 | PETG | Horn disc down | None |
+| servo9g_adapter, pulley_drill_jig | 1 each | PETG | Bench only / tool (hidden in Fusion) | |
+| prototype kit (sleeves, TPU belts) | | see §6b | Flat as laid out | None |
+
+**Slicer settings (Bambu Studio).** These matter more than geometry for cost and time:
+- Walls: 3. Top/bottom: 5 layers. Sparse infill: 15 % gyroid.
+- In the tub, add a **modifier** (right-click the part → Add modifier → Box) over each of the 4 axle bosses and the
+  2 motor-plate pads: 6 walls, 50 % infill. Those carry the loads.
+- Supports: tree (auto), threshold angle 30°, plus the blockers listed above.
+- Elephant-foot compensation on (default): the tub's bottom edges no longer need chamfers for it.
+
+Estimated filament for the 15 robot parts (from the meshes, report of `check_mesh.py`): **≈ 1.17 kg** with these
+settings vs ≈ 1.84 kg with the earlier "5–6 walls, 40 % infill" advice (−36 %). Print time scales roughly with it.
+The tub alone is ≈ 0.55 kg.
+
+**What changed for printing (2026-11-17):**
+- **Tub:**
+  - Removed the two axle bridge beams (62 mm bridges). Small pillars on the axle bosses carry the deck screws
+    instead (deck screws moved from y ±28 to ±36).
+  - Shell posts, the door + HC-SR04 insert column, the idler pad and channel, and the lower half of the motor pad
+    now run down to the floor.
+  - The deck ledge and the mast socket block have 45° undersides.
+  - The axle boss rings have flat feet.
+  - The battery door opening has a 45° top with a 29 mm bridge instead of 56 mm.
+- **Shell:** the raised panel on top is gone, so it prints lid-down. Its bed edges are 1–1.5 mm rounds.
+- **Bumper door:** the bottom is 2.5 mm higher, so the battery prongs reach the bed when printed upright. The back
+  is flat and square.
+- **Rounded corners:** all of them are now exact tori (one clean surface) instead of chains of spheres. That is
+  fewer booleans and cleaner meshes.
 
 Tolerances are loose on purpose: through-holes M3/M4/M5/M8 3.4/4.5/5.5/8.5 mm; heat-set holes M3/M4 4.0/5.6 mm
 (check your insert's chart); 0.3 mm per side slip fits; ≥ 3 mm next to anything that moves. Change them in `PARAMS`
-and re-run both scripts.
+and re-run the scripts. Horizontal axle holes (Ø16.4) may sag slightly at the top: ream with a 16.5 mm drill if
+the sleeve is tight.
 
 ## 5. Data quality: what is verified and what to measure
 
@@ -267,10 +301,19 @@ calculated in report §7b.
     TPU for AMS profile.
 - Swap in steel tubes and real belts (about $10–16 each) before going faster than a jog.
 
-**Mesh check:** `python3 cad/check_manifold.py` scans every printed part for non-manifold edges (knife edges where
-two solids or two cut-outs meet along a line). It found and fixed (2026-11-16): the motor-wire hole grazing the
-motor-plate pad in the tub (4 edges), overlapping counterbore ends at the centre of the motor plates, and the
-servo-lead notch corner on the mast's rounded edge. All parts now report "ok".
+**Mesh checks.** Run both before exporting meshes.
+- `python3 cad/check_manifold.py` is a quick voxel scan, about 2 minutes, with no extra installs.
+- `cad/check_mesh.py` rebuilds every part with OpenCascade (a CAD kernel like Fusion's) and exports STLs to
+  `cad/stl/`, ready for Bambu Studio. It counts non-manifold and open edges and measures support area and
+  filament. Setup: `python3 -m venv ~/occ && ~/occ/bin/pip install cadquery-ocp trimesh numpy`, then
+  `~/occ/bin/python cad/check_mesh.py`.
+
+It reproduced the 4 edges Bambu Studio flagged on the tub: the Ø12 harness holes through the axle bridge beams
+touched the beams' top face (a hole tangent to a face makes a zero-thickness line). The voxel scan can't see
+tangent contacts, which is why it said "ok". Fixed by removing the beams.
+
+Earlier finds of the voxel scan: the motor-wire hole grazing the motor-plate pad, overlapping counterbore ends on
+the motor plates, and the mast's servo-lead notch.
 
 ## 7. Assembly order
 

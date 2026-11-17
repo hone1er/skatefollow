@@ -73,6 +73,12 @@ def _fake_adsk():
             LOG["spheres"] = LOG.get("spheres", 0) + 1
             return Body("sph")
 
+        def createTorus(self, c, axis, R, r):
+            assert R >= r > 0, (R, r)
+            assert abs(math.sqrt(axis.x ** 2 + axis.y ** 2 + axis.z ** 2) - 1) < 1e-6
+            LOG["tori"] = LOG.get("tori", 0) + 1
+            return Body("tor")
+
         def booleanOperation(self, target, tool, op):
             assert isinstance(target, Body) and isinstance(tool, Body)
             LOG["bool"] += 1

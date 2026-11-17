@@ -44,9 +44,10 @@ def _coords(part):
             walk(p["a"])
             for q in p["b"]:
                 walk(q)
-        elif p["t"] == "sph":
+        elif p["t"] in ("sph", "tor"):
             for k in range(3):
-                coords[k].update([round(p["c"][k] - p["r"], 6), round(p["c"][k] + p["r"], 6)])
+                e = p["r"] + (p.get("R", 0.0) if k < 2 else 0.0)
+                coords[k].update([round(p["c"][k] - e, 6), round(p["c"][k] + e, 6)])
 
     for p in part["adds"] + part["cuts"] + [q for a, c in part.get("pre", []) for q in a + c]:
         walk(p)

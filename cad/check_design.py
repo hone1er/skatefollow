@@ -63,6 +63,10 @@ def inside_prim(p, pts, grow=0.0):
 
 
 def _inside_prim(p, pts, grow=0.0):
+    if p["t"] == "tor":
+        d = pts - np.array(p["c"])
+        rho = np.hypot(d[:, 0], d[:, 1])
+        return (rho - p["R"]) ** 2 + d[:, 2] ** 2 <= (p["r"] + grow) ** 2
     if p["t"] == "sph":
         d = pts - np.array(p["c"])
         return np.einsum("ij,ij->i", d, d) <= (p["r"] + grow) ** 2
@@ -114,9 +118,9 @@ def all_adds(part):
 def prim_corners(p):
     if p["t"] == "diff":
         return prim_corners(p["a"])
-    if p["t"] == "sph":
-        c = np.array(p["c"]); r = p["r"]
-        return np.array([c + r * np.array([i, j, k]) for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)])
+    if p["t"] in ("sph", "tor"):
+        c = np.array(p["c"]); r = p["r"]; e = r + p.get("R", 0.0)
+        return np.array([c + np.array([i * e, j * e, k * r]) for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)])
     if p["t"] == "box":
         u, v, w = _frame(p)
         c = np.array(p["c"]); s = np.array(p["s"]) / 2
@@ -999,7 +1003,8 @@ def printability(M, report):
     for p in M.parts:
         if p["group"] != "printed":
             continue
-        lo, hi = aabb(p)
+        sp = sample(p, 1.5)                    # real material, not primitive boxes (clipped wedges overhang those)
+        lo, hi = sp.min(0) - 0.75, sp.max(0) + 0.75
         d = hi - lo
         ok = all(sorted(d)[i] <= 300 for i in range(3))
         fails += 0 if ok else 1
@@ -1055,7 +1060,7 @@ def plot_views(M, path):
         for p in M.parts:
             col = np.array(p["color"]) / 255.0
             for q in all_adds(p):
-                if q["t"] == "sph":
+                if q["t"] in ("sph", "tor"):
                     continue
                 c = prim_corners(q)
                 items.append((c[:, k].mean(), c, col, p["group"]))
