@@ -1,0 +1,10 @@
+{
+	"autodeskProduct":	"Fusion360",
+	"type":	"script",
+	"author":	"honebot",
+	"description":	{
+		"":	"Generates the honebot skate-follow robot chassis (printed parts + reference hardware + keep-out volumes)"
+	},
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
