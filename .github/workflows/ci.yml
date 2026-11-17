@@ -1,0 +1,41 @@
+# Runs on every push and pull request: the tests that need no robot, no ROS and no ESP32.
+# (The ROS nodes themselves, the arduino-cli compile and the Fusion script are checked by hand: docs/first_drive.md.)
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    name: Python logic (follow, safety, hardware, uwb, camera, config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pytest numpy pyyaml
+      - name: pytest, one package at a time
+        run: |
+          for pkg in src/honebot_*/; do
+            echo "== $pkg"
+            (cd "$pkg" && python -m pytest -q test)
+          done
+
+  firmware:
+    name: Firmware logic (host g++)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: firmware/tests/run_tests.sh
+
+  cad:
+    name: CAD script builds every part (stub Fusion API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python cad/tests/test_fusion_script.py
