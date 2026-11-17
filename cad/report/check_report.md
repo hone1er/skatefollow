@@ -39,7 +39,7 @@ Every pair of parts that are not declared mates (bolted/sitting on each other) i
 | esp_ext_board | esp32_usb | moving | 3.0 | 5.0-8.0 | **OK** |
 | esp_ext_plate | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
 | esp_ext_plate | xt60_plug | static | 0.5 | 5.0-8.0 | **OK** |
-| esp_ext_standoffs | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
+| esp_ext_spacers | esp_ext_wires | moving | 3.0 | 5.0-8.0 | **OK** |
 | motor_L | belt_L | moving | 3.0 | 3.0-5.0 | **OK** |
 | motor_L | belt2_L | moving | 3.0 | 3.0-5.0 | **OK** |
 | motor_R | belt_R | moving | 3.0 | 3.0-5.0 | **OK** |
@@ -83,7 +83,7 @@ Every pair of parts that are not declared mates (bolted/sitting on each other) i
 | wheel_pulley_RR | axle_RR | moving | 3.0 | 5.0-8.0 | **OK** |
 | wheel_pulley_RR | spacer_RR | moving | 3.0 | 3.0-5.0 | **OK** |
 
-Mated pairs (bolted / resting on each other) are checked for interpenetration deeper than 0.3 mm; 19 declared nests are exempt (alternatives: only one is fitted; bolt through the spacer; bolt through the wheel bearings; camera fingers interleave the buckle prongs; nut on its bolt; spacer reaches the recessed inner race; standoff studs in the heat-set inserts).
+Mated pairs (bolted / resting on each other) are checked for interpenetration deeper than 0.3 mm; 18 declared nests are exempt (alternatives: only one is fitted; bolt through the spacer; bolt through the wheel bearings; camera fingers interleave the buckle prongs; nut on its bolt; spacer reaches the recessed inner race).
 
 Mated pairs: no interpenetration.
 
@@ -181,10 +181,10 @@ For every hardware fastener hole: the hole axis must run through its host part f
 | motor_pulley_R | prop_1 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
 | motor_pulley_R | prop_2 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
 | motor_pulley_R | prop_3 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
-| esp_ext_plate | ext_insert_1 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
-| esp_ext_plate | ext_insert_2 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
-| esp_ext_plate | ext_insert_3 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
-| esp_ext_plate | ext_insert_4 | SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_pilot_1 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
+| esp_ext_plate | ext_pilot_2 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
+| esp_ext_plate | ext_pilot_3 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
+| esp_ext_plate | ext_pilot_4 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
 
 Hole failures: **0** (holes for seller-dependent parts are slots or the 10 mm grid and are listed in docs/chassis_cad.md)
 
@@ -318,7 +318,6 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | axle_nut_RL | hardware | 5 | -200, 36, 45 |
 | axle_nut_FR | hardware | 5 | -0, -36, 45 |
 | axle_nut_RR | hardware | 5 | -200, -36, 45 |
-| esp_ext_standoffs | hardware | 4 | -197, -0, 119 |
 | pan_buckle | printed | 4 | 38, 0, 224 |
 | plate_bolt_L0 | hardware | 3 | -13, 49, 96 |
 | plate_bolt_L1 | hardware | 3 | -40, 49, 123 |
@@ -326,6 +325,7 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | plate_bolt_R0 | hardware | 3 | -13, -48, 96 |
 | plate_bolt_R1 | hardware | 3 | -40, -48, 123 |
 | plate_bolt_R2 | hardware | 3 | -67, -48, 96 |
+| esp_ext_spacers | printed | 0 | -195, -0, 120 |
 
 **Total 4.02 kg, CG at x = -71, y = 0.0, z = 81 mm** (x from the front axle, + forward).
 
@@ -337,7 +337,7 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 
 - Sideways tip-over needs **1.71 g** (urethane on asphalt slides at ~0.7-0.9 g, so it slides first).
 
-- Forward pitch-over about the front axle needs **0.88 g** of braking, backward (hard launch) **1.60 g**. If it does pitch forward, the bumper touches down after 21.4 deg (the CG passes over the axle at 41 deg).
+- Forward pitch-over about the front axle needs **0.87 g** of braking, backward (hard launch) **1.60 g**. If it does pitch forward, the bumper touches down after 21.4 deg (the CG passes over the axle at 41 deg).
 
 - **Turning in place** (skid steer): the wheels must scrub sideways. With grip mu 0.8 the robot needs **12 N per side** (thrust / traction = wheelbase / track = 0.72; under 1 means it can pivot), i.e. ~0.27 N m and **~10 A per motor at near-zero rpm** (30 A ESC). The 52 mm wide contact patches add scrub torque on top. Yaw rate will be lower than (vR - vL) / track: tune `track_width` up (typically 1.2-1.6 x the geometric 277 mm) and expect a small turn dead-band.
 
@@ -485,12 +485,13 @@ Add ~30 % for slack and service loops when cutting wires. Power runs under the d
 | motor_pulley_L | PAHT-CF | 32 x 14 x 32 | yes |
 | motor_pulley_R | PAHT-CF | 32 x 14 x 32 | yes |
 | esp_ext_plate | PETG | 70 x 74 x 8 | yes |
+| esp_ext_spacers | PETG | 62 x 64 x 6 | yes |
 
 Overall: **343 long x 343 wide x 293 tall mm** with the camera mast; 343 x 343 x 150 mm with the mast removed (backpack). Taking both wheels off (one nyloc each, pulleys stay on the wheels) brings the width to 238 mm.
 
 ## 11. Fastener schedule (generated from the model)
 
-Threads in printed parts are always heat-set inserts (never tapped plastic); servo ear screws are the servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.
+Threads in printed parts are heat-set inserts, except self-tapping screws in pilot holes (ESP32 extension adapter: M2 into 1.7 mm); servo ear screws are the servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.
 
 | for | hole | Ø (mm) | count | method |
 |---|---|---|---|---|
@@ -498,14 +499,13 @@ Threads in printed parts are always heat-set inserts (never tapped plastic); ser
 | HC-SR04 bracket M3 | insert | 4.0 | 2 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | HC-SR04 cable | clear | 9.0 | 1 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | HC-SR04 transducer | clear | 18.0 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
-| M2.5 hex standoff seat | cbore | 6.4 | 4 | counterbore for a low-head screw |
 | M3 low-head counterbore | cbore | 5.8 | 8 | counterbore for a low-head screw |
 | M3 x 12 low head into the bell | clear | 3.4 | 8 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 16 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | M4 thumb screw | clear | 4.5 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | Raspberry Pi 5 M2.5 x 6 screw into a printed standoff | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | SG90 ear screw | slot | 2.0 | 2 | slotted clearance, adjust then tighten |
-| SunFounder board standoff (M2.5 insert, through for the stud) | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
+| SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 4 | pilot hole: the screw cuts its own thread in the plastic (drive it in once, slowly) |
 | UWB board M3 [M] | slot | 3.4 | 4 | slotted clearance, adjust then tighten |
 | XT60 arming plug (panel) | slot | 16.4 | 1 | slotted clearance, adjust then tighten |
 | adapter -> head (servo ear slots) | slot | 2.4 | 2 | slotted clearance, adjust then tighten |
@@ -529,6 +529,7 @@ Threads in printed parts are always heat-set inserts (never tapped plastic); ser
 | motor plate M3 (tension slot) | slot | 3.4 | 6 | slotted clearance, adjust then tighten |
 | motor shaft end/circlip | clear | 9.0 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | motor shaft stub (centres the pulley; drill to fit) | clear | 5.1 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
+| printed spacer seat | cbore | 5.4 | 4 | counterbore for a low-head screw |
 | servo ear screw (self-tapping) | slot | 2.4 | 2 | slotted clearance, adjust then tighten |
 | shell M3 | clear | 3.4 | 4 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | shell M3 | insert | 4.0 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
