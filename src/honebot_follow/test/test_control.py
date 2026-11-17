@@ -259,3 +259,18 @@ def test_offset_follow_holds_through_turns_both_ways():
         tail = [r for r in tr if r[0] > 25.0]
         assert all(abs(r[7] - 0.45) < 0.25 for r in tail), sign          # stays near the chosen bearing
         assert all(1.5 < r[6] < 12.0 for r in tail), sign                # neither closes in nor falls away
+
+
+def test_offset_follow_gives_margin_when_braking_is_weak():
+    # Braking at under half of what the gap law assumes, skater stops dead from 12 mph. The robot still
+    # steers toward the skater in both cases; the offset run ends well clear, the straight-behind run does not.
+    import dataclasses
+    v = 5.4
+
+    def closest(g):
+        tr = _simulate_2d(g, lambda t: (6.0 + v * min(t, 15.0), 0.0), t_end=30.0, decel=2.0)
+        lx, ly = tr[-1][4], tr[-1][5]
+        return min(math.hypot(lx - x, ly - y) for (t, x, y, *_r) in tr if t >= 15.0)
+    behind = closest(dataclasses.replace(OFFSET, follow_bearing=0.0))
+    offset = closest(OFFSET)
+    assert behind < 0.5 and offset > 1.0

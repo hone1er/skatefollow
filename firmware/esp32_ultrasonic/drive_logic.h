@@ -150,6 +150,17 @@ inline Decision decide(const Config &c, const Inputs &in, State *st) {
   return d;
 }
 
+// ESCs ignore a band of pulse widths around neutral and need a minimum duty before the motor starts, so small
+// commands (a slow pivot is only ~2 % per side) would do nothing. Map any non-zero command onto
+// [minCommand, 1]: zero stays exactly zero (neutral), everything else starts just above the dead zone.
+inline float deadbandComp(float v, float minCommand) {
+  float a = fabsf(v);
+  if (a < 0.002f || minCommand <= 0.0f) return a < 0.002f ? 0.0f : v;
+  float out = minCommand + (1.0f - minCommand) * a;
+  if (out > 1.0f) out = 1.0f;
+  return v < 0.0f ? -out : out;
+}
+
 // Remove the deadband and rescale so the output starts from 0 at its edge.
 inline float shapeStick(float v, float deadband) {
   float a = fabsf(v);

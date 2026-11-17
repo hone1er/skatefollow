@@ -16,6 +16,7 @@ Arguments
   camera          start the GoPro/webcam detector and the pan servo aim (default true)
   camera_source   'gopro', '/dev/videoN', URL or file
   record          camera: save the GoPro webcam stream to ~/videos (default false)
+  pan_sign        camera: -1.0 if the pan servo turns the wrong way
   bag             record every topic to ~/bags for tuning afterwards (default true)
 """
 
@@ -58,6 +59,7 @@ def generate_launch_description():
         DeclareLaunchArgument('camera', default_value='true', description='Start the camera detector and pan aim'),
         DeclareLaunchArgument('camera_source', default_value='gopro'),
         DeclareLaunchArgument('record', default_value='false', description='Save the GoPro webcam stream'),
+        DeclareLaunchArgument('pan_sign', default_value='1.0', description='-1.0 if the camera pans the wrong way'),
         DeclareLaunchArgument('bag', default_value='true', description='Record all topics to ~/bags'),
 
         OpaqueFunction(function=_movers),
@@ -65,7 +67,8 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(PathJoinSubstitution(
                 [FindPackageShare('honebot_camera'), 'launch', 'camera.launch.py'])),
             launch_arguments={'source': LaunchConfiguration('camera_source'),
-                              'record': LaunchConfiguration('record')}.items(),
+                              'record': LaunchConfiguration('record'),
+                              'pan_sign': LaunchConfiguration('pan_sign')}.items(),
             condition=IfCondition(LaunchConfiguration('camera'))),
         ExecuteProcess(cmd=['ros2', 'bag', 'record', '-a', '-o', bag_dir], output='screen',
                        condition=IfCondition(LaunchConfiguration('bag'))),

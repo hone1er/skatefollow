@@ -31,3 +31,10 @@ ros2 launch honebot_bringup record.launch.py                # third terminal, Ct
 journalctl -u honebot -f                                    # once the service is installed
 ```
 `colcon test` reports this package as failed only because it has no tests.
+
+## Real robot: `robot.launch.py` and `film.launch.py`
+
+`config/robot.yaml` holds every real-robot parameter. `robot.launch.py` (bridge + gate + Foxglove) is the safety
+layer that `honebot.service` starts at boot. `film.launch.py` (UWB + follower + camera + a bag) is started by hand
+and is the only thing that makes the robot move by itself. `bringup.launch.py` remains the bench version with
+default parameters. Test plan: `docs/first_drive.md`.

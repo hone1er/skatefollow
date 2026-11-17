@@ -170,7 +170,7 @@ alive. Each layer watches its *own* inputs with its *own* timeout.
 | `follower` | age of the last `/target` | `target_timeout` 0.5 s | publishes a zero `Twist` |
 | `safety_gate` | ESP32 link flag and its age; range reading validity and age; age of the controller's command; obstacle distance; **sight limit** (robot config: never faster than it can stop within what the sensor sees, 2.7–3.8 m/s with the ultrasonic sensor) | `range_timeout` 0.3 s, `cmd_timeout` 0.5 s, `stop_distance` 0.4 m, `slow_distance` 1.0 m | publishes zero (or forward-blocked / scaled / capped) on `/cmd_vel` and the reason on `/safety/state` |
 | `esp32_bridge` | age of the last `/cmd_vel` | `cmd_timeout` 0.3 s | sends `C,0,0` (neutral); also one neutral on exit |
-| ESP32 firmware (2.2.0) | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window; handheld remote (STOP, lost, or never heard when `REMOTE_REQUIRED`) | 500 ms, 200 ms, 2 s, 500 ms | ramps both drive channels to 1500 µs at 0.5 g (hard neutral after 2.5 s and at boot); reports via `S,1,…` and `K,…` |
+| ESP32 firmware (2.2.1) | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window; handheld remote (STOP, lost, or never heard when `REMOTE_REQUIRED`) | 500 ms, 200 ms, 2 s, 500 ms | ramps both drive channels to 1500 µs at 0.5 g (hard neutral after 2.5 s and at boot); reports via `S,1,…` and `K,…` |
 | Handheld remote (`firmware/esp32_remote`) | its button (STOP/RUN) and stick | — | STOP or radio loss stops the robot; in RUN the stick drives manually and overrides the Pi (the ultrasonic gate does not apply to manual driving) |
 | ESC (hardware) | signal present | ESC-specific | stops the motor |
 
@@ -465,7 +465,7 @@ cd <your clone of this repo>
 arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```
-On boot it prints `V,2.2.0`; the bridge logs `ESP32 firmware version 2.2.0`. The handheld remote is a second sketch,
+On boot it prints `V,2.2.1`; the bridge logs `ESP32 firmware version 2.2.1`. The handheld remote is a second sketch,
 `firmware/esp32_remote` (see its README); from 2.2.0 the robot does not move unless the remote is in RUN.
 
 ### Auto-start at boot and serial-port tweak (need sudo)

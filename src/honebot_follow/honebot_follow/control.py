@@ -33,8 +33,9 @@ class FollowGains:
     stopped_turn_deadband: float = 0.0   # rad: bearings below this are not turned toward by pivoting
     follow_bearing: float = 0.0    # rad: where to keep the skater relative to the robot's nose (+ = to the left).
     #                                0 = straight ahead (robot directly behind). 0.45 (26 deg) = the robot rides
-    #                                behind and to the RIGHT of the skater's line: a 3/4 rear shot, and a skater
-    #                                who falls is beside the robot's path, not in it.
+    #                                behind and to the RIGHT of the skater's line: a 3/4 rear shot. It still steers
+    #                                toward a skater who stops, but it buys margin when braking is worse than
+    #                                assumed (see test_offset_follow_gives_margin_when_braking_is_weak).
 
 
 def safe_gap(speed: float, g: 'FollowGains') -> float:

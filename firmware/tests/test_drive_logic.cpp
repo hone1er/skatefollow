@@ -56,6 +56,10 @@ static void test_mix_and_stick() {
   arcadeMix(1, 0, 0.25f, 0.6f, &l, &r); assert(near(l, 0.25f) && near(r, 0.25f));
   arcadeMix(0, 1, 0.25f, 0.6f, &l, &r); assert(near(l, -0.15f) && near(r, 0.15f));   // + turn = left
   arcadeMix(1, 1, 0.25f, 0.6f, &l, &r); assert(std::fabs(r) <= 0.25f + 1e-6f && r > l && l > 0);
+  // ESC deadband compensation: zero stays neutral, tiny commands land just above the dead zone, full stays full
+  assert(deadbandComp(0.0f, 0.06f) == 0.0f && deadbandComp(0.001f, 0.06f) == 0.0f);
+  assert(near(deadbandComp(0.02f, 0.06f), 0.06f + 0.94f * 0.02f) && near(deadbandComp(-0.02f, 0.06f), -(0.06f + 0.94f * 0.02f)));
+  assert(near(deadbandComp(1.0f, 0.06f), 1.0f) && near(deadbandComp(0.3f, 0.0f), 0.3f));
   assert(shapeStick(0.1f, 0.15f) == 0.0f && near(shapeStick(1.0f, 0.15f), 1.0f) && shapeStick(-0.5f, 0.15f) < 0);
 }
 

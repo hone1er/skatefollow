@@ -72,3 +72,11 @@ ros2 launch honebot_follow turtle_follow.launch.py relative:=true        # the U
 ros2 run turtlesim turtle_teleop_key                                      # second terminal: drive the leader
 colcon test --packages-select honebot_follow && colcon test-result --verbose
 ```
+
+## Real-robot options
+
+All off by default; the robot's values are in `honebot_bringup/config/robot.yaml` and the follower is started by
+`honebot_bringup/launch/film.launch.py`: speed-dependent gap (`brake_decel`, `time_headway`), arcs instead of
+pivots (`min_turn_radius`, `arc_speed`, `pivot_bearing`, `pivot_rate`), cornering cap (`max_lat_accel`), and
+`follow_bearing` to hold the skater off to one side. See the comments in `control.py` and the simulations in
+`test/test_control.py`.
