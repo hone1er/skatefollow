@@ -260,9 +260,13 @@ def soft_slab(x0, x1, y0, y1, z0, z1, R, r, top=True, bottom=False, nseg=5):
         if y1 - y0 - 2 * R > 0.1:
             for xx in (x0 + r, x1 - r):
                 out.append(cyl_y(y0 + R, y1 - R, xx, ze, r))
-        # corners: an exact torus (one clean surface; a chain of spheres meshes badly). Small corner radius: a sphere.
-        for cx, cy in ((x0 + R, y0 + R), (x1 - R, y0 + R), (x0 + R, y1 - R), (x1 - R, y1 - R)):
-            out.append(tor((cx, cy, ze), Ri, r) if Ri >= 0.6 else sph((cx, cy, ze), r))
+        # corners: spheres along the corner arc (centre radius R - r). (An exact torus was tried on 2026-11-17: Fusion's
+        # booleans failed on its tangent joins and left loose donuts, so keep the sphere chain that Fusion handles.)
+        for cx, cy, ax, ay in ((x0 + R, y0 + R, -1, -1), (x1 - R, y0 + R, 1, -1), (x0 + R, y1 - R, -1, 1), (x1 - R, y1 - R, 1, 1)):
+            n = 1 if Ri < 0.6 else nseg
+            for k in range(n):
+                t = (math.pi / 2) * (k / (n - 1) if n > 1 else 0.5)
+                out.append(sph((cx + ax * Ri * math.cos(t), cy + ay * Ri * math.sin(t), ze), r))
     return out
 
 
@@ -438,6 +442,9 @@ def build_model(P=None):
         box(x0, xr_in + 0.01, -hw, hw, zf0, top),                        # rear wall
         box(P["mast_x"] - 17, xf_in + 0.01, -24, 24, dz1, top),          # mast socket block (behind front wall)
     ]
+    for _, ax in AX:   # axle tie beam: carries each axle's bending couple across the tub (with the floor); 62 mm bridge
+        tub_adds.append(box(ax - 12, ax + 12, -inner, inner, 66, dz0))
+    m.info["axle_tie"] = {"w": 24.0, "z0": 66.0, "z1": dz0, "boss_len": 36.0, "floor_t": P["floor_t"], "zf0": zf0}
     # print floor-down without supports: everything hanging off a wall either runs to the floor or has a 45 deg underside.
     # 45 deg wedge under the mast socket block (rotated square, clipped inside the front wall)
     hd = xf_in - (P["mast_x"] - 17) - 0.2
@@ -450,8 +457,7 @@ def build_model(P=None):
             tub_adds += [box(ax - 18, ax + 18, s * 31, s * (inner + 0.01), zf0, 72),       # axle boss
                          cyl_y(s * (hw - 0.01), s * (hw + 7.8), ax, az, 15),                # boss ring (0.2 below the collar)
                          box(ax - 15, ax + 15, min(s * (hw - 0.01), s * (hw + 7.8)), max(s * (hw - 0.01), s * (hw + 7.8)),
-                             zf0, az),                                                       # ring's flat foot (no bed overhang)
-                         box(ax - 6, ax + 6, s * 31.5, s * 41, 72 - 0.01, dz0)]              # deck pillar on the boss
+                             zf0, az)]                                                       # ring's flat foot (no bed overhang)
         tub_adds += [
             box(xr_in, xf_in, s * (inner - 4), s * inner, dz0 - 4, dz0),               # deck ledge
             obox(((xr_in + xf_in) / 2, s * inner, dz0 - 4), xf_in - xr_in, 3.8 * math.sqrt(2), 3.8 * math.sqrt(2),
@@ -476,6 +482,9 @@ def build_model(P=None):
         tub_cuts.append(chamfer_cut((x0, s * hw, zf0), (x1, s * hw, zf0), (0, -s, 0), (0, 0, 1), 2.5))
     tub_cuts.append(chamfer_cut((x1, -hw, zf0), (x1, hw, zf0), (-1, 0, 0), (0, 0, 1), 2.5))
     tub_cuts.append(chamfer_cut((x0, -hw, zf0), (x0, hw, zf0), (1, 0, 0), (0, 0, 1), 2.5))
+    for s_ in (1, -1):
+        for _, ax in AX:
+            tub_cuts.append(box(ax - 12 - co, ax + 12 + co, min(s_ * 39, s_ * 51), max(s_ * 39, s_ * 51), 72.5, dz0 + co))
     tub_cuts.append(box(xf_in - co, x1 + co, -28, 28, zf1 - co, 62.7))               # battery door opening ...
     tub_cuts.append(pdiff(obox(((xf_in + x1) / 2, 0.0, 62.5), x1 - xf_in + 2 * co, 28 * math.sqrt(2), 28 * math.sqrt(2),
                                X, norm((0, 1, 1))), [box(xf_in - 5, x1 + 5, -40, 40, 76, 200)]))   # ... with a 45 deg top
@@ -533,7 +542,7 @@ def build_model(P=None):
         m.hole("tub", "lid_r_" + side, (xr_in + 7, s * 54, top + co), (xr_in + 7, s * 54, top - P["ins_m3_depth"]),
                P["ins_m3"], kind="insert", for_item="shell M3")
         for nm, ax in AX:
-            m.hole("tub", "deck_%s%s" % (nm, side), (ax, s * 36, dz0 + co), (ax, s * 36, dz0 - P["ins_m3_depth"]),
+            m.hole("tub", "deck_%s%s" % (nm, side), (ax, s * 28, dz0 + co), (ax, s * 28, dz0 - P["ins_m3_depth"]),
                    P["ins_m3"], kind="insert", for_item="deck M3")
         m.hole("tub", "door_" + side, (x1 + co, s * 40, 49), (x1 - P["ins_m4_depth"] - 4, s * 40, 49), P["ins_m4"],
                kind="insert", for_item="bumper-door M4 thumb screw")
@@ -617,7 +626,7 @@ def build_model(P=None):
                 continue
             if gx > P["mast_x"] - 21 and abs(gy) < 28 or gx > xf_in - 16:
                 continue
-            if any(abs(gx - ax) < 6 and abs(abs(gy) - 36) < 6 for _, ax in AX):
+            if any(abs(gx - ax) < 6 and abs(abs(gy) - 28) < 6 for _, ax in AX):
                 continue
             if xr_in + 6 < gx < xr_in + 22 and abs(gy) > 44 or (-134 < gx < -108 and 26 < abs(gy) < 51):
                 continue
@@ -629,7 +638,7 @@ def build_model(P=None):
     for s in (1, -1):
         side = "L" if s > 0 else "R"
         for nm, ax in AX:
-            m.hole("deck", "screw_%s%s" % (nm, side), (ax, s * 36, dz0 - co), (ax, s * 36, dz1 + co), P["clr_m3"],
+            m.hole("deck", "screw_%s%s" % (nm, side), (ax, s * 28, dz0 - co), (ax, s * 28, dz1 + co), P["clr_m3"],
                    for_item="deck M3")
         for zx in (12, 30):                     # zip-tie slots for the regulators
             dc.append(box(zx - 1.5, zx + 1.5, s * 29, s * 49, dz0 - co, dz1 + co))
@@ -727,7 +736,7 @@ def build_model(P=None):
     # ---------------- BUMPER-DOOR ("mouth") ----------------
     bfront = x1 + 28
     bz0 = zf1 + 0.5                            # bumper bottom = prong bottom: both on the bed when printed upright
-    bump = soft_slab(x1, bfront, -50, 50, bz0, 76, 13, 5.5, top=True, bottom=True)   # R < half the 28 mm depth: no duplicate corners
+    bump = rbox(x1, bfront, -50, 50, bz0, 76, 13)   # plan-rounded only: edge rounds made Fusion/OCC booleans fail
     bd = m.part("bumper_door", "printed", COL["accent"],
                 bump + [box(x1, x1 + 14, -50, 50, bz0, 76)]      # flat square back, flush on the tub
                 + [box(P["bat_x0"] + P["bat_l"] + 0.5, x1 + 0.01, min(sy_ * 12, sy_ * 22), max(sy_ * 12, sy_ * 22), bz0, zf1 + 20)
@@ -769,9 +778,9 @@ def build_model(P=None):
         sy = lambda a, b: (s * a, s * b) if s > 0 else (-b, -a)  # noqa: E731
         ya, yb = sy(hw - 0.01, 119)
         ia, ib = sy(hw - 6, 116.5)
-        shell_pre.append((soft_slab(mc_x - 37, mc_x + 47, ya, yb, 98, top + 5, 10, 1.5),   # small top edge: it is the bed edge
-                          soft_slab(mc_x - 34.5, mc_x + 44.5, ia, ib, 60, top - 0.5, 7.5, 3.0)))
-    shell_adds = soft_slab(x0, x1, -hw, hw, top, top + 5, 10, 1.0)    # flat top: prints lid-down, no supports
+        shell_pre.append((rbox(mc_x - 37, mc_x + 47, ya, yb, 98, top + 5, 10),     # sharp top edge = clean bed edge
+                          rbox(mc_x - 34.5, mc_x + 44.5, ia, ib, 60, top - 0.5, 7.5)))
+    shell_adds = rbox(x0, x1, -hw, hw, top, top + 5, 10)    # flat top: prints lid-down, no supports
     shell = m.part("shell", "printed", COL["shell"], shell_adds, pre=shell_pre, material="PETG",
                    mates={"tub"}, note="one-piece top: lid + both motor pods; 4 screws; remove the mast first, then lift")
     shell["cuts"].append(box(P["mast_x"] - ms / 2, P["mast_x"] + ms / 2, -ms / 2, ms / 2, top - co, top + 7 + co))
@@ -799,7 +808,7 @@ def build_model(P=None):
     upx = max(mx + sq / 2, hx1) + 0.5
     mast_adds = ([box(mx - sq / 2, mx + sq / 2, -sq / 2, sq / 2, 92 + 0.3, head_z0 + 0.01)]
                  + rbox(mx - 14, mx + 14, -24, 24, top + 5, top + 10, 5)
-                 + soft_slab(*head, R=6, r=2.5, top=True, bottom=True)
+                 + rbox(*head, 6)
                  + [box(hx1 - 0.5, upx + 4, -28, 28, head_z0 + 4, uwz1),                     # UWB plate (front)
                     box(mx + sq / 2 - 0.01, upx + 0.01, -11, 11, uwz0, head_z0 + 0.01)])      # UWB plate web to the mast
     mast = m.part("mast", "printed", COL["mast"], mast_adds, material="PAHT-CF (print lying on its side)",
@@ -1099,8 +1108,9 @@ def run(context):
                 except Exception:          # fallback: chain of spheres along the ring
                     sphere_fail.append(1)
                     body = None
-                    for k in range(12):
-                        a_ = 2 * math.pi * k / 12
+                    n_s = min(96, max(12, int(math.ceil(2 * math.pi * p["R"] / (0.8 * p["r"])))))   # overlapping spheres
+                    for k in range(n_s):
+                        a_ = 2 * math.pi * k / n_s
                         sb = prim(sph((p["c"][0] + p["R"] * math.cos(a_), p["c"][1] + p["R"] * math.sin(a_), p["c"][2]), p["r"]))
                         if sb is None:
                             continue

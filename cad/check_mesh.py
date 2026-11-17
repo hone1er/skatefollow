@@ -8,11 +8,12 @@ For each part: rebuild the solid from the same primitives and boolean order as t
     vertical. Bridges and the roofs of horizontal holes are counted too, so treat it as an upper bound),
   - filament estimate for two slicer profiles.
 
-Booleans run with a small fuzzy tolerance (like Fusion's tolerant modelling); with that, the tub exported on
-2026-11-16 shows the same 4 non-manifold edges Bambu Studio reported, and the fixed tub shows 0.
+Booleans run with a small fuzzy tolerance by default; CHECK_MESH_FUZZ=0 gives strict exact booleans (closest to
+Fusion: a torus-cornered version that passed the fuzzy run left loose donuts in Fusion and also failed strict).
+The tub exported on 2026-11-16 shows the same 4 non-manifold edges Bambu Studio reported; the fixed tub shows 0.
 
 Setup once (any machine with Python 3.10+):
-    python3 -m venv ~/occ && ~/occ/bin/pip install cadquery-ocp trimesh numpy
+    python3 -m venv ~/occ && ~/occ/bin/pip install cadquery-ocp==8.0.1.1.0 trimesh==5.2.1 numpy
     ~/occ/bin/python cad/check_mesh.py            # all printed parts, ~1 min
     ~/occ/bin/python cad/check_mesh.py tub shell  # selected parts
 """
@@ -40,7 +41,7 @@ _spec = importlib.util.spec_from_file_location("HC", os.path.join(HERE, "fusion"
 HC = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(HC)
 
-FUZZ = 1e-4
+FUZZ = float(os.environ.get("CHECK_MESH_FUZZ", "1e-4"))   # 0 = strict exact booleans
 OVERHANG_DEG = 50.0      # faces more than this from vertical need support (Bambu default threshold: 60 deg)
 DENS = {"PAHT-CF": 1.20, "PETG": 1.27, "TPU": 1.21}
 PROFILES = (("docs v1: 5-6 walls, 40 % infill", 5.5, 0.40), ("recommended: 3 walls, 15 % gyroid", 3.0, 0.15))

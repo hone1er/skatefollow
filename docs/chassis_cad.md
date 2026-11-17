@@ -33,8 +33,8 @@ Files:
 | Rear-belt tension | — | **Idler (2 × 608-2RS side by side)** on an M8 hex bolt in a vertical wall slot, pressing the 1:1 belt's upper run down at mid-span. The wheelbase (**200.0 mm**) is solved from the belt length for 2 mm of take-up; the 15.6 mm slot covers 0.3–4.5 mm (±0.3 % print shrink on 200 mm is ±1.2 mm of belt path, plus belt tolerance). The bolt head sits in a hex channel inside, so the nyloc tightens from outside | Rear axle stays a fixed captive-nut stub axle like the front one |
 | Pulley fixing | M3 × 80 through the wheel core into nylocs | **Heat-set inserts in the pulleys**, M3 screws from the wheel's outer face | The 36T neck left no room for a nut; 16 nuts fewer |
 | Axle sleeves | 7075 turned 18 mm | **Stock steel tubes**: 12 × 2 inside 16 × 2 (E355, no lathe) | Buyable; SF 2.0 |
-| Size / mass | 399 × 343 × 173 mm, 3.4 kg | **343 × 343 × 147 mm** (mast off), 288 mm tall with the GoPro, **≈ 3.8 kg** (estimate) | Two more wheels, axles and belts (+0.4 kg); shorter (no tail) |
-| Stability | sideways tip 0.79 g, pitch-over 0.71 g | **sideways 1.75 g, pitch-over 0.89 g**, backward 1.65 g | Rectangle of 4 contacts instead of a triangle |
+| Size / mass | 399 × 343 × 173 mm, 3.4 kg | **343 × 343 × 145 mm** (mast off), 288 mm tall with the GoPro, **≈ 3.9 kg** (estimate) | Two more wheels, axles and belts (+0.4 kg); shorter (no tail) |
+| Stability | sideways tip 0.79 g, pitch-over 0.71 g | **sideways 1.77 g, pitch-over 0.88 g**, backward 1.67 g | Rectangle of 4 contacts instead of a triangle |
 
 Costs of skid steer, and how they are handled:
 - **Turning scrubs the tyres sideways.** Pivoting needs ~11 N per side, about 10 A per motor near standstill (30 A ESCs).
@@ -123,7 +123,7 @@ tension spec above, and the pull-screw stop, which keeps tension from creeping u
 | Mast + pan head + UWB plate | x 38; servo seat z 195 | GoPro centre z 260, lens z 266 / x 60. UWB anchor on the front plate (z 151–192), antenna forward |
 
 Power below the deck, signals above it:
-- The battery lead runs back along the side channel (|y| ≈ 45, through Ø12 holes in the front bridge beam) to the
+- The battery lead runs back along the side channel (|y| ≈ 45, through open-top notches in the axle tie beams) to the
   fuse block behind the battery.
 - Motor phase wires enter through grommets in the walls and run to the ESCs through the deck's cable passes.
 - Signal cables run over the deck: GoPro USB-C, servo and UWB inside the hollow mast; ESP32 USB; HC-SR04.
@@ -156,8 +156,8 @@ Power below the deck, signals above it:
 
   - Floor at 28 mm. A driven wheel climbs a ~10 mm lip from standstill; treat lips as slow-down events.
 - **Stability:**
-  - Sideways tip at 1.75 g (it slides first).
-  - Forward pitch-over under braking at 0.89 g; the bumper touches down at 22° if it does pitch.
+  - Sideways tip at 1.77 g (it slides first).
+  - Forward pitch-over under braking at 0.88 g; the bumper touches down at 22° if it does pitch.
   - Stopping from 15 mph: 4.5 m at μ 0.8, 5.5 m at μ 0.6.
   - Keep the firmware decel ramp (§8) at ~0.5 g anyway.
 - **Structure at the worst road event:** a wheel hits a 6 mm crack at 15 mph, ~910 N (urethane stiffness 50 N/mm
@@ -186,7 +186,7 @@ face-down orientations of each part.
 
 | Part | Qty | Material | Orientation | Supports |
 |---|---|---|---|---|
-| tub | 1 | PAHT-CF (PETG is fine for a walking/jogging-speed prototype) | Floor on the bed | Only the short ledge under the mast socket (12 × 48 mm) and the two belt pull-screw bosses. Everything else hanging off a wall runs to the floor or has a 45° underside. Put **support blockers** in the 4 axle holes and the 2 motor-plate pockets: they print as arches |
+| tub | 1 | PAHT-CF (PETG is fine for a walking/jogging-speed prototype) | Floor on the bed | Tree supports from the floor under the two axle tie beams (62 mm bridges over the battery tunnel), the short ledge under the mast socket (12 × 48 mm) and the two belt pull-screw bosses. Everything else hanging off a wall runs to the floor or has a 45° underside. Put **support blockers** in the 4 axle holes and the 2 motor-plate pockets: they print as arches |
 | shell (lid + pods) | 1 | PETG | **Lid on the bed** (flat top) | None |
 | deck (with ESP32 cradle) | 1 | PETG | Flat, cradle up | None |
 | motor_plate_L/R | 2 | PAHT-CF | Motor face down, counterbores up | None |
@@ -206,24 +206,29 @@ face-down orientations of each part.
 - Supports: tree (auto), threshold angle 30°, plus the blockers listed above.
 - Elephant-foot compensation on (default): the tub's bottom edges no longer need chamfers for it.
 
-Estimated filament for the 15 robot parts (from the meshes, report of `check_mesh.py`): **≈ 1.17 kg** with these
-settings vs ≈ 1.84 kg with the earlier "5–6 walls, 40 % infill" advice (−36 %). Print time scales roughly with it.
-The tub alone is ≈ 0.55 kg.
+Estimated filament for the 15 robot parts (from the meshes, report of `check_mesh.py`): **≈ 1.19 kg** with these
+settings vs ≈ 1.88 kg with the earlier "5–6 walls, 40 % infill" advice. Print time scales roughly with it. The tub
+alone is ≈ 0.56 kg. These are estimates from the geometry; your slicer's per-plate numbers are the real ones.
 
 **What changed for printing (2026-11-17):**
 - **Tub:**
-  - Removed the two axle bridge beams (62 mm bridges). Small pillars on the axle bosses carry the deck screws
-    instead (deck screws moved from y ±28 to ±36).
+  - The two axle tie beams stay: they carry each axle's bending couple across the tub (report §7, SF 7.5; the
+    floor takes the other half, SF 3.5). Each is a 62 mm bridge over the battery tunnel: let tree supports grow
+    from the floor there. The harness passes through **open-top notches** in them, not holes (the holes made the
+    4 non-manifold edges).
   - Shell posts, the door + HC-SR04 insert column, the idler pad and channel, and the lower half of the motor pad
     now run down to the floor.
   - The deck ledge and the mast socket block have 45° undersides.
   - The axle boss rings have flat feet.
   - The battery door opening has a 45° top with a 29 mm bridge instead of 56 mm.
-- **Shell:** the raised panel on top is gone, so it prints lid-down. Its bed edges are 1–1.5 mm rounds.
+- **Shell:** the raised panel on top is gone, so it prints lid-down with no supports.
 - **Bumper door:** the bottom is 2.5 mm higher, so the battery prongs reach the bed when printed upright. The back
   is flat and square.
-- **Rounded corners:** all of them are now exact tori (one clean surface) instead of chains of spheres. That is
-  fewer booleans and cleaner meshes.
+- **Edges:** shell, bumper and mast head keep their rounded plan corners (R 6–13) but lose the rounded top and
+  bottom edges. Those were built from chains of spheres; an exact-torus version tried on 2026-11-17 left loose
+  donuts in Fusion, and both versions fail in strict CAD-kernel booleans. Plan-rounded slabs (vertical cylinders
+  + boxes) build cleanly everywhere. On the shell the old rounded edge was the bed edge anyway: sharp prints better.
+  The look is a little more angular; a 45° chamfer on those edges can be added if you want it softer.
 
 Tolerances are loose on purpose: through-holes M3/M4/M5/M8 3.4/4.5/5.5/8.5 mm; heat-set holes M3/M4 4.0/5.6 mm
 (check your insert's chart); 0.3 mm per side slip fits; ≥ 3 mm next to anything that moves. Change them in `PARAMS`
@@ -305,12 +310,13 @@ calculated in report §7b.
 - `python3 cad/check_manifold.py` is a quick voxel scan, about 2 minutes, with no extra installs.
 - `cad/check_mesh.py` rebuilds every part with OpenCascade (a CAD kernel like Fusion's) and exports STLs to
   `cad/stl/`, ready for Bambu Studio. It counts non-manifold and open edges and measures support area and
-  filament. Setup: `python3 -m venv ~/occ && ~/occ/bin/pip install cadquery-ocp trimesh numpy`, then
+  filament. Setup: `python3 -m venv ~/occ && ~/occ/bin/pip install cadquery-ocp==8.0.1.1.0 trimesh==5.2.1 numpy`, then
   `~/occ/bin/python cad/check_mesh.py`.
 
 It reproduced the 4 edges Bambu Studio flagged on the tub: the Ø12 harness holes through the axle bridge beams
 touched the beams' top face (a hole tangent to a face makes a zero-thickness line). The voxel scan can't see
-tangent contacts, which is why it said "ok". Fixed by removing the beams.
+tangent contacts, which is why it said "ok". Fixed by turning the holes into open-top notches. Run it with
+`CHECK_MESH_FUZZ=0` for strict exact booleans (closest to Fusion); all parts pass both ways.
 
 Earlier finds of the voxel scan: the motor-wire hole grazing the motor-plate pad, overlapping counterbore ends on
 the motor plates, and the mast's servo-lead notch.

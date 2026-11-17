@@ -732,7 +732,17 @@ def structural(M, report, mass, cg, dyn):
     rows.append(("axle boss bearing on the sleeve, PAHT-CF (allow 40 MPa)", "moment over a %.0f mm boss" % Lb,
                  "%.0f MPa" % s_boss, 40 / s_boss))
     s_blk = M_root / (36.0 * 44.0 ** 2 / 6)
-    rows.append(("boss block root into floor + bridge beam (allow 40 MPa)", "36 x 44 mm section", "%.1f MPa" % s_blk, 40 / s_blk))
+    rows.append(("boss block root into the floor (allow 40 MPa)", "36 x 44 mm section", "%.1f MPa" % s_blk, 40 / s_blk))
+    # frame couple: the axle moment is reacted across the tub by the tie beam (compression/tension) and the floor
+    tie = M.info["axle_tie"]
+    arm = (tie["z0"] + tie["z1"]) / 2 - (tie["zf0"] + tie["floor_t"] / 2)
+    F_c = M_root / arm
+    s_tie = F_c / (tie["w"] * (tie["z1"] - tie["z0"]))
+    s_fl = F_c / (tie["boss_len"] * tie["floor_t"])
+    rows.append(("axle tie beam %.0f x %.0f across the tub (allow 40 MPa)" % (tie["w"], tie["z1"] - tie["z0"]),
+                 "couple %.0f N over %.0f mm" % (F_c, arm), "%.1f MPa" % s_tie, 40 / s_tie))
+    rows.append(("floor under the boss, the other half of the couple (allow 40 MPa)", "%.0f x %.0f mm" % (tie["boss_len"], tie["floor_t"]),
+                 "%.1f MPa" % s_fl, 40 / s_fl))
     # ---- 1:1 belt idler (608 on an M8 in a wall slot) ----
     T2 = P["belt_pretension_n"] + (mu_tr := 0.9) * (mass * g / 4 * 1.3) * rw / 1000 / (P["pul_r_pd"] / 2000)
     F_id = 2 * T2 * math.sin(math.radians(15))          # ~15 deg wrap deflection per side of the idler
