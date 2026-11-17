@@ -15,8 +15,14 @@ from typing import Tuple
 
 @dataclass
 class DiffDriveParams:
-    track_width: float = 0.40        # m between the two driven wheels
-    max_wheel_speed: float = 7.0     # m/s at command = 1.0 (25 km/h ~ 7 m/s); set from the real drivetrain
+    # 4-wheel skid steer: geometric track is 0.277 m, but the tyres scrub when turning, so the robot turns
+    # slower than the geometry says. 0.39 (= 0.277 x 1.4) is the starting guess; set it from the spin test.
+    track_width: float = 0.39
+    # m/s at command = 1.0. 9.6 = no-load top speed of the drivetrain (same number as FULL_SCALE_MPS in the
+    # firmware). Calibrate: drive at a known command, measure the real speed, scale.
+    max_wheel_speed: float = 9.6
+    # Leave these False on the real robot and set motor direction in the firmware (THROTTLE_REVERSED /
+    # STEER_REVERSED) or the ESC, so the handheld remote's stick drives the same way as the Pi.
     left_reversed: bool = False
     right_reversed: bool = False
 

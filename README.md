@@ -169,7 +169,8 @@ alive. Each layer watches its *own* inputs with its *own* timeout.
 | `follower` | age of the last `/target` | `target_timeout` 0.5 s | publishes a zero `Twist` |
 | `safety_gate` | ESP32 link flag and its age; range reading validity and age; age of the controller's command; obstacle distance | `range_timeout` 0.3 s, `cmd_timeout` 0.5 s, `stop_distance` 0.4 m, `slow_distance` 1.0 m | publishes zero (or forward-blocked / scaled) on `/cmd_vel` and the reason on `/safety/state` |
 | `esp32_bridge` | age of the last `/cmd_vel` | `cmd_timeout` 0.3 s | sends `C,0,0` (neutral); also one neutral on exit |
-| ESP32 firmware | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window | 500 ms, 200 ms, 2 s | forces both drive channels to 1500 µs immediately (no ramp); reports via `S,1,…` |
+| ESP32 firmware (2.2.0) | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window; handheld remote (STOP, lost, or never heard when `REMOTE_REQUIRED`) | 500 ms, 200 ms, 2 s, 500 ms | ramps both drive channels to 1500 µs at 0.5 g (hard neutral after 2.5 s and at boot); reports via `S,1,…` and `K,…` |
+| Handheld remote (`firmware/esp32_remote`) | its button (STOP/RUN) and stick | — | STOP or radio loss stops the robot; in RUN the stick drives manually and overrides the Pi (the ultrasonic gate does not apply to manual driving) |
 | ESC (hardware) | signal present | ESC-specific | stops the motor |
 
 Properties that follow from this table and that the code relies on:
@@ -451,7 +452,8 @@ ros2 launch honebot_uwb uwb.launch.py port:=/dev/ttyUSB1
 arduino-cli compile --fqbn esp32:esp32:esp32 honebot_ws/firmware/esp32_ultrasonic
 arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 honebot_ws/firmware/esp32_ultrasonic
 ```
-On boot it prints `V,2.1.0`; the bridge logs `ESP32 firmware version 2.1.0`.
+On boot it prints `V,2.2.0`; the bridge logs `ESP32 firmware version 2.2.0`. The handheld remote is a second sketch,
+`firmware/esp32_remote` (see its README); from 2.2.0 the robot does not move unless the remote is in RUN.
 
 ### Auto-start at boot and serial-port tweak (need sudo)
 See `src/honebot_bringup/systemd/honebot.service` and `src/honebot_hardware/udev/99-honebot-esp32.rules`;

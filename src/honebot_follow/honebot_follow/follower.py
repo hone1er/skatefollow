@@ -54,6 +54,14 @@ class Follower(Node):
             max_angular=self.declare_parameter('max_angular', 4.0).value,
             ackermann=self.declare_parameter('ackermann', False).value,
             creep_speed=self.declare_parameter('creep_speed', 0.3).value,
+            brake_decel=self.declare_parameter('brake_decel', 0.0).value,
+            time_headway=self.declare_parameter('time_headway', 0.5).value,
+            max_lat_accel=self.declare_parameter('max_lat_accel', 0.0).value,
+            min_turn_radius=self.declare_parameter('min_turn_radius', 0.0).value,
+            arc_speed=self.declare_parameter('arc_speed', 0.6).value,
+            pivot_bearing=self.declare_parameter('pivot_bearing', 2.0).value,
+            pivot_rate=self.declare_parameter('pivot_rate', 0.8).value,
+            stopped_turn_deadband=self.declare_parameter('stopped_turn_deadband', 0.0).value,
         )
         self.add_on_set_parameters_callback(self._on_params)
 
