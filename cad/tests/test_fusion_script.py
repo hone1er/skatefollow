@@ -17,7 +17,7 @@ import types
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "..", "fusion", "HonebotChassis", "HonebotChassis.py")
 
-LOG = {"boxes": 0, "cyls": 0, "bool": 0, "bodies": [], "messages": [], "components": []}
+LOG = {"boxes": 0, "cyls": 0, "bool": 0, "bodies": [], "messages": [], "components": [], "threads": []}
 
 
 def _fake_adsk():
@@ -50,8 +50,9 @@ def _fake_adsk():
             return ("obb", c, u, v, lu, lv, lw)
 
     class Body:
-        def __init__(self, kind):
+        def __init__(self, kind, cyls=()):
             self.kind = kind
+            self.cyls = list(cyls)       # (p1, p2, r) of every cylinder merged in: becomes faces after add()
 
     class TBM:
         @staticmethod
@@ -66,7 +67,7 @@ def _fake_adsk():
             L = math.dist((p1.x, p1.y, p1.z), (p2.x, p2.y, p2.z))
             assert L > 1e-6 and r1 > 0 and r2 > 0, (L, r1, r2)
             LOG["cyls"] += 1
-            return Body("cyl")
+            return Body("cyl", [(p1, p2, r1)])
 
         def createSphere(self, c, r):
             assert r > 0
@@ -82,6 +83,7 @@ def _fake_adsk():
         def booleanOperation(self, target, tool, op):
             assert isinstance(target, Body) and isinstance(tool, Body)
             LOG["bool"] += 1
+            target.cyls += tool.cyls
             return True
 
     class Matrix3D:
@@ -97,8 +99,15 @@ def _fake_adsk():
         def item(self, i):
             return self[i]
 
+    class Face:
+        def __init__(self, p1, p2, r):
+            d = (p2.x - p1.x, p2.y - p1.y, p2.z - p1.z)
+            self.geometry = types.SimpleNamespace(surfaceType=1, radius=r, origin=p1,
+                                                  axis=types.SimpleNamespace(x=d[0], y=d[1], z=d[2]))
+
     class BRepBody:
         def __init__(self, b):
+            self.faces = Collection(Face(*c) for c in b.cyls)
             self.name = ""
             self.appearance = None
             self.opacity = 1.0
@@ -110,8 +119,32 @@ def _fake_adsk():
             LOG["bodies"].append(rb)
             return rb
 
+    class ThreadFeatures:
+        defaultMetricThreadType = "ISO Metric profile"
+
+        def __init__(self):
+            self.threadDataQuery = self
+
+        def recommendThreadData(self, d, internal, ttype):
+            assert 0.05 < d < 2.0, d          # centimetres
+            return True, "Mx", "6H"
+
+        def createThreadInfo(self, internal, ttype, designation, cls):
+            assert ttype == "ISO Metric profile" and designation.startswith("M"), (ttype, designation)
+            return (internal, designation, cls)
+
+        def createInput(self, faces, info):
+            assert faces.count >= 1
+            return types.SimpleNamespace(faces=faces, info=info, isFullLength=False, isModeled=False)
+
+        def add(self, inp):
+            assert inp.isModeled and inp.isFullLength
+            LOG["threads"].append(inp.info)
+            return object()
+
     class Component:
         def __init__(self):
+            self.features = types.SimpleNamespace(threadFeatures=ThreadFeatures())
             self.name = ""
             self.occurrences = Occurrences()
             self.bRepBodies = Bodies()
@@ -199,6 +232,16 @@ def _fake_adsk():
         def create(r, g, b, a):
             return (r, g, b, a)
 
+    class ObjectCollection(Collection):
+        @staticmethod
+        def create():
+            return ObjectCollection()
+
+        def add(self, x):
+            self.append(x)
+
+    core.ObjectCollection = ObjectCollection
+    core.SurfaceTypes = types.SimpleNamespace(CylinderSurfaceType=1)
     core.Application = Application
     core.Point3D = Point3D
     core.Vector3D = Vector3D
@@ -230,6 +273,9 @@ def test_run_builds_every_part():
     assert "Failed parts" not in msg and "failed" not in msg, msg
     assert "built %d of %d parts" % (n_parts, n_parts) in msg, msg
     assert len(LOG["bodies"]) == n_parts
+    n_thr = sum(len(p["threads"]) for p in mod.build_model().parts)
+    assert len(LOG["threads"]) == n_thr == 12, (LOG["threads"], n_thr)
+    assert ("Modeled threads: %d" % n_thr) in msg, msg
     print("ok: %d parts, %d boxes, %d cylinders, %d booleans" % (n_parts, LOG["boxes"], LOG["cyls"], LOG["bool"]))
 
 
