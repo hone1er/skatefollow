@@ -12,7 +12,7 @@
 # Disable: sudo systemctl disable honebot
 
 [Unit]
-Description=honebot ROS 2 bringup (ESP32 bridge, safety gate, Foxglove bridge)
+Description=honebot safety layer (ESP32 bridge, safety gate, Foxglove bridge)
 After=network-online.target
 Wants=network-online.target
 
@@ -22,7 +22,7 @@ User=hone1er
 WorkingDirectory=/home/hone1er/honebot_ws
 Environment=ROS_DOMAIN_ID=0
 Environment=RCUTILS_COLORIZED_OUTPUT=0
-ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/hone1er/honebot_ws/install/setup.bash && if [ -e /dev/esp32 ]; then P=/dev/esp32; else P=/dev/ttyUSB0; fi; exec ros2 launch honebot_bringup bringup.launch.py port:=$$P'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/hone1er/honebot_ws/install/setup.bash && exec ros2 launch honebot_bringup robot.launch.py'
 KillSignal=SIGINT
 TimeoutStopSec=15
 Restart=on-failure

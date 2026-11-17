@@ -61,6 +61,7 @@ class Follower(Node):
             arc_speed=self.declare_parameter('arc_speed', 0.6).value,
             pivot_bearing=self.declare_parameter('pivot_bearing', 2.0).value,
             pivot_rate=self.declare_parameter('pivot_rate', 0.8).value,
+            follow_bearing=self.declare_parameter('follow_bearing', 0.0).value,
             stopped_turn_deadband=self.declare_parameter('stopped_turn_deadband', 0.0).value,
         )
         self.add_on_set_parameters_callback(self._on_params)

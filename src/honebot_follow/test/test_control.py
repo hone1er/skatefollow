@@ -199,3 +199,63 @@ def test_command_is_continuous_through_follow_distance():
                 assert abs(v - prev[0]) < 0.05 and abs(w - prev[1]) < 0.1, (bearing, d, prev, (v, w))
             prev = (v, w)
             d += 0.01
+
+
+# ---- offset follow: hold the skater at a bearing, so the robot rides beside their line -------------
+def _simulate_2d(g, leader_path, t_end=25.0, dt=0.05, accel=7.8, decel=4.9):
+    """Unicycle robot under the law, skater on leader_path(t) -> (x, y). Returns the trace of
+    (t, robot x, y, heading, skater x, y, distance, bearing)."""
+    rx, ry, rth, v = 0.0, 0.0, 0.0, 0.0
+    trace = []
+    t = 0.0
+    while t < t_end:
+        lx, ly = leader_path(t)
+        dist, bearing = relative_target(rx, ry, rth, lx, ly)
+        lin, ang, _ = follow_command_relative(dist, bearing, g)
+        v = min(lin, v + accel * dt) if lin > v else max(lin, v - decel * dt)
+        rth += ang * dt
+        rx += v * math.cos(rth) * dt
+        ry += v * math.sin(rth) * dt
+        trace.append((t, rx, ry, rth, lx, ly, dist, bearing))
+        t += dt
+    return trace
+
+
+OFFSET = FollowGains(follow_distance=1.5, max_linear=8.0, kp_angular=3.0, max_angular=3.0,
+                     brake_decel=4.4, time_headway=0.5, max_lat_accel=4.0, min_turn_radius=0.4,
+                     arc_speed=0.6, pivot_bearing=2.0, pivot_rate=0.8, stopped_turn_deadband=0.3,
+                     follow_bearing=0.45)
+
+
+def test_offset_follow_settles_beside_the_skaters_line():
+    v = 3.6                                               # 8 mph, skater along +x from (6, 0)
+    tr = _simulate_2d(OFFSET, lambda t: (6.0 + v * t, 0.0))
+    _, rx, ry, rth, lx, ly, dist, bearing = tr[-1]
+    assert math.isclose(bearing, 0.45, abs_tol=0.03)      # skater held at the chosen bearing
+    assert abs(rth) < 0.03                                # robot runs parallel to the skater
+    assert math.isclose(dist, safe_gap(v, OFFSET), rel_tol=0.05)
+    assert math.isclose(-ry, dist * math.sin(0.45), rel_tol=0.1)   # robot is to the RIGHT of the line
+    # and it got there without oscillating: bearing stays put over the last 5 s
+    tail = [b for (t, *_rest, b) in tr if t > 20.0]
+    assert max(tail) - min(tail) < 0.02
+
+
+def test_offset_follow_passes_beside_a_skater_who_stops_dead():
+    v = 5.4                                               # 12 mph, stops dead at t = 15 s
+    tr = _simulate_2d(OFFSET, lambda t: (6.0 + v * min(t, 15.0), 0.0), t_end=30.0)
+    lx, ly = tr[-1][4], tr[-1][5]
+    closest = min(math.hypot(lx - x, ly - y) for (t, x, y, *_r) in tr if t >= 15.0)
+    assert closest > 1.0
+    # sideways miss distance of the robot's path from the skater at the moment of the stop
+    at_stop = next(r for r in tr if r[0] >= 15.0)
+    assert abs(at_stop[2] - ly) > 2.0
+
+
+def test_offset_follow_holds_through_turns_both_ways():
+    v, radius = 3.0, 12.0
+    for sign in (1, -1):
+        path = lambda t, s=sign: (radius * math.sin(v * t / radius), s * radius * (1 - math.cos(v * t / radius)) + 0.0)  # noqa: E731
+        tr = _simulate_2d(OFFSET, lambda t, p=path: (p(t)[0] + 6.0, p(t)[1]), t_end=40.0)
+        tail = [r for r in tr if r[0] > 25.0]
+        assert all(abs(r[7] - 0.45) < 0.25 for r in tail), sign          # stays near the chosen bearing
+        assert all(1.5 < r[6] < 12.0 for r in tail), sign                # neither closes in nor falls away

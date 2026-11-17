@@ -31,6 +31,10 @@ class FollowGains:
     pivot_bearing: float = 2.0     # rad: ... unless the target is further round than this (then pivot fast)
     pivot_rate: float = 0.8        # rad/s: gentle pivot always allowed in arc mode (little scrub at this rate)
     stopped_turn_deadband: float = 0.0   # rad: bearings below this are not turned toward by pivoting
+    follow_bearing: float = 0.0    # rad: where to keep the skater relative to the robot's nose (+ = to the left).
+    #                                0 = straight ahead (robot directly behind). 0.45 (26 deg) = the robot rides
+    #                                behind and to the RIGHT of the skater's line: a 3/4 rear shot, and a skater
+    #                                who falls is beside the robot's path, not in it.
 
 
 def safe_gap(speed: float, g: 'FollowGains') -> float:
@@ -84,7 +88,7 @@ def follow_command_relative(distance: float, bearing: float, g: FollowGains):
     - brake_decel > 0: the gap grows with speed (safe_gap / speed_for_gap).
     - min_turn_radius > 0: arcs instead of pivots; max_lat_accel > 0: cornering cap.
     """
-    heading_error = wrap_angle(bearing)
+    heading_error = wrap_angle(bearing - g.follow_bearing)     # steer to hold the skater at follow_bearing
     angular = clamp(g.kp_angular * heading_error, -g.max_angular, g.max_angular)
 
     gap = distance - g.follow_distance
