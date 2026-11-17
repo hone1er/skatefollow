@@ -27,7 +27,7 @@ import traceback
 PARAMS = {
     # fit / tolerance policy (loose on purpose; FDM on a Bambu H2C, PAHT-CF / PETG)
     "clr_m2": 2.4, "clr_m25": 2.9, "clr_m3": 3.4, "clr_m4": 4.5, "clr_m5": 5.5, "clr_m8": 8.5,   # [D] through-holes
-    "ins_m3": 4.0, "ins_m3_depth": 6.5, "ins_m4": 5.6, "ins_m4_depth": 9.0, "ins_m5": 6.4, "ins_m5_depth": 10.0,
+    "ins_m25": 3.6, "ins_m25_depth": 5.0, "ins_m3": 4.0, "ins_m3_depth": 6.5, "ins_m4": 5.6, "ins_m4_depth": 9.0, "ins_m5": 6.4, "ins_m5_depth": 10.0,
     # [D] heat-set inserts (check insert maker's chart)
     "slip": 0.6,          # [D] gap for parts that slide into each other (mast in socket, deck between walls)
     "cut_over": 0.6,      # [D] cut tools overshoot faces by this much (robust booleans)
@@ -612,8 +612,10 @@ def build_model(P=None):
     dc.append(box(P["mast_x"] - 17.5, xf_in + co, -24.5, 24.5, dz0 - co, dz1 + co))     # mast socket notch
     pi_x0 = P["pi_x0"]; pi_x1 = pi_x0 + 85.0
     pi_holes = [(pi_x1 - 3.5, -24.5), (pi_x1 - 3.5, 24.5), (pi_x1 - 61.5, -24.5), (pi_x1 - 61.5, 24.5)]
-    for i, (hx, hy) in enumerate(pi_holes):
-        m.hole("deck", "pi_%d" % i, (hx, hy, dz0 - co), (hx, hy, dz1 + co), P["clr_m25"], for_item="Raspberry Pi 5 M2.5 standoff")
+    for i, (hx, hy) in enumerate(pi_holes):   # printed standoffs (6 mm, OD 8) with M2.5 heat-set inserts
+        deck["adds"].append(cyl_z(dz1 - 0.01, dz1 + 6, hx, hy, 4.0))
+        m.hole("deck", "pi_%d" % i, (hx, hy, dz1 + 6 + co), (hx, hy, dz1 + 6 - P["ins_m25_depth"]), P["ins_m25"],
+               kind="insert", for_item="Raspberry Pi 5 M2.5 x 6 screw into a printed standoff")
     m.info["pi"] = (pi_x0, pi_x1)
     gp = P["grid_pitch"]
     xs = [xr_in + 25 + gp * i for i in range(int((xf_in - xr_in - 40) / gp))]
@@ -937,10 +939,7 @@ def build_model(P=None):
            mass=0.40, mates={"tub", "bumper_door"}, note="3S 5000 mAh hard case <= 145 x 50 x 30 [M]")
     m.part("pi5", H, COL["pcb_green"], [box(pi_x0, pi_x1, -28, 28, dz1 + 6, dz1 + 7.6),
                                         box(pi_x0 + 20, pi_x0 + 70, -24, 24, dz1 + 7.6, dz1 + 22)], mass=0.07,
-           mates={"deck"}, note="Raspberry Pi 5 + Active Cooler on 6 mm M2.5 standoffs")
-    for i, (hx, hy) in enumerate(pi_holes):
-        m.part("pi_standoff_%d" % i, H, COL["hw_metal"], [cyl_z(dz1, dz1 + 6, hx, hy, 2.5)], mass=0.002,
-               mates={"deck", "pi5"})
+           mates={"deck"}, note="Raspberry Pi 5 + Active Cooler on the deck's printed 6 mm standoffs")
     m.part("usb_keepout", "keepout", COL["keepout"], [box(pi_x0 - 25, pi_x0, -28, 28, dz1 + 2, dz1 + 24)],
            note="right-angle USB-A plugs (GoPro, ESP32, UWB) need 25 mm", mates={"pi5"})
     for s in (1, -1):
@@ -1011,7 +1010,7 @@ def build_model(P=None):
     m.nests += [("gopro", "pan_buckle", "camera fingers interleave the buckle prongs"),
                 ("servo", "servo9g_adapter", "alternatives: only one is fitted")]
     mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_anchor", "servo9g_adapter"]
-    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp32"] + ["pi_standoff_%d" % i for i in range(4)]
+    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp32"]
     bolts = ["plate_bolt_%s%d" % (sd_, k) for sd_ in "LR" for k in range(3)]
     m.removals = [
         (mast_grp, (0, 0, 1), 170, []),

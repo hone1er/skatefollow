@@ -303,7 +303,7 @@ def check_holes(M, report):
                 worst = min(worst, f)
             if f >= 0.999:
                 good += L / len(stations)
-        need = {"insert": P["ins_m3_depth"] - 0.5 if h["d"] < 5 else P["ins_m4_depth"] - 1.0,
+        need = {"insert": (P["ins_m25_depth"] - 0.5 if h["d"] < 3.8 else P["ins_m3_depth"] - 0.5) if h["d"] < 5 else P["ins_m4_depth"] - 1.0,
                 "seat": 7.0, "clear": 2.0, "slot": 2.0}[h["kind"]]
         ok = good >= need - 1e-6
         if not ok:
@@ -934,7 +934,7 @@ def beam_obstruction(M, report):
 
 
 FASTENERS = {
-    "insert": "heat-set insert (M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw",
+    "insert": "heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw",
     "clear": "clearance hole, screw passes through (nut, insert or threaded part on the far side)",
     "slot": "slotted clearance, adjust then tighten",
     "seat": "bearing seat, press in with a drop of retaining compound",

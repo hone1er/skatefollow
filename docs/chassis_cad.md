@@ -16,7 +16,7 @@ Files:
 
 > **Run it:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> **"built 87 of 87 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
+> **"built 83 of 83 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
 > the same API calls. If any part or boolean fails, the message box names it: send the text back.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
 
@@ -267,7 +267,7 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | M8 × 140 hex bolt 12.9 + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 4 | stub axles |
 | Axle stack per wheel: steel tubes **16 × 2** (inner 30.3 mm through the boss + outer cut to measure) over **12 × 2** (full length), collar washer 8.4 × 30 × 2 | 4 sets | E355 or stainless stock tube, cut and deburred. 12 × 2 in 16 × 2 and M8 in 12 × 2 are line-to-line nominal: plan to ream the 12 × 2 bore to 8.2 and sand the 12 mm OD to slide, or use a single 16 × 4 tube if you find one stocked |
 | M3 × 55–60 socket screws | 16 | wheel outer face → inserts in the pulleys (≥ 5 mm into the insert, must not bottom in the 8 mm hole) |
-| Heat-set inserts M3 × 5.7 (~40), M4 × 8.1 (~6) | | |
+| Heat-set inserts M3 × 5.7 (34 + spares), M4 × 8.1 (4), **M2.5 × 4 (4, Pi standoffs)** | | |
 | M3 screws (shell 4, deck 4, motor plates 6, belt pull 2 × M3 × 25, HC-SR04 2), M4 thumb screws (mast 2, door 2) | | |
 | Pololu D36V50F5 (5 V, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | |
 | XT60 pigtails, 20 A blade fuse holder, panel XT60 as arming plug | | pull the plug = everything off |
@@ -321,9 +321,54 @@ tangent contacts, which is why it said "ok". Fixed by turning the holes into ope
 Earlier finds of the voxel scan: the motor-wire hole grazing the motor-plate pad, overlapping counterbore ends on
 the motor plates, and the mast's servo-lead notch.
 
+## 6c. First prototype: print list, shopping list, checks (final review 2026-11-17)
+
+**Print** (every file is a clean, watertight mesh; orientation per §4):
+
+| Part | Qty | Material for the prototype |
+|---|---|---|
+| tub | 1 | PAHT-CF (or PETG at walking/jogging speeds) |
+| shell, deck (with Pi standoffs and ESP32 cradle), bumper_door, us_bracket, pan_buckle | 1 each | PETG |
+| motor_plate_L/R, motor_pulley_L/R, wheel_pulley_FL/FR/RL/RR | 1 each | PAHT-CF |
+| mast | 1 | PAHT-CF (only needed for the camera) |
+| pulley_drill_jig | 1 | PETG, to drill the 4 wheel cores |
+| proto_sleeve_in, proto_sleeve_out | 4 each | PAHT-CF, 100 % infill (§6b) |
+| proto_belt_motor, proto_belt_rear | 2 each | TPU for AMS (§6b) |
+
+**Buy for a rolling prototype:**
+- 2 × 5010 motors with M3 prop holes on D12 and 2 × AM32 ESCs.
+- 3S battery ≤ 145 × 50 × 30 + XT60s + a fuse.
+- A 4-pack of 90 × 52 wheels with bearings and 12 × 8 spacers.
+- 4 × M8 × 140 12.9 bolts + nylocs + washers.
+- 4 × 608-2RS for the idlers + 2 × M8 × 55 hex bolts.
+- Heat-set inserts (above), M3/M4/M2.5 screws, 16 × M3 × 55–60.
+- The 5 V Pololu regulator for the Pi.
+
+Not needed yet: the steel tubes and real belts (the prototype kit replaces them), the servo, UWB and mast hardware.
+
+**Measure before printing these:**
+1. Your wheel's bearing inset, for the length of `proto_sleeve_out`. The wheel and pulley must sit where the model
+   says, or the belts run on their flanges.
+2. The motor (§5): body length ≤ 33 mm, D12 prop holes, shaft stub.
+3. The ESP32 board width (`esp_w`) and the battery size.
+
+Change PARAMS, re-run the script and re-export. The tub, shell and deck don't depend on these and can be printed
+now.
+
+**Checks this design passes** (`check_design.py`, `check_manifold.py`, `check_mesh.py` with strict booleans):
+- Clearances, holes and insert depths, assembly paths (every part, nut and wheel pair can go in and come out).
+- Wiring routes, strength at the worst road event, ground clearance and the camera view.
+- 0 non-manifold / open edges in all printed parts.
+
+**Known limits:**
+- The tooth shape on the pulleys and printed belts is approximate (round grooves). Fine for a prototype.
+- The printed axle sleeves are good to ~8 mph over small cracks.
+- The TPU belts' life is unknown.
+- The pull-screw bosses, mast and sensor bracket need a little tree support.
+
 ## 7. Assembly order
 
-1. Inserts into the tub (shell, deck, motor-plate, door, HC-SR04, mast), motor plates and pulleys.
+1. Inserts into the tub (shell, deck, motor-plate, door, HC-SR04, mast), motor plates, pulleys and the 4 M2.5 inserts into the deck's Pi standoffs.
 2. Motor → plate; 28T pulley → bell; plate into the wall pocket, 3 × M3 from inside, loose; pull screw loose.
 3. Each axle: drop the M8 nyloc into its boss pocket from inside the tub; inner sleeve into the boss from outside, then
    the collar.
