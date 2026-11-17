@@ -64,20 +64,32 @@ def to_distance_bearing(x: float, y: float) -> Tuple[float, float]:
 
 
 class RangeFilter:
-    """Per-anchor cleanup: median-of-N kills single-sample spikes, then an
-    exponential moving average smooths. Rejects samples outside [min, max]."""
+    """Cleanup for one measured quantity (a range, or an AoA bearing with min/max set to suit):
+    median-of-N kills single-sample spikes, then an exponential moving average smooths.
+
+    A sample outside [min, max] or not finite is "no measurement this cycle": update() returns None,
+    so the caller publishes nothing and the follower's target timeout can see the dropout. (Returning
+    the last estimate here would keep a lost tag looking alive, and the robot would chase a ghost.)
+    After max_misses of those in a row the history is cleared, so a re-acquired tag is not blended
+    with where it was before the gap."""
 
     def __init__(self, window: int = 3, alpha: float = 0.5,
-                 min_range: float = 0.1, max_range: float = 50.0):
+                 min_range: float = 0.1, max_range: float = 50.0, max_misses: int = 5):
         self.window = deque(maxlen=max(1, window))
         self.alpha = alpha
         self.min_range = min_range
         self.max_range = max_range
+        self.max_misses = max_misses
+        self.misses = 0
         self.value: Optional[float] = None
 
     def update(self, r: float) -> Optional[float]:
         if not math.isfinite(r) or r < self.min_range or r > self.max_range:
-            return self.value            # ignore junk; keep the last estimate
+            self.misses += 1
+            if self.misses >= self.max_misses:
+                self.reset()
+            return None
+        self.misses = 0
         self.window.append(r)
         med = sorted(self.window)[len(self.window) // 2]
         self.value = med if self.value is None else self.alpha * med + (1 - self.alpha) * self.value
@@ -86,3 +98,4 @@ class RangeFilter:
     def reset(self):
         self.window.clear()
         self.value = None
+        self.misses = 0

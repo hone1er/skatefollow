@@ -69,3 +69,66 @@ def test_slow_factor_edges():
 
 def test_priority_link_beats_obstacle():
     assert run(link_ok=False, range_m=0.1) == (0.0, 0.0, LINK_DOWN)
+
+
+# ---- sight limit: never faster than the robot can stop within what the sensor sees ----------------
+from honebot_safety.gate import SIGHT_LIMIT, rising_cap, sight_speed  # noqa: E402
+
+SIGHT = GateParams(brake_decel=4.4, reaction_time=0.25, sight_distance=3.0)
+
+
+def _run(linear, range_m, p=SIGHT, cap=None):
+    return gate_command(linear, 0.0, range_m, 0.0, True, 0.0, 0.0, p, cap)
+
+
+def test_sight_limit_is_off_by_default():
+    assert sight_speed(1.0, GateParams()) == math.inf
+    assert _run(9.0, 2.0, GateParams())[0] == 9.0
+
+
+def test_sight_speed_stops_within_the_room_it_has():
+    for rng in (0.6, 1.0, 1.95, 3.0, math.inf):
+        v = sight_speed(rng, SIGHT)
+        room = min(rng, SIGHT.sight_distance) - SIGHT.stop_distance
+        assert math.isclose(SIGHT.reaction_time * v + v * v / (2 * SIGHT.brake_decel), room, rel_tol=1e-9)
+    assert sight_speed(0.3, SIGHT) == 0.0
+    # the two numbers the docs quote: ground return at 1.95 m, and "nothing seen"
+    assert math.isclose(sight_speed(1.95, SIGHT), 2.75, abs_tol=0.05)
+    assert math.isclose(sight_speed(math.inf, SIGHT), 3.81, abs_tol=0.05)
+
+
+def test_sight_limit_caps_and_names_the_state():
+    lin, _, state = _run(6.0, math.inf)
+    assert math.isclose(lin, sight_speed(math.inf, SIGHT)) and state == SIGHT_LIMIT
+    lin, _, state = _run(1.0, math.inf)
+    assert lin == 1.0 and state == OK                    # below the limit: untouched
+    lin, _, state = _run(-2.0, 0.2)
+    assert lin == -2.0 and state == OK                   # reversing is never capped
+
+
+def test_sight_limit_never_fights_the_follower_behind_a_skater():
+    # When the skater is what the sensor sees, the follower (1.5 m gap, 0.5 s headway, same decel) must
+    # already be at or below the gate's limit, or the two would tug against each other.
+    def follower_speed(d):
+        extra = d - 1.5
+        return 0.0 if extra <= 0 else 4.4 * (-0.5 + math.sqrt(0.25 + 2 * extra / 4.4))
+    d = 0.5
+    while d <= SIGHT.sight_distance:
+        assert sight_speed(d, SIGHT) >= follower_speed(d) - 1e-9, d
+        d += 0.05
+
+
+def test_cap_drops_at_once_and_rises_slowly():
+    cap = None
+    seen = []
+    for i in range(100):                                   # 2 s at 50 Hz, reading flickers ground / nothing
+        rng = 1.95 if i % 2 == 0 else math.inf
+        cap = rising_cap(cap, sight_speed(rng, SIGHT), 0.02, SIGHT)
+        seen.append(cap)
+    low = sight_speed(1.95, SIGHT)
+    assert max(seen[1:]) <= low + SIGHT.cap_rise_rate * 0.02 + 1e-9      # never surges toward the 'nothing' limit
+    # steady "nothing": climbs at cap_rise_rate, reaching the higher limit after about a second
+    for _ in range(100):
+        cap = rising_cap(cap, sight_speed(math.inf, SIGHT), 0.02, SIGHT)
+    assert math.isclose(cap, sight_speed(math.inf, SIGHT))
+    assert rising_cap(cap, 0.5, 0.02, SIGHT) == 0.5                      # an obstacle: drops immediately
