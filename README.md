@@ -166,8 +166,9 @@ alive. Each layer watches its *own* inputs with its *own* timeout.
 
 | Layer (top → bottom) | Watches | Timeout | Action when it trips |
 |---|---|---|---|
+| `uwb_node` | each UWB sample (no fix, out of range, outside the anchor's usable angle) | per sample | publishes nothing, so the follower's timeout sees the dropout |
 | `follower` | age of the last `/target` | `target_timeout` 0.5 s | publishes a zero `Twist` |
-| `safety_gate` | ESP32 link flag and its age; range reading validity and age; age of the controller's command; obstacle distance | `range_timeout` 0.3 s, `cmd_timeout` 0.5 s, `stop_distance` 0.4 m, `slow_distance` 1.0 m | publishes zero (or forward-blocked / scaled) on `/cmd_vel` and the reason on `/safety/state` |
+| `safety_gate` | ESP32 link flag and its age; range reading validity and age; age of the controller's command; obstacle distance; **sight limit** (robot config: never faster than it can stop within what the sensor sees, 2.7–3.8 m/s with the ultrasonic sensor) | `range_timeout` 0.3 s, `cmd_timeout` 0.5 s, `stop_distance` 0.4 m, `slow_distance` 1.0 m | publishes zero (or forward-blocked / scaled / capped) on `/cmd_vel` and the reason on `/safety/state` |
 | `esp32_bridge` | age of the last `/cmd_vel` | `cmd_timeout` 0.3 s | sends `C,0,0` (neutral); also one neutral on exit |
 | ESP32 firmware (2.2.0) | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window; handheld remote (STOP, lost, or never heard when `REMOTE_REQUIRED`) | 500 ms, 200 ms, 2 s, 500 ms | ramps both drive channels to 1500 µs at 0.5 g (hard neutral after 2.5 s and at boot); reports via `S,1,…` and `K,…` |
 | Handheld remote (`firmware/esp32_remote`) | its button (STOP/RUN) and stick | — | STOP or radio loss stops the robot; in RUN the stick drives manually and overrides the Pi (the ultrasonic gate does not apply to manual driving) |
@@ -192,11 +193,11 @@ Properties that follow from this table and that the code relies on:
   *invalid* and stops the robot. Confusing those two would make an empty car park look like a wall.
 - **The camera pan servo is outside the fail-safe.** It holds its last position when the link drops. A
   camera cannot hurt anyone, and snapping it to centre mid-run would ruin the footage.
-- **Bench caps live in the firmware** (`THROTTLE_LIMIT` 0.5, 2.0 /s ramp) so a wrong Pi-side parameter
-  during early testing cannot command full power. They are meant to be raised once the robot behaves.
+- **Bench caps live in the firmware** (`THROTTLE_LIMIT` 0.5, ramps of 0.8 g up / 0.7 g down) so a wrong Pi-side
+  parameter during early testing cannot command full power. They are meant to be raised once the robot behaves.
 
-Planned and not yet built: wireless kill switch (second ESP32 over ESP-NOW, handled entirely on the
-ESP32 side so it works without the Pi), and longer-range obstacle sensing for high speed.
+Not yet built: longer-range obstacle sensing. Until then the gate's sight limit holds the robot to about
+6–8 mph (`docs/first_drive.md` has the full table of today's speed limits).
 
 ---
 
@@ -399,7 +400,18 @@ source install/setup.bash          # or open a new shell
 colcon test && colcon test-result --verbose
 ```
 
-### Run the robot stack (ESP32 bridge + safety gate + Foxglove bridge)
+### Run the robot (real robot settings from `src/honebot_bringup/config/robot.yaml`)
+The safety layer (bridge + gate + Foxglove) is what `honebot.service` starts at boot; by hand it is:
+```bash
+ros2 launch honebot_bringup robot.launch.py
+```
+Follow and film (UWB + follower + camera + a bag of the run), started by hand once the safety layer is up:
+```bash
+ros2 launch honebot_bringup film.launch.py max_linear:=2.0
+```
+The staged test plan is `docs/first_drive.md`.
+
+### Bench stack with default parameters (ESP32 bridge + safety gate + Foxglove bridge)
 ```bash
 ros2 launch honebot_bringup bringup.launch.py
 ```
@@ -449,15 +461,16 @@ ros2 launch honebot_uwb uwb.launch.py port:=/dev/ttyUSB1
 
 ### Firmware (Mac)
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32 honebot_ws/firmware/esp32_ultrasonic
-arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 honebot_ws/firmware/esp32_ultrasonic
+cd <your clone of this repo>
+arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
+arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```
 On boot it prints `V,2.2.0`; the bridge logs `ESP32 firmware version 2.2.0`. The handheld remote is a second sketch,
 `firmware/esp32_remote` (see its README); from 2.2.0 the robot does not move unless the remote is in RUN.
 
 ### Auto-start at boot and serial-port tweak (need sudo)
-See `src/honebot_bringup/systemd/honebot.service` and `src/honebot_hardware/udev/99-honebot-esp32.rules`;
-the install commands are in the comments at the top of each file.
+Run `./scripts/pi_setup.sh` on the Pi (it asks for sudo). It installs `setserial`, the udev rule and
+`honebot.service`. Once the service runs, `sudo systemctl stop honebot` before launching the safety layer by hand.
 
 ---
 
@@ -467,14 +480,18 @@ the install commands are in the comments at the top of each file.
 honebot_ws/
 ├── README.md                      this file: architecture + run card
 ├── CLAUDE.md                      project handoff: hardware, history, gotchas, phase plan
-├── docs/                          design research (chassis, electronics, camera) with prices and links
-├── firmware/esp32_ultrasonic/     Arduino sketch for the ESP32 (+ README)
+├── docs/                          start at docs/README.md (index) and docs/first_drive.md (test plan)
+├── cad/                           chassis: Fusion script + offline checks (docs/chassis_cad.md)
+├── scripts/pi_setup.sh            Pi housekeeping (udev rule, auto-start service)
+├── firmware/esp32_ultrasonic/     robot ESP32 sketch (+ README)
+├── firmware/esp32_remote/         handheld remote sketch: kill switch + manual drive (+ README)
+├── firmware/tests/                PC tests of the firmware logic
 └── src/
     ├── honebot_follow/            follow-me controller; turtlesim demo; simulated UWB     (+ README)
     ├── honebot_safety/            safety gate between controller and motors              (+ README)
     ├── honebot_hardware/          ESP32 serial bridge; Twist → wheel/steer conversion    (+ README)
     ├── honebot_uwb/               UWB serial → relative target                           (+ README)
     ├── honebot_camera/            GoPro/webcam in, person detection, pan-servo aiming    (+ README)
-    └── honebot_bringup/           top-level launch files, systemd unit                   (+ README)
+    └── honebot_bringup/           launch files, config/robot.yaml, systemd unit          (+ README)
 ```
 Each package: `honebot_<name>/` (Python module), `launch/`, `test/`, `setup.py`, `package.xml`.
