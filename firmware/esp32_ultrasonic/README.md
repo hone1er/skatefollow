@@ -67,6 +67,13 @@ the bridge's `left_reversed` / `right_reversed`, so the Pi and the stick agree.
 
 The pan channel is independent of fail-safe: it slews toward the last `P` and is centred only at boot.
 
+## Bench check: does the ESC slow the wheels with the ramp?
+
+The ramp and the follower's stopping distances assume the motors **brake** as the command falls. On AM32 that
+is a setting (look for "Complementary PWM" / active braking in the configurator; confirm the name there). Wheels
+off the ground, drive at command 0.5, click STOP on the remote: the wheels should wind down over about 1 s. If
+they coast on for longer, braking is off, and the robot will need far more room to stop than the docs say.
+
 ## Build, flash, check (Mac)
 
 ```bash

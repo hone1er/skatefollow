@@ -23,6 +23,7 @@ follower:
     # Skid steer scrubs its tyres when it pivots: roll on arcs instead.
     min_turn_radius: 0.4           # m
     arc_speed: 0.6                 # m/s kept while turning toward a target off to the side
-    pivot_bearing: 2.0             # rad (115 deg): target further round than this -> pivot in place
-    stopped_turn_deadband: 0.6     # rad (34 deg): when stopped next to the skater, do not pivot for less
-    #                                than this (the camera pan covers +/-45 deg)
+    pivot_bearing: 2.0             # rad (115 deg): target further round than this -> pivot in place, fast
+    pivot_rate: 0.8                # rad/s: gentle pivot that is always allowed (little scrub at this rate)
+    stopped_turn_deadband: 0.6     # rad (34 deg): do not pivot for bearings smaller than this
+    #                                (the camera pan covers +/-45 deg)

@@ -42,7 +42,9 @@ ignored at debug level. On exit the node sends one neutral `C,0,0` and closes th
 
 Parameters: `port`, `baud`, `frame_id`, `heartbeat_hz`, `cmd_rate_hz`, `cmd_timeout`, `pan_rate_hz`,
 `send_commands` (false = sensor-only), `drive_mode` (`diff` | `ackermann`), and the kinematic numbers
-`track_width`, `max_wheel_speed`, `left_reversed`, `right_reversed` (diff) or `wheelbase`,
+`track_width` (0.39: geometric 0.277 m × 1.4 for tyre scrub, set from the spin test), `max_wheel_speed` (9.6),
+`left_reversed`, `right_reversed` (leave false on the real robot: motor direction is set in the firmware so the
+handheld remote agrees) (diff) or `wheelbase`,
 `max_steer_angle`, `max_speed`, `min_speed_for_steer`, `steer_reversed`, `throttle_reversed` (ackermann).
 **All kinematic numbers are placeholders until the drivetrain exists.**
 

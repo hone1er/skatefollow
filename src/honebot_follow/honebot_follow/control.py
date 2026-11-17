@@ -28,8 +28,9 @@ class FollowGains:
     max_lat_accel: float = 0.0     # m/s^2 cap on v * omega (cornering); 0 = no cap
     min_turn_radius: float = 0.0   # m. > 0: turn on arcs of at least this radius instead of pivoting ...
     arc_speed: float = 0.6         # m/s kept while arcing toward a target off to the side
-    pivot_bearing: float = 2.0     # rad: ... unless the target is further round than this (then pivot)
-    stopped_turn_deadband: float = 0.0   # rad: when stopped at the target, do not pivot for bearings below this
+    pivot_bearing: float = 2.0     # rad: ... unless the target is further round than this (then pivot fast)
+    pivot_rate: float = 0.8        # rad/s: gentle pivot always allowed in arc mode (little scrub at this rate)
+    stopped_turn_deadband: float = 0.0   # rad: bearings below this are not turned toward by pivoting
 
 
 def safe_gap(speed: float, g: 'FollowGains') -> float:
@@ -94,20 +95,30 @@ def follow_command_relative(distance: float, bearing: float, g: FollowGains):
         base = g.kp_linear * gap
     linear = clamp(base * max(0.0, math.cos(heading_error)), 0.0, g.max_linear)
 
+    arcs = g.min_turn_radius > 0.0 and abs(heading_error) <= g.pivot_bearing
+    # Gentle pivot allowed in arc mode: grows from zero at the deadband, capped at pivot_rate. Used both when
+    # stopped and as the yaw floor while rolling, so the command is continuous through follow_distance
+    # (a noisy range must not flip between "pivot hard" and "barely turn").
+    slow_pivot = min(g.pivot_rate, g.kp_angular * max(0.0, abs(heading_error) - g.stopped_turn_deadband))
+
     if gap <= 0.0:
         # Close enough: stop, and stop turning when right on top of the target
         # where the bearing is meaningless.
         linear = 0.0
-        if distance < 0.2 or abs(heading_error) < g.stopped_turn_deadband:
+        if distance < 0.2:
+            angular = 0.0
+        elif arcs:
+            angular = clamp(angular, -slow_pivot, slow_pivot)
+        elif abs(heading_error) < g.stopped_turn_deadband:
             angular = 0.0
     elif g.ackermann and linear < g.creep_speed:
         # Target is far but we're pointed away from it; a car has to roll to turn.
         linear = min(g.creep_speed, g.max_linear)
-    elif g.min_turn_radius > 0.0 and abs(heading_error) <= g.pivot_bearing:
+    elif arcs:
         # Skid steer scrubs its tyres when it pivots: keep rolling and turn on an arc instead.
         # (Target further round than pivot_bearing: a pivot is quicker than a long loop.)
         linear = max(linear, min(g.arc_speed, g.max_linear, base))
-        w_max = linear / g.min_turn_radius
+        w_max = max(linear / g.min_turn_radius, slow_pivot)
         angular = clamp(angular, -w_max, w_max)
 
     if g.max_lat_accel > 0.0 and linear > 1e-3:

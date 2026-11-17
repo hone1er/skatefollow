@@ -119,6 +119,14 @@ static void test_decide_manual() {
   decide(REQ, withRemote(piOk(7000), true, 0, 0), &st);
   assert(decide(REQ, withRemote(piOk(7020), true, 0.6f, 0), &st).source == SRC_MANUAL);
   assert(decide(REQ, withRemote(piOk(7700), true, 0.6f, 0, 680), &st).source == SRC_NONE);
+  // a packet stamped just after loop() read the clock (timestamp 1 ms in the future) is fresh, and manual holds
+  st = State();
+  decide(REQ, withRemote(piOk(8000), true, 0, 0), &st);
+  assert(decide(REQ, withRemote(piOk(8020), true, 0.6f, 0), &st).source == SRC_MANUAL);
+  Inputs ahead = withRemote(piOk(8040), true, 0.6f, 0);
+  ahead.lastRemoteMs = ahead.nowMs + 1;
+  Decision da = decide(REQ, ahead, &st);
+  assert(da.remote == REMOTE_RUN && da.source == SRC_MANUAL);
   // near the 32-bit millis() wrap, unsigned subtraction still gives the right ages
   st = State();
   Inputs w{};

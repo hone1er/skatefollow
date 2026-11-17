@@ -50,7 +50,7 @@ Hard requirements that shape every decision:
 | Trig | GPIO 5 |
 | Echo | 1 kΩ → GPIO 18, and 2 kΩ from GPIO 18 → GND (5 V → 3.3 V divider) |
 
-Onboard LED = GPIO 2 (used as the heartbeat/link indicator). Pins used: 2, 5, 18, 25, 26, 27.
+Onboard LED = GPIO 2 (firmware 2.2.0: on = someone may drive, slow blink = fail-safe with Pi link, fast blink = remote STOP/lost). Pins used: 2, 5, 18, 25, 26, 27.
 The USB chip is a **CP2102 (bcdDevice 1.00, serial "0001")**: closing the port blocks ~5 s (see gotchas).
 
 ### Wiring (pan servo ↔ ESP32, GoPro ↔ Pi) — planned, see `docs/camera_plan.md` §2
@@ -114,7 +114,7 @@ honebot_ws/
     │   ├── honebot_follow/pose_to_target.py   simulated UWB from turtlesim poses
     │   ├── launch/turtle_follow.launch.py   use_safety / relative / ackermann options
     │   ├── config/robot.yaml + launch/robot_follow.launch.py   real-robot follower settings
-    │   └── test/test_control.py          22 pytest tests
+    │   └── test/test_control.py          23 pytest tests
     ├── honebot_safety/               ament_python — safety gate
     │   ├── honebot_safety/gate.py        pure gate logic (unit-tested)
     │   ├── honebot_safety/safety_gate.py ROS node
@@ -190,8 +190,9 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   gap(v) = `follow_distance` + `time_headway`·v + v²/(2·`brake_decel`) (1.5 m / 0.5 s / 4.4 m/s² → 4.7 m at 8 mph,
   7.5 m at 12, 10.0 m at 15), commanded as the closed-form inverse `speed_for_gap(distance)` so there is no
   self-speed feedback loop; `min_turn_radius` (0.4) + `arc_speed` (0.6) + `pivot_bearing` (2.0 rad) roll on arcs
-  instead of pivoting; `max_lat_accel` (4.0) caps v·ω; `stopped_turn_deadband` (0.6 rad). `max_linear` starts at 3.0
-  and must exceed the skater's speed. 22 tests, incl. a 20 Hz loop simulation with a dead stop at 8/12/15 mph.
+  instead of pivoting, with a gentle `pivot_rate` (0.8 rad/s) always allowed so the command is continuous through
+  `follow_distance`; `max_lat_accel` (4.0) caps v·ω; `stopped_turn_deadband` (0.6 rad). `max_linear` starts at 3.0
+  and must exceed the skater's speed. 23 tests, incl. a 20 Hz loop simulation with a dead stop at 8/12/15 mph.
 
 ### honebot_safety — `safety_gate` node
 - Subscribes `cmd_vel_raw` (Twist), `ultrasonic/range`, `esp32/link_ok`; publishes `cmd_vel` at `rate_hz` (50)

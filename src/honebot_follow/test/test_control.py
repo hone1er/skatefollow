@@ -94,7 +94,7 @@ from honebot_follow.control import safe_gap, speed_for_gap  # noqa: E402
 
 ROBOT = FollowGains(follow_distance=1.5, max_linear=8.0, kp_angular=3.0, max_angular=3.0,
                     brake_decel=4.4, time_headway=0.5, max_lat_accel=4.0,
-                    min_turn_radius=0.4, arc_speed=0.6, pivot_bearing=2.0, stopped_turn_deadband=0.6)
+                    min_turn_radius=0.4, arc_speed=0.6, pivot_bearing=2.0, pivot_rate=0.8, stopped_turn_deadband=0.6)
 
 
 def test_new_options_default_off():
@@ -184,5 +184,18 @@ def test_cornering_cap_at_speed():
 def test_no_pivot_for_small_bearings_when_stopped():
     v, w, _ = follow_command_relative(1.2, 0.4, ROBOT)              # inside follow distance, 23 deg off
     assert v == 0.0 and w == 0.0
-    v, w, _ = follow_command_relative(1.2, 1.2, ROBOT)              # well off to the side: turn to face
-    assert v == 0.0 and w > 0
+    v, w, _ = follow_command_relative(1.2, 1.2, ROBOT)              # well off to the side: turn to face, gently
+    assert v == 0.0 and 0 < w <= ROBOT.pivot_rate
+
+
+def test_command_is_continuous_through_follow_distance():
+    # UWB range noise of a few cm around follow_distance must not flip the command between two behaviours
+    for bearing in (0.0, 0.3, 0.7, 1.0, 1.8, -1.0):
+        prev = None
+        d = 1.30
+        while d <= 1.70:
+            v, w, _ = follow_command_relative(d, bearing, ROBOT)
+            if prev is not None:
+                assert abs(v - prev[0]) < 0.05 and abs(w - prev[1]) < 0.1, (bearing, d, prev, (v, w))
+            prev = (v, w)
+            d += 0.01

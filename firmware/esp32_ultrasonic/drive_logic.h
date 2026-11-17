@@ -99,8 +99,13 @@ struct Decision {
   bool piLink;
 };
 
+// `last` may be a millisecond AHEAD of `now`: the radio callback stamps packets on another task after loop()
+// has already read the clock. Treat that as age 0 instead of letting the subtraction wrap to "49 days old".
 inline bool fresh(bool seen, uint32_t last, uint32_t now, uint32_t timeout) {
-  return seen && (uint32_t)(now - last) < timeout;
+  if (!seen) return false;
+  int32_t age = (int32_t)(now - last);
+  if (age < 0) age = 0;
+  return (uint32_t)age < timeout;
 }
 
 // Decide who drives. Order matters and every "no" ends in SRC_NONE (motors ramp to neutral):

@@ -47,7 +47,7 @@ if sudo cmp -s "$RULE_SRC" "$RULE_DST"; then
 else
   sudo install -m 0644 "$RULE_SRC" "$RULE_DST"
   sudo udevadm control --reload-rules
-  sudo udevadm trigger --subsystem-match=tty
+  sudo udevadm trigger --action=add --subsystem-match=tty
   echo "installed"
 fi
 sleep 1
