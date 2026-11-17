@@ -57,6 +57,8 @@ PARAMS = {
     # prototype kit (hidden "Prototype kit" group): printed axle sleeves + TPU belts, to drive before buying metal
     "tpu_E": 600.0,             # [V/M] Bambu "TPU for AMS" (68D) TDS: 1190 MPa X-Y, 600 MPa Z; the lower value is used
     "tpu_strength": 22.4,       # [V] same TDS, tensile strength X-Y (belts print flat, so the loop runs in X-Y)
+    "tpu_belt_t": 0.8,          # [D] printed belt body thickness: a cordless belt bends about its mid-plane, so a thin
+                                #     body keeps that plane on the pulley pitch line (0.38 mm outside the tooth tips)
     "tpu_T0": 15.0,             # [D] TPU belt pretension per strand, N; belts print short by T0 / EA so they sit on pitch
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
@@ -444,7 +446,7 @@ def build_model(P=None):
     ]
     for _, ax in AX:   # axle tie beam: carries each axle's bending couple across the tub (with the floor); 62 mm bridge
         tub_adds.append(box(ax - 12, ax + 12, -inner, inner, 66, dz0))
-    m.info["axle_tie"] = {"w": 24.0, "z0": 66.0, "z1": dz0, "boss_len": 36.0, "floor_t": P["floor_t"], "zf0": zf0}
+    m.info["axle_tie"] = {"w": 24.0, "z0": 66.0, "z1": dz0, "z_notch": 72.5, "boss_len": 36.0, "floor_t": P["floor_t"], "zf0": zf0}
     # print floor-down without supports: everything hanging off a wall either runs to the floor or has a 45 deg underside.
     # 45 deg wedge under the mast socket block (rotated square, clipped inside the front wall)
     hd = xf_in - (P["mast_x"] - 17) - 0.2
@@ -505,7 +507,7 @@ def build_model(P=None):
         side = "L" if s > 0 else "R"
         ys = s * 1.0
         for nm, ax in AX:
-            tub_cuts.append(box(ax - 7.7, ax + 7.7, s * (31 - co), s * 40, az - 6.7, az + 6.7))   # captive M8 nyloc pocket
+            tub_cuts.append(box(ax - 7.7, ax + 7.7, s * (31 - co), s * 40, az - 6.45, az + 6.45))   # M8 nyloc pocket: 12.9 across the 13 mm flats = light press, the nut stays when the bolt is out
             m.hole("tub", "axle_sleeve_%s%s" % (nm, side), (ax, s * 39.7, az), (ax, s * (hw + 8 + co), az), sd + 0.4,
                    for_item="inner axle sleeve %g x 8.2 x 30.3 (through the boss)" % sd)
         # motor plate pocket (capsule along the belt) + shaft clearance + tension slots + pull-screw stop
@@ -686,8 +688,8 @@ def build_model(P=None):
             for k in range(4):
                 ang = k * math.pi / 2 + math.pi / 4
                 hx, hz = ax + 17.5 * math.cos(ang), az + 17.5 * math.sin(ang)
-                m.hole(pn, "core_%d" % k, (hx, s * (wiy + co), hz), (hx, s * (wiy - P["ins_m3_depth"] - 1.5), hz),
-                       P["ins_m3"], kind="insert", for_item="M3 x 60 from the wheel's outer face through the core "
+                m.hole(pn, "core_%d" % k, (hx, s * (wiy + co), hz), (hx, s * (wiy - 14.0), hz),
+                       P["ins_m3"], kind="insert", for_item="M3 x 60 from the wheel's outer face through the core, 14 mm hole "
                        "(holes drilled 3.0 -> 3.15 with the jig: they centre the pulley)")
     m.info["wheel_pulley_flange_r"] = wfl
     for k in (-1, 1):                          # wire grommet must clear the plate pad (no knife edges)
@@ -720,15 +722,17 @@ def build_model(P=None):
                [cyl_z(pz, pz + lo, cx, cy + 40, sd / 2), cyl_z(pz + lo - 0.01, pz + lo + 1.5, cx, cy + 40, 6.0)],
                [cyl_z(pz - co, pz + lo + 1.5 + co, cx, cy + 40, 4.2)], material="PAHT-CF", hidden=True,
                note="prototype: outer sleeve + inner-race lip (%.1f mm: set to your wheel's bearing inset)" % (lo + 1.5))
-    EA = P["tpu_E"] * P["belt_w"] * 2.0
+    tb = P["tpu_belt_t"]
+    EA = P["tpu_E"] * P["belt_w"] * tb
     for nm, L, cx, cy in (("motor", P["belt_len"], -100.0, 0.0), ("rear", P["belt2_len"], -100.0, 230.0)):
         n_t = int(round(L / 3.0))
         Lp = L / (1 + P["tpu_T0"] / EA)
         R = Lp / (2 * math.pi)
-        teeth_ = [cyl_z(pz, pz + P["belt_w"], cx + (R - 0.62) * math.cos(2 * math.pi * j / n_t),
-                        cy + (R - 0.62) * math.sin(2 * math.pi * j / n_t), 0.85) for j in range(n_t)]
+        rt = R - 0.38 - 0.24                 # tooth centres sit where the pulley's groove centres are; 0.2 mm clearance
+        teeth_ = [cyl_z(pz, pz + P["belt_w"], cx + rt * math.cos(2 * math.pi * j / n_t),
+                        cy + rt * math.sin(2 * math.pi * j / n_t), 0.7) for j in range(n_t)]
         m.part("proto_belt_%s" % nm, "prototype", COL["belt"], teeth_,
-               pre=[([cyl_z(pz, pz + P["belt_w"], cx, cy, R + 1.62)], [cyl_z(pz - co, pz + P["belt_w"] + co, cx, cy, R - 0.38)])],
+               pre=[([cyl_z(pz, pz + P["belt_w"], cx, cy, R - 0.38 + tb)], [cyl_z(pz - co, pz + P["belt_w"] + co, cx, cy, R - 0.38)])],
                material="TPU (hardest you have)", hidden=True,
                note="prototype HTD-3M %dT belt printed %.1f mm long (stretches to %.0f at %.0f N); print flat, 100 %% infill, x2"
                     % (n_t, Lp, L, P["tpu_T0"]))

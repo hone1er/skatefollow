@@ -266,7 +266,7 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | 90 × 52 longboard wheels (4-pack) with 12 × 8 bearing spacers + 8 × 608-2RS | 1 | solid core at Ø35 |
 | M8 × 140 hex bolt 12.9 + washer + 8 × 12 × 1.5 speed washer + M8 nyloc | 4 | stub axles |
 | Axle stack per wheel: steel tubes **16 × 2** (inner 30.3 mm through the boss + outer cut to measure) over **12 × 2** (full length), collar washer 8.4 × 30 × 2 | 4 sets | E355 or stainless stock tube, cut and deburred. 12 × 2 in 16 × 2 and M8 in 12 × 2 are line-to-line nominal: plan to ream the 12 × 2 bore to 8.2 and sand the 12 mm OD to slide, or use a single 16 × 4 tube if you find one stocked |
-| M3 × 55–60 socket screws | 16 | wheel outer face → inserts in the pulleys (≥ 5 mm into the insert, must not bottom in the 8 mm hole) |
+| M3 × 60 socket screws | 16 | wheel outer face → inserts in the pulleys (14 mm deep holes in the pulleys: the screw passes through the insert with room to spare) |
 | Heat-set inserts M3 × 5.7 (34 + spares), M4 × 8.1 (4), **M2.5 × 4 (4, Pi standoffs)** | | |
 | M3 screws (shell 4, deck 4, motor plates 6, belt pull 2 × M3 × 25, HC-SR04 2), M4 thumb screws (mast 2, door 2) | | |
 | Pololu D36V50F5 (5 V, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | |
@@ -284,8 +284,8 @@ calculated in report §7b.
 |---|---|---|---|
 | proto_sleeve_in_* (inner sleeve + collar, 16 × 8.4 × 32.3) | 4 | PAHT-CF, collar on the bed, 100 % infill | steel 16 × 2 / 12 × 2 tubes + collar washer |
 | proto_sleeve_out_* (outer sleeve + inner-race lip) | 4 | PAHT-CF, 100 % infill. Length = your wheel's bearing inset: measure first | outer steel tube + speed washer |
-| proto_belt_motor (86T, printed 255.3 mm) | 2 | TPU, flat, 100 % infill, hardest TPU you have | HTD 258-3M-09 |
-| proto_belt_rear (170T, printed 504.6 mm) | 2 | same | HTD 510-3M-09 |
+| proto_belt_motor (86T, printed 257.1 mm) | 2 | TPU, flat, 100 % infill, hardest TPU you have | HTD 258-3M-09 |
+| proto_belt_rear (170T, printed 508.2 mm) | 2 | same | HTD 510-3M-09 |
 
 - **Axles: keep the M8 × 140 12.9 bolts (about $2 each).** A fully printed axle can't work. The wheel bearings fix it
   at 8 mm, and an 8 mm PAHT-CF pin 76 mm out from the wall breaks at 20–50 N; a front wheel already carries 12 N
@@ -295,13 +295,17 @@ calculated in report §7b.
 - **TPU belts: Bambu "TPU for AMS" (68D).** Its datasheet gives E ≈ 1190 MPa in X-Y and 600 MPa in Z (600 is used),
   with 22.4 MPa tensile strength in X-Y. The belts print flat, so the loop runs in X-Y. That is stiff enough that
   stretch is no longer the limit:
-  - Belts print 257.6 mm and 509.3 mm long, so they reach full pitch at **15 N pretension**.
-  - Belt pull is limited to 30 N by the slack side going loose. That covers cruising, hard acceleration and
-    **turning in place** (18 N).
+  - The belt body is only **0.8 mm thick** (plus teeth). A belt without cords bends about its mid-plane, and a thin
+    body keeps that plane on the pulleys' pitch line, so the teeth stay in step. A 2 mm body would be ~1 mm out
+    over the teeth in mesh.
+  - Belts print 257.1 mm and 508.2 mm long, so they reach full pitch at **15 N pretension**.
+  - Belt pull is limited to 30 N by the slack side going loose; the tight side stays under 54 N (1/3 of strength).
+    That covers cruising, acceleration and **turning in place** (19 N).
   - Tension: 2 N at the middle of a motor-belt span → ~2 mm deflection; rear-belt span → ~3 mm.
-  - **Unknown: fatigue.** The 2 mm belt body bends to ~7 % surface strain around the 28T pulley at every pass, past
-    where hard TPU stays elastic. Check the tooth roots for whitening or cracks after each session, and keep spares
-    printed.
+  - **Print one motor belt and one 28T motor pulley first** and wrap the belt around the pulley by hand: every
+    tooth should drop into a groove all the way round. If not, tell me the mismatch before printing the rest.
+  - **Unknown: fatigue.** The body bends to ~3 % strain around the 28T pulley at every pass. Check the tooth roots
+    for whitening or cracks after each session, and keep spares printed.
   - Print with 100 % infill, walls only if your slicer allows (the loop direction then carries the load), and the
     TPU for AMS profile.
 - Swap in steel tubes and real belts (about $10–16 each) before going faster than a jog.
@@ -341,7 +345,7 @@ the motor plates, and the mast's servo-lead notch.
 - A 4-pack of 90 × 52 wheels with bearings and 12 × 8 spacers.
 - 4 × M8 × 140 12.9 bolts + nylocs + washers.
 - 4 × 608-2RS for the idlers + 2 × M8 × 55 hex bolts.
-- Heat-set inserts (above), M3/M4/M2.5 screws, 16 × M3 × 55–60.
+- Heat-set inserts (above), M3/M4/M2.5 screws, 16 × M3 × 60.
 - The 5 V Pololu regulator for the Pi.
 
 Not needed yet: the steel tubes and real belts (the prototype kit replaces them), the servo, UWB and mast hardware.
@@ -370,11 +374,13 @@ now.
 
 1. Inserts into the tub (shell, deck, motor-plate, door, HC-SR04, mast), motor plates, pulleys and the 4 M2.5 inserts into the deck's Pi standoffs.
 2. Motor → plate; 28T pulley → bell; plate into the wall pocket, 3 × M3 from inside, loose; pull screw loose.
-3. Each axle: drop the M8 nyloc into its boss pocket from inside the tub; inner sleeve into the boss from outside, then
+3. Each axle: start the M8 nyloc in its boss pocket from inside the tub (a light press fit across the flats; the
+   bolt draws it in, and it stays put when the bolt is out; add a drop of CA glue if yours is loose); inner sleeve into the boss from outside, then
    the collar.
 4. **Per side, wheels and rear belt together:** screw each pulley to its wheel (4 × M3 from the outer face). Loop the
    510 mm belt around both 36T pulleys. Then fit both wheels onto their axle stacks at once (outer sleeve, speed
-   washer, wheel, washer, M8 × 140 from outside; turn until solid). Motor belt over the 28T and the 56T.
+   washer, wheel, washer, M8 × 140 from outside). With steel sleeves, turn until solid; **with the printed
+   prototype sleeves, snug only (about 3 N·m)**, or the plastic crushes. Motor belt over the 28T and the 56T.
 5. Idlers (after the wheels: even at the top of the slot the idler sits inside the belt path): M8 hex bolt from
    inside the tub (head in the hex channel), spacer, shim, 2 × 608, shim, washer, nyloc, loose.
 6. Tension: motor belt with the pull screw (2 N → ~1 mm at mid-span), then the three plate screws; rear belt: slide

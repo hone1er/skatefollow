@@ -737,9 +737,9 @@ def structural(M, report, mass, cg, dyn):
     tie = M.info["axle_tie"]
     arm = (tie["z0"] + tie["z1"]) / 2 - (tie["zf0"] + tie["floor_t"] / 2)
     F_c = M_root / arm
-    s_tie = F_c / (tie["w"] * (tie["z1"] - tie["z0"]))
+    s_tie = F_c / (tie["w"] * (tie["z_notch"] - tie["z0"]))      # weakest section: under the harness notch
     s_fl = F_c / (tie["boss_len"] * tie["floor_t"])
-    rows.append(("axle tie beam %.0f x %.0f across the tub (allow 40 MPa)" % (tie["w"], tie["z1"] - tie["z0"]),
+    rows.append(("axle tie beam, %.0f x %.1f under the harness notch (allow 40 MPa)" % (tie["w"], tie["z_notch"] - tie["z0"]),
                  "couple %.0f N over %.0f mm" % (F_c, arm), "%.1f MPa" % s_tie, 40 / s_tie))
     rows.append(("floor under the boss, the other half of the couple (allow 40 MPa)", "%.0f x %.0f mm" % (tie["boss_len"], tie["floor_t"]),
                  "%.1f MPa" % s_fl, 40 / s_fl))
@@ -824,7 +824,7 @@ def prototype(M, report, mass, dyn):
     r56 = P["pul_w_pd"] / 2
     teeth_mesh = P["pul_m_t"] * 0.45                  # ~160 deg wrap on the 28T motor pulley
     err_ok = 0.5                                      # [assumption] cumulative pitch error before teeth ride out (mm)
-    T_str = P["tpu_strength"] / 3.0 * P["belt_w"] * 2.0          # tight-side limit: 1/3 of tensile strength (fatigue, layers)
+    T_str = P["tpu_strength"] / 3.0 * P["belt_w"] * P["tpu_belt_t"]          # tight-side limit: 1/3 of tensile strength (fatigue, layers)
     Te_pitch = 2 * EA * err_ok / (3.0 * teeth_mesh)
     Te_str = 2 * (T_str - P["tpu_T0"])
     Te_slack = 2 * P["tpu_T0"]                                     # slack side must stay taut: T0 - Te/2 >= 0
@@ -833,7 +833,8 @@ def prototype(M, report, mass, dyn):
     F_side_max = Te_max * r56 / rw
     a_max = (2 * F_side_max - 0.02 * mass * g) / mass
     report.append("**TPU belts.** No tension cords: the belt stretches under load (teeth drift off the pulley pitch) and its "
-                  "strength is the plastic's. Model: EA = E x 9 mm x 2 mm = **%.0f N** (E = %.0f MPa), tight side kept "
+                  "strength is the plastic's. The body is thin (PARAMS tpu_belt_t) so its bending mid-plane sits on the pulley "
+                  "pitch line. Model: EA = E x 9 mm x thickness = **%.0f N** (E = %.0f MPa), tight side kept "
                   "below 1/3 of the %.1f MPa tensile strength (%.0f N), pretension %.0f N per strand (belts print short "
                   "by T0/EA so they sit on pitch), teeth ride out after %.1f mm of extra stretch over ~%.0f teeth in mesh.\n"
                   % (EA, P["tpu_E"], P["tpu_strength"], T_str, P["tpu_T0"], err_ok, teeth_mesh))
@@ -844,9 +845,9 @@ def prototype(M, report, mass, dyn):
                     ("turn in place (mu 0.8)", turn_side)):
         Te = F * rw / r56
         report.append("| %s | %.1f | %.1f | %s |" % (name, F, Te, "OK" if Te <= Te_max else "**skips / overloads**"))
-    bend = 1.0 / (P["pul_m_pd"] / 2) * 100
-    report.append("\nBending: the 2 mm belt body wraps the 28T pulley (pitch radius %.1f mm) at ~%.0f %% surface strain, "
-                  "well past where hard TPU stays elastic, at every pass. It will not snap at once (elongation at "
+    bend = P["tpu_belt_t"] / 2 / (P["pul_m_pd"] / 2) * 100
+    report.append("\nBending: the belt body wraps the 28T pulley (pitch radius %.1f mm) at ~%.0f %% surface strain, "
+                  "near the edge of where hard TPU stays elastic, at every pass. It will not snap at once (elongation at "
                   "break > 600 %%) but its fatigue life is unknown: inspect for whitening/cracks at the tooth roots.\n"
                   % (P["pul_m_pd"] / 2, bend))
     report.append("\nLimit: Te %.0f N (set by %s) -> about **%.1f m/s^2** of acceleration. Keep `THROTTLE_LIMIT` low, "

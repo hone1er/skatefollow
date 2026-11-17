@@ -133,22 +133,22 @@ For every hardware fastener hole: the hole axis must run through its host part f
 | deck | screw_RL | deck M3 | clear | 3.4 | 3.1 (need 2.0) | 100 % | **OK** |
 | deck | screw_FR | deck M3 | clear | 3.4 | 3.1 (need 2.0) | 100 % | **OK** |
 | deck | screw_RR | deck M3 | clear | 3.4 | 3.1 (need 2.0) | 100 % | **OK** |
-| wheel_pulley_FL | core_0 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FL | core_1 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FL | core_2 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FL | core_3 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RL | core_0 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RL | core_1 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RL | core_2 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RL | core_3 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FR | core_0 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FR | core_1 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FR | core_2 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_FR | core_3 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RR | core_0 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RR | core_1 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RR | core_2 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
-| wheel_pulley_RR | core_3 | M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 7.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FL | core_0 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FL | core_1 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FL | core_2 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FL | core_3 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RL | core_0 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RL | core_1 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RL | core_2 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RL | core_3 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FR | core_0 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FR | core_1 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FR | core_2 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_FR | core_3 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RR | core_0 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RR | core_1 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RR | core_2 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
+| wheel_pulley_RR | core_3 | M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 13.6 (need 6.0) | 100 % | **OK** |
 | bumper_door | thumb_L | M4 thumb screw | clear | 4.5 | 9.6 (need 2.0) | 100 % | **OK** |
 | bumper_door | thumb_R | M4 thumb screw | clear | 4.5 | 9.6 (need 2.0) | 100 % | **OK** |
 | us_bracket | screw_L | bracket M3 | clear | 3.4 | 27.2 (need 2.0) | 100 % | **OK** |
@@ -279,7 +279,7 @@ Printed masses from the modelled volume x density x 0.65 fill factor; hardware m
 | axle_RR | hardware | 45 | -200, -108, 45 |
 | idler_R | hardware | 45 | -100, -76, 69 |
 | mast | printed | 39 | 37, -1, 161 |
-| wheel_pulley_FL | printed | 36 | -0, 100, 45 |
+| wheel_pulley_FL | printed | 35 | -0, 100, 45 |
 | wheel_pulley_FR | printed | 34 | -0, -100, 45 |
 | esc_L | hardware | 30 | -155, 42, 89 |
 | esc_R | hardware | 30 | -155, -43, 89 |
@@ -332,7 +332,7 @@ Stopping distance = 0.25 s reaction (gate + ESC ramp) + v^2 / 2a, a limited by d
 
 | mu | speed (mph) | THIS layout (4WD): decel (g) | stop (m) | front axle braking only: decel (g) | stop (m) |
 |---|---|---|---|---|---|
-| 0.8 | 8 | 0.80 | 1.7 | 0.76 | 1.8 |
+| 0.8 | 8 | 0.80 | 1.7 | 0.76 | 1.7 |
 | 0.8 | 12 | 0.80 | 3.2 | 0.76 | 3.3 |
 | 0.8 | 15 | 0.80 | 4.5 | 0.76 | 4.7 |
 | 0.6 | 8 | 0.60 | 2.0 | 0.51 | 2.2 |
@@ -387,7 +387,7 @@ Design event: a wheel hits a square lip. Peak force = v sin(theta) x sqrt(k m), 
 | M8 + the wheel's 12 x 8 bearing spacer, between the 608s | F/2 x 44 mm bearing span | 138 MPa | 7.8 |
 | axle boss bearing on the sleeve, PAHT-CF (allow 40 MPa) | moment over a 33 mm boss | 25 MPa | 1.6 |
 | boss block root into the floor (allow 40 MPa) | 36 x 44 mm section | 6.1 MPa | 6.6 |
-| axle tie beam 24 x 13 across the tub (allow 40 MPa) | couple 1660 N over 42 mm | 5.3 MPa | 7.5 |
+| axle tie beam, 24 x 6.5 under the harness notch (allow 40 MPa) | couple 1660 N over 42 mm | 10.6 MPa | 3.8 |
 | floor under the boss, the other half of the couple (allow 40 MPa) | 36 x 4 mm | 11.5 MPa | 3.5 |
 | idler M8 clamped in a 6 mm wall slot (bearing, allow 40 MPa) | rear belt tight side 59 N | 0.6 MPa | 62.6 |
 | 608-2RS idler, static rating C0 1370 N |  | 31 N | 44.7 |
@@ -410,7 +410,7 @@ Mast first bending mode (E 3.5 GPa, ideal clamp): **118 Hz** (target > 30 Hz).
 
 Plastic in the clamped axle stack creeps: re-tighten the wheel bolts after the first runs.
 
-**TPU belts.** No tension cords: the belt stretches under load (teeth drift off the pulley pitch) and its strength is the plastic's. Model: EA = E x 9 mm x 2 mm = **10800 N** (E = 600 MPa), tight side kept below 1/3 of the 22.4 MPa tensile strength (134 N), pretension 15 N per strand (belts print short by T0/EA so they sit on pitch), teeth ride out after 0.5 mm of extra stretch over ~13 teeth in mesh.
+**TPU belts.** No tension cords: the belt stretches under load (teeth drift off the pulley pitch) and its strength is the plastic's. The body is thin (PARAMS tpu_belt_t) so its bending mid-plane sits on the pulley pitch line. Model: EA = E x 9 mm x thickness = **4320 N** (E = 600 MPa), tight side kept below 1/3 of the 22.4 MPa tensile strength (54 N), pretension 15 N per strand (belts print short by T0/EA so they sit on pitch), teeth ride out after 0.5 mm of extra stretch over ~13 teeth in mesh.
 
 | case | thrust per side (N) | belt pull Te (N) | result |
 |---|---|---|---|
@@ -418,7 +418,7 @@ Plastic in the clamped axle stack creeps: re-tighten the wheel bolts after the f
 | accelerate at 1 m/s^2 | 2.3 | 3.9 | OK |
 | turn in place (mu 0.8) | 11.0 | 18.6 | OK |
 
-Bending: the 2 mm belt body wraps the 28T pulley (pitch radius 13.4 mm) at ~7 % surface strain, well past where hard TPU stays elastic, at every pass. It will not snap at once (elongation at break > 600 %) but its fatigue life is unknown: inspect for whitening/cracks at the tooth roots.
+Bending: the belt body wraps the 28T pulley (pitch radius 13.4 mm) at ~3 % surface strain, near the edge of where hard TPU stays elastic, at every pass. It will not snap at once (elongation at break > 600 %) but its fatigue life is unknown: inspect for whitening/cracks at the tooth roots.
 
 
 Limit: Te 30 N (set by pretension: slack side goes loose) -> about **9.0 m/s^2** of acceleration. Keep `THROTTLE_LIMIT` low, re-tension after the first runs, and swap in real HTD-3M belts (about $10-16 each) before driving fast: a printed belt also flexes around the 28T pulley at every turn and its life is unknown.
@@ -485,7 +485,7 @@ Threads in printed parts are always heat-set inserts (never tapped plastic); ser
 | HC-SR04 transducer | clear | 18.0 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | M3 low-head counterbore | cbore | 5.8 | 8 | counterbore for a low-head screw |
 | M3 x 12 low head into the bell | clear | 3.4 | 8 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
-| M3 x 60 from the wheel's outer face through the core (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 16 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
+| M3 x 60 from the wheel's outer face through the core, 14 mm hole (holes drilled 3.0 -> 3.15 with the jig: they centre the pulley) | insert | 4.0 | 16 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | M4 thumb screw | clear | 4.5 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | Raspberry Pi 5 M2.5 x 6 screw into a printed standoff | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | SG90 ear screw | slot | 2.0 | 2 | slotted clearance, adjust then tighten |
