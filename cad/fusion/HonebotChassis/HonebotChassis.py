@@ -64,7 +64,7 @@ PARAMS = {
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
     # SunFounder ESP32 extension adapter: one printed plate that slides into the cradle grooves, 4 plain printed
-    # spacer tubes in counterbores, M2 screws self-tapping into pilot holes in bosses under the plate, vent slots
+    # spacer tubes in counterbores, M2 screws into heat-set inserts in bosses under the plate, vent slots
     "ext_board_x": 64.0, "ext_board_y": 67.0, "ext_hole_dx": 57.0, "ext_hole_dy": 60.0,   # [V] SunFounder drawing
     "ext_fit_side": 0.2,   # [D] clearance per side, tongue web/flange to the cradle rails (snug slide, PETG on PETG)
     "ext_fit_vert": 0.25,  # [D] clearance above and below the 1.6 mm flange (groove roofs sag a little when printed)
@@ -72,7 +72,6 @@ PARAMS = {
     "ext_standoff_h": 6.0,   # [D] printed spacer tube length (plain tube, no threads)
     "ext_spacer_od": 5.0, "ext_spacer_id": 2.4,   # [D] tube: M2 screw passes through
     "ext_cbore_d": 5.4, "ext_cbore_depth": 2.0,   # [D] spacer seat (0.2 mm per side): 6 mm tube -> 4 mm gap under the board
-    "ext_m2_pilot": 1.7,     # [D] M2 self-tapping pilot in PETG (1.6-1.8 works; through the boss, 6 mm of thread)
     # front: HC-SR04 bracket tilted up so the beam's lower edge meets the ground beyond slow_distance
     "us_z": 102.0, "us_tilt_deg": 12.0, "us_beam_half_deg": 15.0,   # [M] beam half-angle: measure (see docs)
     # camera mast (removable), standard servo pan head, GoPro HERO9
@@ -967,8 +966,9 @@ def build_model(P=None):
     # ---------------- SunFounder ESP32 extension board on a slide-in adapter ----------------
     # One printed plate: its T-tongue slides into the deck cradle (the grooves the bare DevKit used to slide in).
     # Four plain printed spacer tubes sit in 2 mm counterbores and hold the board 4 mm above the plate (room for its
-    # through-hole solder joints; vent slots let air through). M2 screws go through the board and the tubes and
-    # self-tap into 1.7 mm pilot holes in bosses under the plate. No threads printed, nothing to buy but M2 screws.
+    # through-hole solder joints; vent slots let air through). M2 screws go through the board and the tubes into
+    # heat-set inserts in bosses under the plate (the same 3.6 mm hole as the Pi standoffs, which fits the owner's
+    # inserts). The holes run through, so a long screw just pokes out the bottom.
     # Board 64 (x) x 67 (y), holes 57 x 60 [V, SunFounder drawing]; screw terminals along the 64 mm edges (wires
     # leave sideways, +/-y), DevKit on female headers along x, its micro-USB toward the Pi (+x).
     fs, fv = P["ext_fit_side"], P["ext_fit_vert"]
@@ -993,7 +993,7 @@ def build_model(P=None):
                       for sx in (-1, 1) for sy in (-1, 1)],
                    material="PETG", mates={"deck"},
                    note="slide-in adapter for the SunFounder ESP32 extension: T-tongue in the cradle grooves, "
-                        "%.2f mm clearance per side, %.2f mm above/below the flange; 4 M2 pilot holes; vent slots; "
+                        "%.2f mm clearance per side, %.2f mm above/below the flange; 4 heat-set inserts; vent slots; "
                         "print top face down, one piece, no supports" % (fs, fv))
     assert g_lo + fv + 1.6 <= g_hi - fv + 1e-6, "flange does not fit the cradle groove"
     for xc in (17.5, 22.0, 26.5):                   # vent slots beside the tongue, clear of the bosses
@@ -1001,8 +1001,8 @@ def build_model(P=None):
             plate["cuts"].append(box(ecx + sx * xc - 1.25, ecx + sx * xc + 1.25, -21, 21, rail_top - co, pl_z1 + co))
     for k, (sx, sy) in enumerate(((-1, -1), (1, -1), (1, 1), (-1, 1))):
         hc = (ecx + sx * hx, sy * hy)
-        m.hole("esp_ext_plate", "ext_pilot_%d" % (k + 1), (hc[0], hc[1], seat_z + 0.01), (hc[0], hc[1], boss_z0 - co),
-               P["ext_m2_pilot"], kind="pilot", for_item="SunFounder board M2 x 12-16 screw (self-taps into the boss)")
+        m.hole("esp_ext_plate", "ext_insert_%d" % (k + 1), (hc[0], hc[1], seat_z + 0.01), (hc[0], hc[1], boss_z0 - co),
+               P["ins_m25"], kind="insert", for_item="SunFounder board M2 screw into a heat-set insert (same hole as the Pi's)")
         m.hole("esp_ext_plate", "ext_cbore_%d" % (k + 1), (hc[0], hc[1], seat_z), (hc[0], hc[1], pl_z1 + co),
                P["ext_cbore_d"], kind="cbore", for_item="printed spacer seat", audit=False)
     so_r, si_r = P["ext_spacer_od"] / 2, P["ext_spacer_id"] / 2

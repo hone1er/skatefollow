@@ -181,10 +181,10 @@ For every hardware fastener hole: the hole axis must run through its host part f
 | motor_pulley_R | prop_1 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
 | motor_pulley_R | prop_2 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
 | motor_pulley_R | prop_3 | M3 x 12 low head into the bell | clear | 3.4 | 13.2 (need 2.0) | 100 % | **OK** |
-| esp_ext_plate | ext_pilot_1 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_plate | ext_pilot_2 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_plate | ext_pilot_3 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
-| esp_ext_plate | ext_pilot_4 | SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 5.1 (need 4.0) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_1 | SunFounder board M2 screw into a heat-set insert (same hole as the Pi's) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_2 | SunFounder board M2 screw into a heat-set insert (same hole as the Pi's) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_3 | SunFounder board M2 screw into a heat-set insert (same hole as the Pi's) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
+| esp_ext_plate | ext_insert_4 | SunFounder board M2 screw into a heat-set insert (same hole as the Pi's) | insert | 3.6 | 5.6 (need 4.5) | 100 % | **OK** |
 
 Hole failures: **0** (holes for seller-dependent parts are slots or the 10 mm grid and are listed in docs/chassis_cad.md)
 
@@ -491,7 +491,7 @@ Overall: **343 long x 343 wide x 293 tall mm** with the camera mast; 343 x 343 x
 
 ## 11. Fastener schedule (generated from the model)
 
-Threads in printed parts are heat-set inserts, except self-tapping screws in pilot holes (ESP32 extension adapter: M2 into 1.7 mm); servo ear screws are the servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.
+Threads in printed parts are always heat-set inserts (never tapped plastic); servo ear screws are the servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.
 
 | for | hole | Ø (mm) | count | method |
 |---|---|---|---|---|
@@ -505,7 +505,7 @@ Threads in printed parts are heat-set inserts, except self-tapping screws in pil
 | M4 thumb screw | clear | 4.5 | 2 | clearance hole, screw passes through (nut, insert or threaded part on the far side) |
 | Raspberry Pi 5 M2.5 x 6 screw into a printed standoff | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | SG90 ear screw | slot | 2.0 | 2 | slotted clearance, adjust then tighten |
-| SunFounder board M2 x 12-16 screw (self-taps into the boss) | pilot | 1.7 | 4 | pilot hole: the screw cuts its own thread in the plastic (drive it in once, slowly) |
+| SunFounder board M2 screw into a heat-set insert (same hole as the Pi's) | insert | 3.6 | 4 | heat-set insert (M2.5 x 4 in a 3.6 hole / M3 x 5.7 in a 4.0 hole / M4 x 8.1 in a 5.6 hole), then a machine screw |
 | UWB board M3 [M] | slot | 3.4 | 4 | slotted clearance, adjust then tighten |
 | XT60 arming plug (panel) | slot | 16.4 | 1 | slotted clearance, adjust then tighten |
 | adapter -> head (servo ear slots) | slot | 2.4 | 2 | slotted clearance, adjust then tighten |

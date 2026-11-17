@@ -201,15 +201,16 @@ face-down orientations of each part.
 | servo9g_adapter, pulley_drill_jig | 1 each | PETG | Bench only / tool (hidden in Fusion) | |
 | prototype kit (sleeves, TPU belts) | | see §6b | Flat as laid out | None |
 
-**ESP32 extension adapter (2026-11-17, v3: M2 screws, printed spacers, nothing to buy).** The SunFounder ESP32
+**ESP32 extension adapter (2026-11-17, v4: M2 screws into heat-set inserts, printed spacers, nothing to buy).** The SunFounder ESP32
 extension board sits on **one printed plate** whose T-tongue slides into the deck cradle (the grooves the bare DevKit
 used). Fit: tongue web and flange **0.20 mm per side** narrower than the channel and groove, flange 1.6 mm in a 2.1 mm
 groove (**0.25 mm above and below**); the plate rests on the rail tops. Change `ext_fit_side` / `ext_fit_vert` in
 PARAMS if your printer runs tight or loose. Four **plain printed spacer tubes** (OD 5, bore 2.4, 6 long) sit in 2 mm
 counterbores and keep the board 4 mm above the plate, clear of its through-hole solder joints; six vent slots let air
-through. **M2 × 12–16 screws** go through the board and the tubes and **self-tap into 1.7 mm pilot holes** in bosses
-under the plate (6 mm of thread; the holes run through, so a 16 mm screw just pokes out the bottom). Drive each screw
-in slowly once, back it out, then fit the board. If a pilot is too tight or strips, change `ext_m2_pilot` (1.6–1.8).
+through. **M2 screws** go through the board and the tubes into **heat-set inserts** pressed into bosses under the
+plate from the top. The insert holes are the **same 3.6 mm as the Pi standoffs** (`ins_m25`), which fit the owner's
+M2 inserts; they run through the 6 mm boss, so any screw from about 10 to 16 mm works (a long one pokes out the
+bottom). Press the inserts before fitting the spacers.
 Print the plate top face down and the spacers upright, no supports. Stack (z above the ground): plate top 119.5,
 board underside 123.5, DevKit underside 133.6, module top 138.4, micro-USB plug keep-out to 141.6, lid underside 145
 (the 3 mm keep-out rule passes).
@@ -288,7 +289,7 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | XT60 pigtails, 20 A blade fuse holder, panel XT60 as arming plug | | pull the plug = everything off |
 | MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
 | Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
-| SunFounder ESP32 camera extension board + 4 × M2 × 12–16 screws (owned) | 1 | screws pass the board and the printed spacers and self-tap into the plate |
+| SunFounder ESP32 camera extension board + 4 × M2 × 10–16 screws + 4 heat-set inserts (owned; same 3.6 mm hole as the Pi standoffs) | 1 | screws pass the board and the printed spacers into the inserts |
 | 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
 
 ## 6b. Prototype kit: drive it before buying the metal

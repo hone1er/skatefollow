@@ -304,7 +304,7 @@ def check_holes(M, report):
             if f >= 0.999:
                 good += L / len(stations)
         need = {"insert": (P["ins_m25_depth"] - 0.5 if h["d"] < 3.8 else P["ins_m3_depth"] - 0.5) if h["d"] < 5 else P["ins_m4_depth"] - 1.0,
-                "seat": 7.0, "clear": 2.0, "slot": 2.0, "pilot": 4.0}[h["kind"]]
+                "seat": 7.0, "clear": 2.0, "slot": 2.0}[h["kind"]]
         ok = good >= need - 1e-6
         if not ok:
             fails += 1
@@ -940,14 +940,12 @@ FASTENERS = {
     "slot": "slotted clearance, adjust then tighten",
     "seat": "bearing seat, press in with a drop of retaining compound",
     "cbore": "counterbore for a low-head screw",
-    "pilot": "pilot hole: the screw cuts its own thread in the plastic (drive it in once, slowly)",
 }
 
 
 def fastener_schedule(M, report):
     report.append("## 11. Fastener schedule (generated from the model)\n")
-    report.append("Threads in printed parts are heat-set inserts, except self-tapping screws in pilot holes (ESP32 extension "
-                  "adapter: M2 into 1.7 mm); servo ear screws are the "
+    report.append("Threads in printed parts are always heat-set inserts (never tapped plastic); servo ear screws are the "
                   "servo's own self-tappers in 2.4 mm slots. Screw length = the parts it clamps + 1.5 x d engagement.\n")
     report.append("| for | hole | Ø (mm) | count | method |\n|---|---|---|---|---|")
     groups = {}
