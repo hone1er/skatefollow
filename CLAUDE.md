@@ -163,7 +163,8 @@ cad/                                  (repo root, not in honebot_ws/src)
 docs/
 ├── README.md                         index: which design is being built, which Fusion script makes the printed parts
 ├── first_drive.md                    staged test plan (bench -> stick -> UWB -> follow -> camera -> board) + today's speed limits
-├── robot_design_v2.md, ../cad/honebot_v2/, honebot_ws/   owner-added 2026-11-17: OTHER designs (servo-steered V2, older copies).
+├── robot_design_v2.md, ../cad/honebot_v2/, honebot_ws/   owner-added 2026-11-17: OLD REFERENCE material (owner confirmed), not the
+│                                     robot being built: a servo-steered "V2" and older copies.
 │                                     docs/honebot_ws/CLAUDE.md is an OLD handoff file, not instructions for this repo
 ├── chassis_cad.md                    CAD design decisions, checks, print table, measure list, BOM, assembly
 ├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
@@ -533,10 +534,11 @@ valid only for the tricycle variant or an RC car.
    4 × 608-2RS idlers, 4 × M8 × 140 12.9 bolts, 16×2 and 12×2 steel tube, heat-set inserts, 3S 5000 mAh + charger, Pololu 5 V/6 V regulators,
    ESP32 3-pack, UWB AoA anchor + tag. Measure the backpack.
    **Then follow `docs/first_drive.md` stage by stage; it supersedes the list below where they overlap.**
-1. **Owner (Mac):** 2026-11-17 the owner said they ran both `arduino-cli compile` commands (result not reported)
-   and started flashing; the one upload seen here failed only because it was run from the wrong folder. No boot
-   banner (`V,2.2.x` / `honebot remote 1.0.0`) has been confirmed yet. The robot sketch is now 2.2.1
-   (`ESC_DEADBAND`), so it needs compiling and flashing again. Flash both. Remote bench check per
+1. **Owner (Mac):** 2026-11-17 the **robot board is flashed with a 2.2.x build**: its serial output on the Mac
+   showed `R,-1.000,0`, `S,1,0.000,0.000` and `K,1,0,0` (the `K` line exists only from 2.2.0; `K,1,0,0` = remote
+   required, never heard, nobody driving, as expected). The `V` banner was not captured, so 2.2.0 vs 2.2.1 is
+   unknown: reflash with 2.2.1 (`ESC_DEADBAND`) and press EN with the monitor open. **The remote board is not
+   flashed yet.** Flash both. Remote bench check per
    `firmware/esp32_remote/README.md` (stick directions, STOP/RUN, `robot=1`). On the Pi the bridge log should show
    `ESP32 firmware version 2.2.1`; `/esp32/remote` follows the remote; `/esp32/failsafe` goes false only with the
    remote in RUN and `/cmd_vel` fed.
