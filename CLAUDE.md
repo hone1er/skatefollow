@@ -40,7 +40,7 @@ Hard requirements that shape every decision:
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Vision camera (Phase 5) | GoPro in USB-webcam mode (mode A: Pi records the 1080p30 stream, GoPro cannot record to SD meanwhile) or any USB webcam next to it (mode B: GoPro records natively). `source` parameter picks |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe. **Pan servo GPIO 27** (firmware 2.1.0, holds last value in fail-safe, centred at boot) |
-| Handheld remote = wireless kill switch + manual drive (2nd ESP32, owned, + 5-pin joystick module, ESP-NOW) | **Software written 2026-11-17** (`firmware/esp32_remote`, robot firmware 2.2.0); host-tested only, **not yet compiled with arduino-cli or flashed**. Joystick: +5V pin → **3V3**, VRx GPIO 34, VRy GPIO 35, SW GPIO 32 |
+| Handheld remote = wireless kill switch + manual drive (2nd ESP32, owned, + 5-pin joystick module, ESP-NOW) | **Software written 2026-11-17** (`firmware/esp32_remote`, robot firmware 2.2.1); host-tested only, **not yet compiled with arduino-cli or flashed**. Joystick: +5V pin → **3V3**, VRx GPIO 34, VRy GPIO 35, SW GPIO 32 |
 
 ### Wiring (ESP32 ↔ HC-SR04) — verified working
 | HC-SR04 | ESP32 |
@@ -50,7 +50,7 @@ Hard requirements that shape every decision:
 | Trig | GPIO 5 |
 | Echo | 1 kΩ → GPIO 18, and 2 kΩ from GPIO 18 → GND (5 V → 3.3 V divider) |
 
-Onboard LED = GPIO 2 (firmware 2.2.0: on = someone may drive, slow blink = fail-safe with Pi link, fast blink = remote STOP/lost). Pins used: 2, 5, 18, 25, 26, 27.
+Onboard LED = GPIO 2 (firmware 2.2.1: on = someone may drive, slow blink = fail-safe with Pi link, fast blink = remote STOP/lost). Pins used: 2, 5, 18, 25, 26, 27.
 The USB chip is a **CP2102 (bcdDevice 1.00, serial "0001")**: closing the port blocks ~5 s (see gotchas).
 
 ### Wiring (pan servo ↔ ESP32, GoPro ↔ Pi) — planned, see `docs/camera_plan.md` §2
@@ -73,7 +73,9 @@ device (Pi gets 172.2X.1YZ.50, camera .51) and needs the netplan file in `honebo
   `~/honebot_ws/install/setup.bash`.
 - User `hone1er` is in the `dialout` group (serial access). Group changes only apply to **new** login sessions.
 - `python3-serial` (pyserial 3.5) installed. git 2.43 installed. **Workspace is a git repo (branch `main`)**
-  with local identity set; not pushed anywhere yet.
+  with local identity set. The project is on GitHub as `hone1er/skatefollow` (repo root = workspace root: `src/`,
+  `firmware/`, `cad/`, `docs/`); the owner also has a clone on the Mac and flashes from there with paths like
+  `firmware/esp32_ultrasonic`. Before pulling on the Pi, check `git status`/`git remote -v` there first.
 - Already installed ROS packages worth knowing: `foxglove_bridge`, `joy`, `teleop_twist_joy`,
   `teleop_twist_keyboard`, `rosbag2`, `tf2_ros`. **Not** installed: `ackermann_msgs`, `usb_cam`, `v4l2_camera`,
   `setserial`, `arduino-cli`.
@@ -89,8 +91,9 @@ device (Pi gets 172.2X.1YZ.50, camera .51) and needs the netplan file in `honebo
 - ESP32 appears on the Mac as `/dev/cu.usbserial-0001` when plugged in there.
 - Flash firmware from the Mac:
   ```bash
-  arduino-cli compile --fqbn esp32:esp32:esp32 honebot_ws/firmware/esp32_ultrasonic
-  arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 honebot_ws/firmware/esp32_ultrasonic
+  cd <clone of hone1er/skatefollow>
+  arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
+  arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
   ```
   (Arduino's ctags tool is x86-only; that is why Rosetta is installed.) arduino-cli is *not* installed on the
   Pi yet; installing it there would allow flashing the ESP32 in place over `/dev/ttyUSB0`.
@@ -102,9 +105,10 @@ device (Pi gets 172.2X.1YZ.50, camera .51) and needs the netplan file in `honebo
 ```
 honebot_ws/
 ├── CLAUDE.md                         this file (handoff); README.md = architecture + run card; each src/honebot_*/ and firmware/esp32_ultrasonic/ has its own README
+├── .github/workflows/ci.yml          GitHub Actions: pytest per package, firmware host tests, CAD stub test (green 2026-11-17)
 ├── scripts/pi_setup.sh               Pi housekeeping (setserial, udev rule, honebot.service); owner runs it, it asks for sudo
 ├── firmware/
-│   ├── esp32_ultrasonic/             robot ESP32 firmware v2.2.0: .ino + drive_logic.h (pure decisions) + honebot_link.h
+│   ├── esp32_ultrasonic/             robot ESP32 firmware v2.2.1: .ino + drive_logic.h (pure decisions) + honebot_link.h
 │   ├── esp32_remote/                 handheld remote v1.0.0: .ino + remote_logic.h + honebot_link.h (identical copy)
 │   └── tests/run_tests.sh            g++ host tests of the pure logic + stub syntax check of both sketches
 └── src/
@@ -113,13 +117,12 @@ honebot_ws/
     │   ├── honebot_follow/follower.py    ROS node: turtlesim poses or a relative /target
     │   ├── honebot_follow/pose_to_target.py   simulated UWB from turtlesim poses
     │   ├── launch/turtle_follow.launch.py   use_safety / relative / ackermann options
-    │   ├── config/robot.yaml + launch/robot_follow.launch.py   real-robot follower settings
-    │   └── test/test_control.py          23 pytest tests
+    │   └── test/test_control.py          27 pytest tests (incl. 1-D and 2-D follow simulations)
     ├── honebot_safety/               ament_python — safety gate
     │   ├── honebot_safety/gate.py        pure gate logic (unit-tested)
     │   ├── honebot_safety/safety_gate.py ROS node
     │   ├── launch/safety_gate.launch.py
-    │   └── test/test_gate.py             12 pytest tests
+    │   └── test/test_gate.py             17 pytest tests
     ├── honebot_hardware/             ament_python — Pi ↔ ESP32 serial bridge
     │   ├── honebot_hardware/esp32_bridge.py   drive_mode: diff (default) | ackermann
     │   ├── honebot_hardware/diffdrive.py  pure Twist→(left,right) (unit-tested)
@@ -131,7 +134,7 @@ honebot_ws/
     │   ├── honebot_uwb/localize.py       two-anchor trilateration, AoA, range filter (unit-tested)
     │   ├── honebot_uwb/uwb_node.py       serial `U,`/`A,` lines → /target PointStamped
     │   ├── launch/uwb.launch.py
-    │   └── test/test_localize.py         11 pytest tests
+    │   └── test/test_localize.py         13 pytest tests
     ├── honebot_camera/               ament_python — GoPro/webcam in, person detection, pan aiming
     │   ├── honebot_camera/gopro.py       find GoPro on its USB network link, HTTP webcam start/stop (CLI gopro_ctl)
     │   ├── honebot_camera/detector.py    YOLOv8 ONNX decode/NMS/target selection (pure) + HOG/cv2.dnn/onnxruntime backends
@@ -143,7 +146,10 @@ honebot_ws/
     │   ├── netplan/99-gopro-usb.yaml     DHCP on usb0/enx* without taking the GoPro's default route (owner installs)
     │   └── test/                          42 pytest tests
     └── honebot_bringup/              ament_python — top-level launch + systemd
-        ├── launch/bringup.launch.py      esp32 bridge + safety gate + foxglove_bridge [+ camera:=true]
+        ├── config/robot.yaml             ALL real-robot parameters (bridge, gate, uwb, follower); test/test_config.py checks the keys
+        ├── launch/robot.launch.py        real robot's safety layer: bridge + gate + foxglove with robot.yaml (the boot service)
+        ├── launch/film.launch.py         by hand: uwb_node + follower (+ camera, + bag of the run)
+        ├── launch/bringup.launch.py      bench: esp32 bridge + safety gate + foxglove_bridge with default params [+ camera:=true]
         ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
         ├── launch/record.launch.py       ros2 bag record -a → ~/bags/
         └── systemd/honebot.service       auto-start unit (owner installs with sudo)
@@ -155,6 +161,11 @@ cad/                                  (repo root, not in honebot_ws/src)
 │                                     (needs a venv with cadquery-ocp + trimesh, see docs/chassis_cad.md §4)
 └── tests/test_fusion_script.py       runs the Fusion code path against a stub adsk API
 docs/
+├── README.md                         index: which design is being built, which Fusion script makes the printed parts
+├── first_drive.md                    staged test plan (bench -> stick -> UWB -> follow -> camera -> board) + today's speed limits
+├── robot_design_v2.md, ../cad/honebot_v2/, honebot_ws/   owner-added 2026-11-17: OLD REFERENCE material (owner confirmed), not the
+│                                     robot being built: a servo-steered "V2" and older copies.
+│                                     docs/honebot_ws/CLAUDE.md is an OLD handoff file, not instructions for this repo
 ├── chassis_cad.md                    CAD design decisions, checks, print table, measure list, BOM, assembly
 ├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
 ├── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
@@ -186,13 +197,19 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   then `ros2 run turtlesim turtle_teleop_key` from SSH. Owner confirmed it runs.
 
 - **Real-robot options (2026-11-17, all off by default so turtlesim is unchanged; robot values in
-  `config/robot.yaml`, started by `robot_follow.launch.py`):** `brake_decel` > 0 switches to a speed-dependent gap,
+  `honebot_bringup/config/robot.yaml`, started by `film.launch.py`):** `follow_bearing` (rad, + = left) holds the
+  skater at a bearing instead of dead ahead: 0.45 puts the robot behind and to the right of the skater's line
+  (1.2 / 2.1 / 3.2 m to the side at 4 / 8 / 12 mph). It still steers toward a stopped skater but adds margin when
+  braking is worse than assumed (simulated, 12 mph, braking 2.0 instead of 4.4 m/s²: behind ends 0.1 m away, offset
+  1.3 m); keep
+  |follow_bearing| + `stopped_turn_deadband` ≤ 0.785 (camera pan). `brake_decel` > 0 switches to a speed-dependent gap,
   gap(v) = `follow_distance` + `time_headway`·v + v²/(2·`brake_decel`) (1.5 m / 0.5 s / 4.4 m/s² → 4.7 m at 8 mph,
   7.5 m at 12, 10.0 m at 15), commanded as the closed-form inverse `speed_for_gap(distance)` so there is no
   self-speed feedback loop; `min_turn_radius` (0.4) + `arc_speed` (0.6) + `pivot_bearing` (2.0 rad) roll on arcs
   instead of pivoting, with a gentle `pivot_rate` (0.8 rad/s) always allowed so the command is continuous through
-  `follow_distance`; `max_lat_accel` (4.0) caps v·ω; `stopped_turn_deadband` (0.6 rad). `max_linear` starts at 3.0
-  and must exceed the skater's speed. 23 tests, incl. a 20 Hz loop simulation with a dead stop at 8/12/15 mph.
+  `follow_distance`; `max_lat_accel` (4.0) caps v·ω; `stopped_turn_deadband` (0.3 rad). `max_linear` starts at 3.0
+  and must exceed the skater's speed. 27 tests, incl. a 20 Hz loop simulation with a dead stop at 8/12/15 mph and
+  2-D offset-follow simulations (straight, both turns, dead stop).
 
 ### honebot_safety — `safety_gate` node
 - Subscribes `cmd_vel_raw` (Twist), `ultrasonic/range`, `esp32/link_ok`; publishes `cmd_vel` at `rate_hz` (50)
@@ -200,6 +217,11 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   RANGE_INVALID → CMD_STALE → OBSTACLE (forward blocked, reverse/steer allowed) → SLOW (linear taper) → OK.
 - Params (live-settable): `stop_distance` 0.4, `slow_distance` 1.0, `range_timeout` 0.3, `cmd_timeout` 0.5.
 - Bench-verified 2026-11-13 against the live ESP32 (all six states, 50 Hz output, clean exit).
+- **Sight limit (2026-11-17, off unless `brake_decel` > 0; on in `robot.yaml`):** forward speed is capped at what
+  the robot can stop within what the sensor sees (`sight_speed`): 2.7 m/s if the HC-SR04 reads the ground at
+  ~1.95 m, 3.8 m/s if it reads nothing (`sight_distance` 3.0). The cap drops at once and rises at
+  `cap_rise_rate`. New state `SIGHT_LIMIT`. **Consequence: with only the HC-SR04 the robot is limited to ~6–8 mph;
+  12–15 mph needs a longer-range forward sensor** (options in `docs/robot_design_v2.md`). Not run on the Pi yet.
 
 ### honebot_hardware — `esp32_bridge` node
 - Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10),
@@ -225,6 +247,10 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   and `uwb/ranges`. Params: `baseline` (0.30), `anchor_x`, `max_range` (30), `filter_alpha`, `bearing_sign`.
   No fix → nothing published → follower's `target_timeout` stops the robot. **No UWB hardware yet; the
   firmware on the UWB board must print one of the two line formats.**
+- **Bug fixed 2026-11-17:** `RangeFilter.update` used to return its last value for a "no fix" sample, so a lost tag
+  kept producing fresh-stamped targets and the follower never timed out. It now returns `None` (nothing is
+  published) and clears its history after 5 misses. AoA bearings are filtered too (`bearing_alpha`) and dropped
+  outside `max_bearing_deg` (80).
 
 ### honebot_camera — `camera_node` + `camera_aim` (written 2026-11-13; tested on a video file and with a fake detection, not yet with the GoPro)
 - `camera_node` params: `source` (`gopro` | `/dev/videoN` | URL | file, files loop), `hfov_deg` (87 = GoPro Linear,
@@ -258,7 +284,11 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - `bringup.launch.py` args: `port`, `stop_distance`, `slow_distance`, `foxglove` (true → port 8765),
   `camera` (false; adds `camera.launch.py`), `camera_source`, `record`, `model_path`.
 - `teleop_joy.launch.py` args: `joy_config` (xbox), `joy_dev`; output remapped to `/cmd_vel_raw`.
-- `systemd/honebot.service`: install commands in the file header. Not installed yet (needs sudo).
+- `robot.launch.py` (bridge + gate + Foxglove with `config/robot.yaml`; port defaults to `/dev/esp32` if it exists)
+  is what `honebot.service` starts. `film.launch.py` (args `max_linear`, `follow_bearing`, `uwb_port`, `camera`,
+  `camera_source`, `record`, `bag`) starts uwb_node + follower + camera + `ros2 bag record -a`; launch args override
+  the YAML only when given. Neither has been launched on the Pi yet (py_compile + config test only).
+- `systemd/honebot.service`: installed by `scripts/pi_setup.sh` (owner runs it; status on the Pi unknown).
 
 ### Serial protocol (USB, 115200 8N1, ASCII lines ending `\n`)
 | Direction | Message | Meaning |
@@ -271,7 +301,7 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 | ESP32 → Pi | `K,<required>,<remote>,<source>` | 10 Hz (firmware ≥ 2.2.0). Handheld remote / kill-switch state, see firmware section |
 | Pi → ESP32 | `P,<pan>` | camera pan servo −1..1 (+1 = full left), 20 Hz (firmware ≥ 2.1.0; ignored by older). Slew-limited on the ESP32, held in fail-safe, centred at boot |
 
-### ESP32 firmware — robot `esp32_ultrasonic` source v2.2.0, remote `esp32_remote` v1.0.0 (2026-11-17). **A 2.x build (≤ 2.1.0) is what is flashed**; 2.2.0 and the remote have passed host tests + a stub syntax check only (`firmware/tests/run_tests.sh`), not arduino-cli
+### ESP32 firmware — robot `esp32_ultrasonic` source v2.2.1, remote `esp32_remote` v1.0.0 (2026-11-17). **Last build confirmed on the board: a 2.x ≤ 2.1.0**; 2.2.x and the remote have passed host tests + a stub syntax check here, and the owner ran arduino-cli compile on the Mac 2026-11-17 (result not reported; no boot banner confirmed)
 - Pings every **60 ms** (~16.7 Hz; 50 ms caused ~33% dropouts — datasheet asks ≥ 60 ms), echo timeout 25 ms.
 - All decisions are in `drive_logic.h` (`drive::decide`, pure C++). Who may drive, first match wins: boot window
   (2 s) → nobody; remote STOP or lost (500 ms) → nobody; `REMOTE_REQUIRED` (default **true**) and never heard →
@@ -287,6 +317,8 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   broadcast ESP-NOW packets at 50 Hz with a shared `HONEBOT_PAIR_ID` (no MAC pairing, no encryption);
   robot answers at 10 Hz for the remote's LED. ADC1 pins only (radio blocks ADC2).
 - LED GPIO 2 (robot): on = someone may drive; slow blink = fail-safe with Pi link; fast blink = remote STOP/lost.
+- `ESC_DEADBAND` (2.2.1, default 0 = off): lifts every non-zero wheel command above the ESC's dead zone; a slow
+  pivot is only ~2 % per side and would otherwise do nothing. Owner measures it in `docs/first_drive.md` Stage 1.
 - `P,<pan>` → GPIO 27 as before (`PAN_RATE_PER_S` 3.0), independent of fail-safe.
 - `handleLine()` is the place to add new serial commands.
 
@@ -491,7 +523,7 @@ valid only for the tricycle variant or an RC car.
 - Software implications: robot frame origin = **front**-axle midpoint; track 0.277 m; wheelbase 0.200 m (4-wheel skid
   steer). Skid steer scrubs when turning: the real yaw rate is below (vR − vL)/track → set the bridge's `track_width`
   1.2–1.6 × 0.277 after a spin test; pivoting costs ~10 A per motor. Forward pitch-over at ≈ 0.88 g; sideways tip at
-  1.77 g. Firmware 2.2.0 ramps to zero at 0.5 g on fail-safe. Stop distance
+  1.77 g. Firmware 2.2.x ramps to zero at 0.5 g on fail-safe. Stop distance
   ≈ 4.5–5.5 m from 15 mph → speed-dependent follow distance.
 - HC-SR04 now tilted 12° up at 102 mm height (ground return ≈ 1.95 m).
 
@@ -501,10 +533,14 @@ valid only for the tricycle variant or an RC car.
    D12), 2 × AM32 ESCs + USB linker, 2 × HTD-3M 258 mm + 2 × 510 mm 9 mm belts, a 4-pack of 90 mm longboard wheels,
    4 × 608-2RS idlers, 4 × M8 × 140 12.9 bolts, 16×2 and 12×2 steel tube, heat-set inserts, 3S 5000 mAh + charger, Pololu 5 V/6 V regulators,
    ESP32 3-pack, UWB AoA anchor + tag. Measure the backpack.
-1. **Owner (Mac):** `arduino-cli compile` both sketches (`firmware/esp32_ultrasonic` 2.2.0, `firmware/esp32_remote`);
-   they have never been through arduino-cli, so fix any compile errors first. Flash both. Remote bench check per
+   **Then follow `docs/first_drive.md` stage by stage; it supersedes the list below where they overlap.**
+1. **Owner (Mac):** 2026-11-17 the **robot board is flashed with a 2.2.x build**: its serial output on the Mac
+   showed `R,-1.000,0`, `S,1,0.000,0.000` and `K,1,0,0` (the `K` line exists only from 2.2.0; `K,1,0,0` = remote
+   required, never heard, nobody driving, as expected). The `V` banner was not captured, so 2.2.0 vs 2.2.1 is
+   unknown: reflash with 2.2.1 (`ESC_DEADBAND`) and press EN with the monitor open. **The remote board is not
+   flashed yet.** Flash both. Remote bench check per
    `firmware/esp32_remote/README.md` (stick directions, STOP/RUN, `robot=1`). On the Pi the bridge log should show
-   `ESP32 firmware version 2.2.0`; `/esp32/remote` follows the remote; `/esp32/failsafe` goes false only with the
+   `ESP32 firmware version 2.2.1`; `/esp32/remote` follows the remote; `/esp32/failsafe` goes false only with the
    remote in RUN and `/cmd_vel` fed.
 2. **Owner (Pi):** `git pull`, `colcon build --symlink-install`, then `./scripts/pi_setup.sh` (asks for sudo:
    setserial, udev rule, `honebot.service`). Once the service runs, `sudo systemctl stop honebot` before launching

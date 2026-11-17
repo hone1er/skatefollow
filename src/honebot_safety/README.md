@@ -62,3 +62,10 @@ colcon test --packages-select honebot_safety && colcon test-result --verbose
 Bench procedure (with `bringup.launch.py` up): `ros2 topic pub /cmd_vel_raw geometry_msgs/msg/Twist "{linear: {x: 1.0}}"`,
 watch `ros2 topic echo /safety/state` and `/cmd_vel`; cover the sensor, raise `stop_distance`, kill the publisher,
 kill the bridge. Each should produce the expected state. Known-good results are in `CLAUDE.md` §6.
+
+## Sight limit (real robot)
+
+With `brake_decel` > 0 (set in `honebot_bringup/config/robot.yaml`) the gate also caps forward speed at what the
+robot can stop within what the sensor sees (`sight_speed` in `gate.py`): about 2.7 m/s when the ultrasonic sensor
+reads the ground ahead, 3.8 m/s when it reads nothing. The cap drops at once and rises at `cap_rise_rate`; the state
+is `SIGHT_LIMIT`. Off by default, so the bench and turtlesim behaviour is unchanged.

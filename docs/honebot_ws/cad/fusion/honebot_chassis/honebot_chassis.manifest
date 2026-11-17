@@ -1,0 +1,10 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "script",
+  "author": "honebot",
+  "description": {
+    "": "honebot v5: electronics deck (Pi 5, ESP32, HC-SR04, SG90 GoPro pan mount), vented lid, and a two-wheel self-balancing ostrich-leg drivetrain (HMI v1)."
+  },
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}

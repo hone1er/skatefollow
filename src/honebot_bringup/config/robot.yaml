@@ -1,0 +1,75 @@
+# Every setting for the real robot (4-wheel skid steer) in one file.
+#   robot.launch.py  uses: esp32_bridge, safety_gate          (the always-on safety layer; the boot service)
+#   film.launch.py   uses: uwb_node, follower                 (started by hand: these make the robot move)
+# Change a value here and restart, or try it live first:  ros2 param set /follower follow_bearing 0.45
+# test/test_config.py checks every key below is a parameter the node really has (ROS ignores unknown keys silently).
+
+esp32_bridge:
+  ros__parameters:
+    drive_mode: diff
+    # Geometric track is 0.277 m; skid-steer tyres scrub, so the robot turns slower than geometry says.
+    # 0.39 = 0.277 x 1.4 is the starting guess. Set it from the spin test (docs/first_drive.md).
+    track_width: 0.39
+    # m/s at command 1.0 = FULL_SCALE_MPS in the firmware (no-load top speed). Calibrate on the first drives.
+    max_wheel_speed: 9.6
+    # Leave false: motor direction is set in the firmware so the handheld remote agrees with the Pi.
+    left_reversed: false
+    right_reversed: false
+
+safety_gate:
+  ros__parameters:
+    stop_distance: 0.4             # m: no forward motion closer than this
+    slow_distance: 1.0             # m: forward speed tapers below this
+    # Sight limit: never faster than the robot can stop within what the ultrasonic sensor can see.
+    #   sensor reads the ground ahead (~1.95 m)  -> 2.7 m/s (6 mph)
+    #   sensor reads nothing (3 m taken as clear) -> 3.8 m/s (8.5 mph)
+    # Going faster needs a longer-range sensor (docs/hardware_plan.md), not a bigger number here.
+    brake_decel: 4.4               # m/s^2 (0.45 g); keep equal to the follower's
+    reaction_time: 0.25            # s
+    sight_distance: 3.0            # m
+    cap_rise_rate: 1.0             # m/s^2
+
+uwb_node:
+  ros__parameters:
+    port: /dev/ttyUSB1
+    anchor_x: 0.06                 # m: the anchor sits on the mast, 6 cm ahead of the front axle (base_link)
+    max_range: 30.0
+    filter_alpha: 0.5
+    bearing_alpha: 0.6
+    bearing_sign: 1.0              # -1.0 if the board reports + = right
+    max_bearing_deg: 80.0          # readings outside the anchor's usable cone are dropped
+
+follower:
+  ros__parameters:
+    target_topic: /target          # from uwb_node (robot frame: x forward, y left)
+    cmd_vel_topic: /cmd_vel_raw    # into the safety gate, never straight to the motors
+    target_timeout: 0.5            # s without a UWB fix -> stop
+
+    # Speed-dependent gap: gap(v) = follow_distance + time_headway * v + v^2 / (2 * brake_decel)
+    #   4 mph 2.8 m | 8 mph 4.7 m | 12 mph 7.5 m | 15 mph 10.0 m
+    # If the skater stops dead the robot still stops ~1.5 m short (simulated in honebot_follow's tests).
+    follow_distance: 1.5           # m, gap when standing still
+    time_headway: 0.5              # s
+    brake_decel: 4.4               # m/s^2; at or below what the robot really achieves on the surface
+
+    # Where to keep the skater relative to the robot's nose (rad, + = left).
+    #   0.0  = directly behind the skater.
+    #   0.45 = behind and to the RIGHT of the skater's line (3/4 rear shot). Sideways offset grows with speed:
+    #          1.2 m at 4 mph, 2.1 m at 8, 3.2 m at 12. It still steers toward you when you stop, but it adds
+    #          margin if braking is worse than assumed (simulated at 12 mph with braking at under half the
+    #          assumed value: directly behind ends 0.1 m from the skater, offset ends 1.3 m away).
+    #   Negative = to the left. Keep |follow_bearing| + stopped_turn_deadband under the camera's pan range
+    #   (45 deg = 0.785 rad), or the camera cannot reach the skater while the robot stands still.
+    follow_bearing: 0.0
+
+    max_linear: 3.0                # m/s. START LOW. Must exceed the skater's speed or the gap only grows.
+    kp_angular: 3.0
+    max_angular: 3.0               # rad/s
+    max_lat_accel: 4.0             # m/s^2 cornering cap (tyres slide ~0.8 g; tip-over is at 1.77 g)
+
+    # Skid steer scrubs its tyres when it pivots: roll on arcs instead.
+    min_turn_radius: 0.4           # m
+    arc_speed: 0.6                 # m/s kept while turning toward a target off to the side
+    pivot_bearing: 2.0             # rad (115 deg): target further round than this -> pivot in place, fast
+    pivot_rate: 0.8                # rad/s: gentle pivot that is always allowed
+    stopped_turn_deadband: 0.3     # rad (17 deg): standing still, do not pivot for less than this

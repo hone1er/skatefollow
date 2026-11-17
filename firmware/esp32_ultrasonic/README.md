@@ -1,4 +1,4 @@
-# ESP32 robot firmware (`esp32_ultrasonic.ino`, v2.2.0)
+# ESP32 robot firmware (`esp32_ultrasonic.ino`, v2.2.1)
 
 The microcontroller side of the robot. It measures the ultrasonic range, outputs three 50 Hz
 servo-style pulse channels, listens to the handheld remote (`../esp32_remote`), and brings the drive channels
@@ -62,6 +62,10 @@ Manual driving goes straight to the motors: **the ultrasonic obstacle stop on th
 RUN. Set it `false` only for bench work with the wheels off the ground; the bridge then logs a warning at
 every start. A remote that is switched on is obeyed in both modes.
 
+**`ESC_DEADBAND`** (default 0 = off): ESCs ignore small commands around neutral, and a slow pivot is only ~2 %
+per side. Measure the smallest command that turns the wheels (`docs/first_drive.md`, Stage 1) and set this just
+below it; every non-zero command is then lifted above the dead zone.
+
 **Motor direction** is set here (`THROTTLE_REVERSED` = left wheel, `STEER_REVERSED` = right wheel), not with
 the bridge's `left_reversed` / `right_reversed`, so the Pi and the stick agree.
 
@@ -82,7 +86,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```bash
 arduino-cli upload -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```
-On the Pi the bridge log should then show `ESP32 firmware version 2.2.0` and `Remote (kill switch): never`.
+On the Pi the bridge log should then show `ESP32 firmware version 2.2.1` and `Remote (kill switch): never`.
 
 ## Why it is built this way
 
@@ -95,7 +99,7 @@ On the Pi the bridge log should then show `ESP32 firmware version 2.2.0` and `Re
   decides what the two channels mean (`drive_mode`). A chassis change is not a reflash.
 - **Status line reports what is *output*, not what was commanded.** `S,<failsafe>,<a>,<b>` lets the Pi
   see when caps, ramps or fail-safe are overriding its commands (`/esp32/failsafe`, `/esp32/actuators`).
-- **Version banner.** `V,2.2.0` at boot so the bridge can log which firmware is actually flashed; the bridge
+- **Version banner.** `V,2.2.1` at boot so the bridge can log which firmware is actually flashed; the bridge
   ignores lines it does not know, so firmware and bridge can be updated independently.
 - **Bench caps in firmware, not only on the Pi.** `THROTTLE_LIMIT` protects against a wrong Pi-side
   parameter during the first drivetrain tests. Raise it once the robot behaves.

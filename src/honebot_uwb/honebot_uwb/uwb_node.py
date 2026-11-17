@@ -43,6 +43,11 @@ class UwbNode(Node):
         self.filters = [RangeFilter(alpha=alpha, max_range=self.max_range) for _ in range(2)]
         self.aoa_filter = RangeFilter(alpha=alpha, max_range=self.max_range)
         self.bearing_sign = self.declare_parameter('bearing_sign', 1.0).value   # -1 if the board reports +ve = right
+        # Angle-of-arrival anchors are only accurate within a cone in front of the antenna; readings outside
+        # it are dropped (the follower then stops on its target timeout rather than steering on a bad angle).
+        self.max_bearing_deg = self.declare_parameter('max_bearing_deg', 80.0).value
+        self.bearing_filter = RangeFilter(alpha=self.declare_parameter('bearing_alpha', 0.6).value,
+                                          min_range=-self.max_bearing_deg, max_range=self.max_bearing_deg)
 
         self.target_pub = self.create_publisher(PointStamped, 'target', 10)
         self.ranges_pub = self.create_publisher(Float32MultiArray, 'uwb/ranges', 10)
@@ -101,7 +106,8 @@ class UwbNode(Node):
             self._handle_aoa(raw[0], raw[1])
             return
         filtered = [f.update(r) for f, r in zip(self.filters, raw)]
-        if any(v is None for v in filtered):
+        if any(v is None for v in filtered):         # no fix on one anchor this cycle: publish nothing
+            self.n_reject += 1
             return
         self.ranges_pub.publish(Float32MultiArray(data=[float(v) for v in filtered]))
         pos = two_anchor_position(filtered[0], filtered[1], self.geom)
@@ -112,7 +118,9 @@ class UwbNode(Node):
 
     def _handle_aoa(self, rng, bearing_deg):
         rng = self.aoa_filter.update(rng)
-        if rng is None:
+        bearing_deg = self.bearing_filter.update(bearing_deg)
+        if rng is None or bearing_deg is None:       # no fix this cycle: publish nothing
+            self.n_reject += 1
             return
         pos = aoa_position(rng, math.radians(bearing_deg) * self.bearing_sign, self.geom, self.max_range)
         if pos is None:
@@ -131,7 +139,7 @@ class UwbNode(Node):
 
     def _stats(self):
         if self.n_fix or self.n_reject:
-            self.get_logger().info(f'UWB: {self.n_fix / 5.0:.1f} fixes/s, {self.n_reject} inconsistent in 5 s')
+            self.get_logger().info(f'UWB: {self.n_fix / 5.0:.1f} fixes/s, {self.n_reject} dropped in 5 s')
             self.n_fix = self.n_reject = 0
 
 

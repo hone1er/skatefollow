@@ -19,7 +19,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import Range
 from std_msgs.msg import Bool, String
 
-from honebot_safety.gate import OK, SLOW, STOP_STATES, GateParams, gate_command
+from honebot_safety.gate import (OK, SIGHT_LIMIT, SLOW, STOP_STATES, GateParams, gate_command, rising_cap,
+                                 sight_speed)
 
 
 class SafetyGate(Node):
@@ -31,6 +32,10 @@ class SafetyGate(Node):
             slow_distance=self.declare_parameter('slow_distance', 1.0).value,
             range_timeout=self.declare_parameter('range_timeout', 0.3).value,
             cmd_timeout=self.declare_parameter('cmd_timeout', 0.5).value,
+            brake_decel=self.declare_parameter('brake_decel', 0.0).value,
+            reaction_time=self.declare_parameter('reaction_time', 0.25).value,
+            sight_distance=self.declare_parameter('sight_distance', 3.0).value,
+            cap_rise_rate=self.declare_parameter('cap_rise_rate', 1.0).value,
         )
         self.add_on_set_parameters_callback(self._on_params)
 
@@ -41,6 +46,8 @@ class SafetyGate(Node):
         self.link_ok = False
         self.link_stamp = None
         self.state = None
+        self.speed_cap = None
+        self.rate_hz = rate_hz
 
         self.create_subscription(Twist, 'cmd_vel_raw', self._on_cmd, 10)
         self.create_subscription(Range, 'ultrasonic/range', self._on_range, 10)
@@ -84,12 +91,17 @@ class SafetyGate(Node):
         want_lin = self.cmd.linear.x if self.cmd is not None else 0.0
         want_ang = self.cmd.angular.z if self.cmd is not None else 0.0
 
+        if self.params.brake_decel > 0.0 and self.range_m is not None and self.range_m == self.range_m:
+            self.speed_cap = rising_cap(self.speed_cap, sight_speed(self.range_m, self.params),
+                                        1.0 / self.rate_hz, self.params)
+        else:
+            self.speed_cap = None
         lin, ang, state = gate_command(
             want_lin, want_ang,
             self.range_m, self._age(self.range_stamp),
             self.link_ok, self._age(self.link_stamp),
             self._age(self.cmd_stamp),
-            self.params)
+            self.params, self.speed_cap)
 
         out = Twist()
         out.linear.x = float(lin)
@@ -107,6 +119,8 @@ class SafetyGate(Node):
             self.get_logger().warn(f'STOP ({state}); range {r}')
         elif state == SLOW:
             self.get_logger().info(f'SLOW: obstacle at {r}')
+        elif state == SIGHT_LIMIT:
+            self.get_logger().info(f'SIGHT_LIMIT: capping speed to {self.speed_cap:.1f} m/s (sensor sees {r})')
         elif state == OK:
             self.get_logger().info(f'OK: passing commands through; range {r}')
         else:

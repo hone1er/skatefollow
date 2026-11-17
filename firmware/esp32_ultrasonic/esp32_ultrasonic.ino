@@ -52,7 +52,7 @@
 #include "drive_logic.h"
 #include "honebot_link.h"
 
-const char *FW_VERSION = "2.2.0";
+const char *FW_VERSION = "2.2.1";
 
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 18;
@@ -88,6 +88,10 @@ const float PAN_RATE_PER_S = 3.0f;         // slew limit on the pan command (ful
 // Ackermann: only channel A is a throttle; channel B (steering) is passed through.
 const bool DIFF_DRIVE = true;              // false for an RC car (A = throttle, B = steering)
 const float THROTTLE_LIMIT = 0.5f;         // raise toward 1.0 once the robot behaves
+// Smallest command at which the wheels actually turn (ESC neutral dead zone + start-up duty). 0 = off.
+// Measure it on the bench (docs/first_drive.md, Stage 1) and set it a little below that value; without it
+// slow pivots and creeping commands (1-3 %) do nothing. Applies to the Pi's commands and to the stick alike.
+const float ESC_DEADBAND = 0.0f;
 
 // Ramps, written as accelerations of the robot. FULL_SCALE_MPS is the speed at command 1.0
 // (no-load top speed of the drivetrain: 370 KV x 11.1 V / 2:1 on 90 mm wheels = 9.6 m/s).
@@ -162,8 +166,9 @@ int normToUs(float norm, int trimUs, bool reversed) {
 }
 
 void applyOutputs() {
-  writePulseUs(THROTTLE_PIN, normToUs(outThrottle, 0, THROTTLE_REVERSED));
-  writePulseUs(STEER_PIN, normToUs(outSteer, STEER_TRIM_US, STEER_REVERSED));
+  writePulseUs(THROTTLE_PIN, normToUs(drive::deadbandComp(outThrottle, ESC_DEADBAND), 0, THROTTLE_REVERSED));
+  writePulseUs(STEER_PIN, normToUs(DIFF_DRIVE ? drive::deadbandComp(outSteer, ESC_DEADBAND) : outSteer,
+                                   STEER_TRIM_US, STEER_REVERSED));
   writePulseUs(PAN_PIN, normToUs(outPan, PAN_TRIM_US, PAN_REVERSED));
 }
 

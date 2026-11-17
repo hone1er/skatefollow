@@ -54,12 +54,30 @@ def test_filter_kills_single_spike():
     assert f.update(2.1) == 2.1 or f.update(2.1) == 2.1
 
 
-def test_filter_ignores_junk_and_keeps_last():
+def test_filter_reports_a_dropout_instead_of_the_last_value():
+    # "-1" is the board's "no fix this cycle". The filter must say so (None): if it handed back the last
+    # estimate, the node would keep publishing a fresh-looking target and the robot would chase a ghost.
     f = RangeFilter(window=1, alpha=1.0, max_range=30.0)
     assert f.update(float('nan')) is None
     assert f.update(3.0) == 3.0
-    assert f.update(-1.0) == 3.0
-    assert f.update(100.0) == 3.0
+    assert f.update(-1.0) is None
+    assert f.update(100.0) is None
+    assert f.update(3.2) == 3.2               # a short gap keeps the history
+
+
+def test_filter_forgets_after_a_long_dropout():
+    f = RangeFilter(window=3, alpha=0.5, max_misses=3)
+    for r in (2.0, 2.0, 2.0):
+        f.update(r)
+    for _ in range(3):
+        assert f.update(-1.0) is None
+    assert f.update(8.0) == 8.0               # re-acquired far away: not blended with the old 2.0
+
+
+def test_bearing_filter_accepts_negative_angles():
+    f = RangeFilter(window=1, alpha=1.0, min_range=-80.0, max_range=80.0)
+    assert f.update(-30.0) == -30.0
+    assert f.update(85.0) is None             # outside the anchor's usable angle
 
 
 def test_filter_smooths():

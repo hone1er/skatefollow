@@ -62,3 +62,9 @@ colcon test --packages-select honebot_uwb && colcon test-result --verbose
 ```
 The node logs fixes/s and rejected samples every 5 s. Without hardware you can test the pipeline by
 `echo "A,3.0,15" > /dev/ttyUSB1`-style injection through a loopback or a USB-serial adapter.
+
+## Dropouts (fixed 2026-11-17)
+
+A sample that is no fix, out of range or outside the anchor's usable angle (`max_bearing_deg`) publishes
+**nothing**: the follower's `target_timeout` then stops the robot. (`RangeFilter` used to return its last value,
+which kept a lost tag looking alive.) AoA bearings are filtered too (`bearing_alpha`).

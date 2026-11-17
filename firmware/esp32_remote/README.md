@@ -45,7 +45,7 @@ You should see five lines a second like `state=STOP x=+0.00 y=+0.00 btn=0 robot=
 1. Push the stick away from you: `x` should go to `+1.00`. Push it left: `y` should go to `+1.00`. If not, set
    `SWAP_XY`, `X_REVERSED`, `Y_REVERSED` at the top of the sketch and flash again.
 2. Click the button: `btn=1` while pressed. Hold it 1.5 s with the stick at rest: `state=RUN`. Click: `state=STOP`.
-3. Power the robot's ESP32 (firmware 2.2.0): `robot=1` within a second.
+3. Power the robot's ESP32 (firmware 2.2.1): `robot=1` within a second.
 
 Only one board can be on the Mac's USB port name at a time; if both are plugged in, the second shows up under
 a different `/dev/cu.usbserial-…` name (`arduino-cli board list`).
