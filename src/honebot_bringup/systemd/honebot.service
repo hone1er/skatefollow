@@ -1,9 +1,12 @@
 # honebot bringup at boot.
 #
-# Install (on the Pi, needs sudo):
+# Install (on the Pi): run  ./scripts/pi_setup.sh  from the workspace; it copies this file (adapted to your
+# user and workspace path), enables it and checks it is running. By hand instead:
 #   sudo cp ~/honebot_ws/src/honebot_bringup/systemd/honebot.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now honebot.service
+# While the service runs, do not start bringup by hand as well (two bridges cannot share the serial port):
+#   sudo systemctl stop honebot
 # Watch:   journalctl -u honebot -f
 # Stop:    sudo systemctl stop honebot      (sends SIGINT; nodes exit cleanly)
 # Disable: sudo systemctl disable honebot
@@ -19,7 +22,7 @@ User=hone1er
 WorkingDirectory=/home/hone1er/honebot_ws
 Environment=ROS_DOMAIN_ID=0
 Environment=RCUTILS_COLORIZED_OUTPUT=0
-ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/hone1er/honebot_ws/install/setup.bash && exec ros2 launch honebot_bringup bringup.launch.py'
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/hone1er/honebot_ws/install/setup.bash && if [ -e /dev/esp32 ]; then P=/dev/esp32; else P=/dev/ttyUSB0; fi; exec ros2 launch honebot_bringup bringup.launch.py port:=$$P'
 KillSignal=SIGINT
 TimeoutStopSec=15
 Restart=on-failure

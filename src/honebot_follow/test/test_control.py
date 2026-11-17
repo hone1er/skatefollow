@@ -87,3 +87,102 @@ def test_ackermann_does_not_creep_when_close():
 
 def test_ackermann_normal_following_unchanged():
     assert follow_command_relative(5.0, 0.0, A) == follow_command_relative(5.0, 0.0, G)
+
+
+# ---- real-robot options: speed-dependent gap, arcs instead of pivots, cornering cap -------------
+from honebot_follow.control import safe_gap, speed_for_gap  # noqa: E402
+
+ROBOT = FollowGains(follow_distance=1.5, max_linear=8.0, kp_angular=3.0, max_angular=3.0,
+                    brake_decel=4.4, time_headway=0.5, max_lat_accel=4.0,
+                    min_turn_radius=0.4, arc_speed=0.6, pivot_bearing=2.0, stopped_turn_deadband=0.6)
+
+
+def test_new_options_default_off():
+    g = FollowGains()
+    assert g.brake_decel == 0 and g.max_lat_accel == 0 and g.min_turn_radius == 0 and g.stopped_turn_deadband == 0
+    assert safe_gap(5.0, g) == g.follow_distance
+
+
+def test_safe_gap_and_inverse_agree():
+    for v in (0.0, 1.0, 3.6, 5.4, 6.7):
+        d = safe_gap(v, ROBOT)
+        assert math.isclose(speed_for_gap(d, ROBOT), v, abs_tol=1e-9)
+    assert speed_for_gap(1.0, ROBOT) == 0.0                      # inside follow_distance
+    # gap covers the braking distance from that speed with the headway to spare
+    assert safe_gap(6.7, ROBOT) > 6.7 ** 2 / (2 * 4.4) + 0.5 * 6.7
+
+
+def test_speed_grows_with_distance_and_respects_max():
+    v_prev = 0.0
+    for d in (2.0, 4.0, 6.0, 8.0, 10.0):
+        v, _, _ = follow_command_relative(d, 0.0, ROBOT)
+        assert v > v_prev
+        v_prev = v
+    v, _, _ = follow_command_relative(50.0, 0.0, ROBOT)
+    assert v == ROBOT.max_linear
+
+
+def _simulate(leader_speed, stop_at, dt=0.05, t_end=30.0, accel=7.8, decel=4.9, delay=0.25):
+    """Leader runs straight at leader_speed and stops dead at stop_at; the robot follows the law at 20 Hz with
+    a reaction delay and limited acceleration/braking. Returns (steady gap before the stop, smallest gap)."""
+    lead, rob, v = 12.0, 0.0, 0.0
+    pending = []                                   # (time the command takes effect, command)
+    steady = None
+    min_gap = 1e9
+    t = 0.0
+    while t < t_end:
+        if t < stop_at:
+            lead += leader_speed * dt
+        gap = lead - rob
+        cmd, _, _ = follow_command_relative(gap, 0.0, ROBOT)
+        pending.append((t + delay, cmd))
+        while len(pending) > 1 and pending[1][0] <= t:
+            pending.pop(0)
+        target = pending[0][1] if pending[0][0] <= t else v
+        if target > v:
+            v = min(target, v + accel * dt)
+        else:
+            v = max(target, v - decel * dt)
+        rob += v * dt
+        if abs(t - (stop_at - dt)) < dt / 2:
+            steady = gap
+        min_gap = min(min_gap, lead - rob)
+        t += dt
+    return steady, min_gap
+
+
+def test_follow_loop_is_stable_and_stops_in_time_at_15_mph():
+    for mph in (8, 12, 15):
+        v = mph * 0.44704
+        steady, min_gap = _simulate(v, stop_at=20.0)
+        # settles on the designed gap (no oscillation or run-away) ...
+        assert math.isclose(steady, safe_gap(v, ROBOT), rel_tol=0.03), (mph, steady)
+        # ... and when the skater stops dead the robot stops short of them
+        assert min_gap > 1.0, (mph, min_gap)
+
+
+def test_arc_instead_of_pivot_for_target_to_the_side():
+    # 90 degrees to the left, far away: legacy law would pivot (linear 0); the robot law rolls on an arc
+    v, w, _ = follow_command_relative(6.0, math.pi / 2, ROBOT)
+    assert math.isclose(v, ROBOT.arc_speed)
+    assert w > 0 and v / w >= ROBOT.min_turn_radius - 1e-9
+    v0, w0, _ = follow_command_relative(6.0, math.pi / 2, FollowGains())
+    assert abs(v0) < 1e-9 and w0 > 0
+
+
+def test_pivot_allowed_when_target_is_behind():
+    v, w, _ = follow_command_relative(6.0, 3.0, ROBOT)             # beyond pivot_bearing
+    assert v == 0.0 and math.isclose(w, ROBOT.max_angular)
+
+
+def test_cornering_cap_at_speed():
+    v, w, _ = follow_command_relative(12.0, 0.5, ROBOT)
+    assert v > 3.0 and w > 0
+    assert abs(v * w) <= ROBOT.max_lat_accel + 1e-9
+
+
+def test_no_pivot_for_small_bearings_when_stopped():
+    v, w, _ = follow_command_relative(1.2, 0.4, ROBOT)              # inside follow distance, 23 deg off
+    assert v == 0.0 and w == 0.0
+    v, w, _ = follow_command_relative(1.2, 1.2, ROBOT)              # well off to the side: turn to face
+    assert v == 0.0 and w > 0

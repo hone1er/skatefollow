@@ -21,6 +21,35 @@ class FollowGains:
     max_angular: float = 4.0       # rad/s
     ackermann: bool = False        # car-like: cannot turn in place
     creep_speed: float = 0.3       # m/s forward while re-acquiring a target behind (ackermann only)
+    # --- real-robot options; every one is OFF at 0 so the turtlesim behaviour is unchanged ---
+    brake_decel: float = 0.0       # m/s^2 the robot can stop with. > 0 switches on the speed-dependent gap:
+    #                                gap(v) = follow_distance + time_headway * v + v^2 / (2 * brake_decel)
+    time_headway: float = 0.5      # s of travel kept in hand on top of the braking distance
+    max_lat_accel: float = 0.0     # m/s^2 cap on v * omega (cornering); 0 = no cap
+    min_turn_radius: float = 0.0   # m. > 0: turn on arcs of at least this radius instead of pivoting ...
+    arc_speed: float = 0.6         # m/s kept while arcing toward a target off to the side
+    pivot_bearing: float = 2.0     # rad: ... unless the target is further round than this (then pivot)
+    stopped_turn_deadband: float = 0.0   # rad: when stopped at the target, do not pivot for bearings below this
+
+
+def safe_gap(speed: float, g: 'FollowGains') -> float:
+    """Distance to keep at `speed` so the robot can stop behind a skater who stops dead."""
+    if g.brake_decel <= 0.0:
+        return g.follow_distance
+    v = max(0.0, speed)
+    return g.follow_distance + g.time_headway * v + v * v / (2.0 * g.brake_decel)
+
+
+def speed_for_gap(distance: float, g: 'FollowGains') -> float:
+    """Inverse of safe_gap: the fastest speed that is still safe at this distance.
+
+    Solving gap(v) = distance for v in closed form means the command never depends on the robot's own
+    (delayed) speed estimate, so there is no feedback loop to go unstable at high speed."""
+    extra = distance - g.follow_distance
+    if extra <= 0.0:
+        return 0.0
+    a, t = g.brake_decel, g.time_headway
+    return a * (-t + math.sqrt(t * t + 2.0 * extra / a))
 
 
 def wrap_angle(a: float) -> float:
@@ -51,23 +80,39 @@ def follow_command_relative(distance: float, bearing: float, g: FollowGains):
     - ackermann=True: a car can't spin in place, so when the target is beyond
       follow_distance but off to the side/behind it creeps forward at
       creep_speed with full steering instead of stopping dead.
+    - brake_decel > 0: the gap grows with speed (safe_gap / speed_for_gap).
+    - min_turn_radius > 0: arcs instead of pivots; max_lat_accel > 0: cornering cap.
     """
     heading_error = wrap_angle(bearing)
     angular = clamp(g.kp_angular * heading_error, -g.max_angular, g.max_angular)
 
     gap = distance - g.follow_distance
-    linear = g.kp_linear * gap * max(0.0, math.cos(heading_error))
-    linear = clamp(linear, 0.0, g.max_linear)
+    if g.brake_decel > 0.0:
+        # Speed-dependent gap: drive at the fastest speed from which the robot can still stop in time.
+        base = speed_for_gap(distance, g)
+    else:
+        base = g.kp_linear * gap
+    linear = clamp(base * max(0.0, math.cos(heading_error)), 0.0, g.max_linear)
 
     if gap <= 0.0:
         # Close enough: stop, and stop turning when right on top of the target
         # where the bearing is meaningless.
         linear = 0.0
-        if distance < 0.2:
+        if distance < 0.2 or abs(heading_error) < g.stopped_turn_deadband:
             angular = 0.0
     elif g.ackermann and linear < g.creep_speed:
         # Target is far but we're pointed away from it; a car has to roll to turn.
         linear = min(g.creep_speed, g.max_linear)
+    elif g.min_turn_radius > 0.0 and abs(heading_error) <= g.pivot_bearing:
+        # Skid steer scrubs its tyres when it pivots: keep rolling and turn on an arc instead.
+        # (Target further round than pivot_bearing: a pivot is quicker than a long loop.)
+        linear = max(linear, min(g.arc_speed, g.max_linear, base))
+        w_max = linear / g.min_turn_radius
+        angular = clamp(angular, -w_max, w_max)
+
+    if g.max_lat_accel > 0.0 and linear > 1e-3:
+        w_max = g.max_lat_accel / linear        # v * omega <= max_lat_accel
+        angular = clamp(angular, -w_max, w_max)
 
     return linear, angular, distance
 

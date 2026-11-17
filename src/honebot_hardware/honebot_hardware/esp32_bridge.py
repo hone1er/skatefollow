@@ -5,6 +5,9 @@ ESP32 -> Pi (published):
                      esp32/link_ok      std_msgs/Bool        (ESP32 hears our heartbeat)
   S,<fs>,<t>,<s> ->  esp32/failsafe     std_msgs/Bool        (ESP32 is forcing neutral)
   V,<version>    ->  logged             (firmware version banner at boot)
+  K,<req>,<remote>,<source> (firmware >= 2.2.0, handheld remote / kill switch)
+                 ->  esp32/remote       std_msgs/String      never | lost | stop | run
+                     esp32/manual       std_msgs/Bool        the remote's stick is driving (Pi commands ignored)
 
 Pi -> ESP32 (sent):
   H                  heartbeat, heartbeat_hz (10)
@@ -34,7 +37,7 @@ from geometry_msgs.msg import Twist, Vector3
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Range
-from std_msgs.msg import Bool, Float32
+from std_msgs.msg import Bool, Float32, String
 
 from honebot_hardware.ackermann import AckermannParams, twist_to_ackermann
 from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive
@@ -56,8 +59,8 @@ class Esp32Bridge(Node):
             self.get_logger().error(f"drive_mode must be 'diff' or 'ackermann', not {self.drive_mode!r}; using 'diff'")
             self.drive_mode = 'diff'
         self.diff = DiffDriveParams(
-            track_width=self.declare_parameter('track_width', 0.40).value,
-            max_wheel_speed=self.declare_parameter('max_wheel_speed', 7.0).value,
+            track_width=self.declare_parameter('track_width', 0.39).value,
+            max_wheel_speed=self.declare_parameter('max_wheel_speed', 9.6).value,
             left_reversed=self.declare_parameter('left_reversed', False).value,
             right_reversed=self.declare_parameter('right_reversed', False).value,
         )
@@ -74,6 +77,8 @@ class Esp32Bridge(Node):
         self.link_pub = self.create_publisher(Bool, 'esp32/link_ok', 10)
         self.failsafe_pub = self.create_publisher(Bool, 'esp32/failsafe', 10)
         self.act_pub = self.create_publisher(Vector3, 'esp32/actuators', 10)
+        self.remote_pub = self.create_publisher(String, 'esp32/remote', 10)
+        self.manual_pub = self.create_publisher(Bool, 'esp32/manual', 10)
         self.create_subscription(Twist, 'cmd_vel', self._on_cmd, 10)
         self.create_subscription(Float32, 'camera/pan_cmd', self._on_pan, 10)
 
@@ -81,6 +86,9 @@ class Esp32Bridge(Node):
         self.buf = b''
         self.last_link_ok = None
         self.last_failsafe = None
+        self.last_remote = None
+        self.last_manual = None
+        self._warned_no_killswitch = False
         self.bad_lines = 0
         self.cmd = None
         self.cmd_stamp = None
@@ -207,10 +215,35 @@ class Esp32Bridge(Node):
             self._publish_link(link_ok)
         elif parts[0] == 'S' and len(parts) >= 2:
             self._publish_failsafe(parts[1] == '1')
+        elif parts[0] == 'K' and len(parts) == 4:
+            self._publish_remote(parts[1] == '1', parts[2], parts[3])
         elif parts[0] == 'V' and len(parts) == 2:
             self.get_logger().info(f'ESP32 firmware version {parts[1]}')
         else:
             self._bad(line)
+
+    REMOTE_NAMES = {'0': 'never', '1': 'lost', '2': 'stop', '3': 'run'}
+
+    def _publish_remote(self, required, remote, source):
+        name = self.REMOTE_NAMES.get(remote)
+        if name is None:
+            self._bad(f'K,{remote},{source}')
+            return
+        manual = source == '2'
+        self.remote_pub.publish(String(data=name))
+        self.manual_pub.publish(Bool(data=manual))
+        if not required and not self._warned_no_killswitch:
+            self.get_logger().warn('Firmware built with REMOTE_REQUIRED = false: the robot can move WITHOUT the '
+                                   'handheld kill switch. Bench use only (wheels off the ground).')
+            self._warned_no_killswitch = True
+        if name != self.last_remote:
+            self.get_logger().info(f'Remote (kill switch): {name}'
+                                   + (' - robot will not move' if name != 'run' and required else ''))
+            self.last_remote = name
+        if manual != self.last_manual:
+            if self.last_manual is not None or manual:
+                self.get_logger().info('Manual drive from the remote' if manual else 'Manual drive ended')
+            self.last_manual = manual
 
     def _bad(self, line):
         # The ESP32 prints boot messages when the port opens; ignore quietly.
