@@ -39,3 +39,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: python cad/tests/test_fusion_script.py
+      - run: python cad/remote_case/tests/test_remote_script.py
+      - run: pip install numpy && python cad/remote_case/check_remote.py --quick

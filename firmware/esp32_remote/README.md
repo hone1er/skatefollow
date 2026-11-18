@@ -13,7 +13,11 @@ robot's ESP32 by radio (ESP-NOW): no router, no Pi, no pairing step.
 | VRy | GPIO 35 | |
 | SW | GPIO 32 | the stick's click button |
 
-Power the board from a USB power bank.
+Power: on the bench, a USB power bank in the board's USB port. In the printed case (`docs/remote_case.md`): a 1S LiPo
+-> TP4056 USB-C charger (with protection) -> rocker switch -> 5 V step-up -> the DevKit's **5V/VIN** pin (and GND).
+**Charge with the switch OFF** (charging works either way, but a running load can keep the TP4056 from finishing),
+and check the battery lead's polarity before soldering (red = B+; JST leads are not standardised). The case fixes the
+stick's orientation (header toward the USB end): repeat the direction check below after you assemble it.
 
 ## Using it
 
