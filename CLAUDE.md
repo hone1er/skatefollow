@@ -170,9 +170,7 @@ cad/                                  (repo root, not in honebot_ws/src)
 docs/
 ├── README.md                         index: which design is being built, which Fusion script makes the printed parts
 ├── first_drive.md                    staged test plan (bench -> stick -> UWB -> follow -> camera -> board) + today's speed limits
-├── robot_design_v2.md, ../cad/honebot_v2/, honebot_ws/   owner-added 2026-11-17: OLD REFERENCE material (owner confirmed), not the
-│                                     robot being built: a servo-steered "V2" and older copies.
-│                                     docs/honebot_ws/CLAUDE.md is an OLD handoff file, not instructions for this repo
+├── remote_turtlesim.md               handheld remote + follow bot in turtlesim (honebot_remote_bridge, tests/)
 ├── chassis_cad.md                    CAD design decisions, checks, print table, measure list, BOM, assembly
 ├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
 ├── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
@@ -228,7 +226,7 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   the robot can stop within what the sensor sees (`sight_speed`): 2.7 m/s if the HC-SR04 reads the ground at
   ~1.95 m, 3.8 m/s if it reads nothing (`sight_distance` 3.0). The cap drops at once and rises at
   `cap_rise_rate`. New state `SIGHT_LIMIT`. **Consequence: with only the HC-SR04 the robot is limited to ~6–8 mph;
-  12–15 mph needs a longer-range forward sensor** (options in `docs/robot_design_v2.md`). Not run on the Pi yet.
+  12–15 mph needs a longer-range forward sensor** (e.g. a ~12 m ToF sensor or a 2D lidar). Not run on the Pi yet.
 
 ### honebot_hardware — `esp32_bridge` node
 - Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10),

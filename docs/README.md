@@ -13,10 +13,11 @@
 **The printed parts come from one script: `cad/fusion/HonebotChassis/HonebotChassis.py`** (message box:
 "built 86 of 86 parts", including a hidden prototype kit). The other Fusion scripts in this repo build different robots.
 
-## Other designs kept in the repo
+## Earlier plan
 
 | Path | What it is |
 |---|---|
 | [`robot_design.md`](robot_design.md) | The first chassis plan (two driven wheels + caster). Its power and ESC sections still apply; the layout does not |
-| [`robot_design_v2.md`](robot_design_v2.md), `cad/honebot_v2/` | "V2": two driven wheels + a servo-steered third wheel, sensored motors, lidar, folding mast, side-follow shots. A different robot from the one being printed. Its filming requirements (§1) are worth keeping in view: the offset follow and the sight-limited speed in the current software come from them |
-| `honebot_ws/` | An older copy of the workspace docs and an earlier chassis script (caster base, "ostrich legs"). `honebot_ws/CLAUDE.md` is an old handoff file: the current one is the `CLAUDE.md` at the repository root |
+
+Older designs (the servo-steered "V2" and an earlier copy of the workspace) were removed on 2026-11-18; they
+are in the git history before that date if ever needed.
