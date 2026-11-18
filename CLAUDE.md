@@ -145,6 +145,10 @@ honebot_ws/
     │   ├── launch/camera.launch.py       source / record / model_path / aim options
     │   ├── netplan/99-gopro-usb.yaml     DHCP on usb0/enx* without taking the GoPro's default route (owner installs)
     │   └── test/                          42 pytest tests
+    ├── honebot_remote_bridge/        ament_python — handheld remote -> Twist for turtlesim (2026-11-18, not yet run on the Pi)
+    │   ├── honebot_remote_bridge/remote_logic.py   pure: remote line parser, firmware stick rules, wheels -> Twist (12 tests)
+    │   ├── honebot_remote_bridge/remote_bridge.py  source:=serial (remote board on USB) | esp32 (/esp32/outputs from esp32_bridge)
+    │   └── launch/bridge_launch.py   turtlesim + bridge [+ follow:=true follower]; guide: firmware/tests/ESP32_REMOTE_TESTING.md
     └── honebot_bringup/              ament_python — top-level launch + systemd
         ├── config/robot.yaml             ALL real-robot parameters (bridge, gate, uwb, follower); test/test_config.py checks the keys
         ├── launch/robot.launch.py        real robot's safety layer: bridge + gate + foxglove with robot.yaml (the boot service)

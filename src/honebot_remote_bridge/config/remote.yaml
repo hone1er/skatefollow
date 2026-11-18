@@ -1,0 +1,13 @@
+# Parameters for the remote_bridge node (launch/bridge_launch.py). Launch arguments source, port and scale
+# override the matching values below.
+remote_bridge:
+  ros__parameters:
+    source: serial            # serial = remote board's USB printout, esp32 = robot ESP32 via esp32_bridge
+    port: /dev/ttyUSB0        # serial source only
+    baud: 115200
+    remote_timeout: 0.5       # s without news -> stop (same as the robot firmware's REMOTE_TIMEOUT_MS)
+    rate_hz: 20.0             # Twist output rate
+    # Same values as esp32_bridge / the robot firmware, so the turtle moves like the robot would:
+    track_width: 0.39         # m, effective (skid-steer scrub included)
+    full_scale_mps: 9.6       # m/s at wheel command 1.0 (firmware FULL_SCALE_MPS)
+    scale: 1.0                # < 1 slows the turtle down without changing its path
