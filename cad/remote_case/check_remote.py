@@ -361,8 +361,27 @@ def run_suite(P, h=0.2, fast=False, P_hw=None):
         "L %.1f, needed %.2f" % (D["L"], D["L_need"]))
     chk("parts", "battery has %.1f mm to swell under the carrier" % P["bat_swell"],
         D["z_c0"] - D["z_b1"] >= P["bat_swell"] - 1e-9, "gap %.2f mm" % (D["z_c0"] - D["z_b1"]))
-    chk("parts", "switch panel 0.8-2.2 mm thick for the snap clips, bezel flush",
-        0.8 <= D["z_panel"] - P["sw_bez_h"] <= 2.2, "panel %.1f mm" % (D["z_panel"] - P["sw_bez_h"]))
+    if P["sw_type"] == "rocker":
+        chk("parts", "switch panel 0.8-2.2 mm thick for the snap clips, bezel flush",
+            0.8 <= D["z_panel"] - P["sw_bez_h"] <= 2.2, "panel %.1f mm" % (D["z_panel"] - P["sw_bez_h"]))
+    else:
+        need = 2 * P["tg_nut_t"] + 2 * 0.5 + P["tg_panel"] + 1.5  # two nuts, two washers, panel, 2 threads spare
+        chk("parts", "toggle panel (spot-faced wall) 1.2-3 mm", 1.2 <= P["tg_panel"] <= 3.0, "%.1f mm" % P["tg_panel"])
+        chk("parts", "toggle bushing long enough for panel + 2 nuts + washers", P["tg_bush_l"] >= need - 1e-9,
+            "bushing %.1f, needs %.1f" % (P["tg_bush_l"], need))
+        flat = D["W"] / 2 - P["R_plan"]
+        chk("parts", "toggle nut and anti-rotation hole sit on the flat rear face",
+            max(D["tg_face_r"], P["tg_key_off"] + P["tg_key_d"] / 2 + 0.5) <= flat,
+            "flat half-width %.1f, nut face r %.1f, key hole edge %.1f" % (
+                flat, D["tg_face_r"], P["tg_key_off"] + P["tg_key_d"] / 2))
+        gap_lo = D["z_tg"] - D["tg_face_r"] - D["tun_t"][1]
+        gap_hi = D["tun_e"][0] - (D["z_tg"] + D["tg_face_r"])
+        chk("parts", "toggle nut face clear of both USB openings (>= 0.6 mm)", min(gap_lo, gap_hi) >= 0.6 - 1e-9,
+            "%.1f below, %.1f above" % (gap_lo, gap_hi))
+        key_z = (D["z_tg"] - P["tg_key_d"] / 2, D["z_tg"] + P["tg_key_d"] / 2)
+        chk("parts", "toggle anti-rotation hole clear of the USB openings",
+            key_z[0] > D["tun_t"][1] + 0.6 or abs(P["tg_key_off"]) - P["tg_key_d"] / 2 > P["tp_plug_w"] / 2 + P["port_clr"] + 0.6,
+            "")
     chk("parts", "ESP32 ledge tabs end before the first jumper housing",
         D["esp_tab"] <= D["esp_end_margin"] - 0.3, "tab %.1f, free end strip %.1f" % (D["esp_tab"], D["esp_end_margin"]))
     usb_bevel = D["tun_e"][1] - (D["H"] - P["c_top"])
@@ -385,12 +404,13 @@ def run_suite(P, h=0.2, fast=False, P_hw=None):
 
 
 VARIANTS = [
-    ("default (38-pin DevKit, micro-USB, KY-023, 803040 1000 mAh)", {}),
+    ("default (Adafruit parts: 1200 mAh #258, #4410, #4654, toggle #3221; 38-pin DevKit)", {}),
     ("30-pin DOIT DevKit", {"esp_l": 51.5, "esp_pins_side": 15}),
     ("38-pin DevKit with USB-C", {"esp_usb_w": 9.0, "esp_usb_h": 3.3, "esp_usb_l": 7.4, "esp_plug_w": 12.5,
                                   "esp_plug_h": 7.0}),
     ("bigger joystick cap / tilt (d 26, 30 deg)", {"js_cap_d": 26.0, "js_tilt": 30.0}),
-    ("thin 603450-size battery (6 x 34 x 50)", {"bat_l": 50.0, "bat_w": 34.0, "bat_h": 6.0}),
+    ("Adafruit 500 mAh #1578 (36 x 29 x 4.75)", {"bat_l": 36.0, "bat_w": 29.0, "bat_h": 4.75}),
+    ("rocker switch in the bottom instead of the toggle", {"sw_type": "rocker"}),
 ]
 
 NEGATIVE = [
@@ -398,7 +418,8 @@ NEGATIVE = [
     ("case 2 mm too low", "", {"_H_minus": 2.0}),
     ("ESP32 measured 1 mm longer than printed", "", {"_esp_grow": 1.0}),
     ("battery 2 mm wider than the pocket", "", {"_bat_grow": 2.0}),
-    ("switch panel 3 mm thick", "parts", {"sw_panel": 3.0}),
+    ("toggle bushing 3 mm shorter than drawn", "parts", {"tg_bush_l": 5.8}),
+    ("charger 4 mm longer than its pocket", "", {"_tp_grow": 4.0}),
 ]
 
 
@@ -420,6 +441,8 @@ def negative_params(over):
     if "_esp_grow" in special:
         P_hw["esp_l"] += special["_esp_grow"]
         P_hw["ant_gap"] -= special["_esp_grow"]      # battery / joystick stay where the case was printed for them
+    if "_tp_grow" in special:
+        P_hw["tp_l"] += special["_tp_grow"]
     if "_bat_grow" in special:
         P_hw["bat_w"] += special["_bat_grow"]
     return P, P_hw, None
@@ -484,7 +507,8 @@ def write_report(M, out, neg_out):
              D["x_j0"], D["x_j1"], D["z_j1"], D["L"] - D["stick_x"]),
          "| Lid opening for the stick | d %.1f at the inner face, d %.1f at the top (45-degree cone) |" % (
              2 * D["js_open_r"], 2 * (D["js_open_r"] + P["top"])),
-         "| Switch | centre x %.1f in the bottom, cut-out %.1f x %.1f |" % (D["x_sw"], P["sw_cut_l"], P["sw_cut_w"]),
+         ("| Switch | toggle in the rear end, 6 mm hole at z %.1f |" % D["z_tg"]) if P["sw_type"] == "toggle" else
+         ("| Switch | rocker, centre x %.1f in the bottom |" % D["x_sw"]),
          "| LED light pipe | x %.1f, y %.1f (hole d %.1f) |" % (D["led"][0], D["led"][1], P["led_hole_d"]),
          ""]
     for label, res in out:

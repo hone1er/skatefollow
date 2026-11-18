@@ -9,10 +9,11 @@ rebuilds the same primitives with OpenCascade to export STL files and preview im
 
 What is inside (see docs/remote_case.md):
   ESP32 DevKit (pins down, jumper housings below it) in the rear half = the grip; its USB port opens in the rear end.
-  TP4056 USB-C charger under the ESP32, its port also in the rear end, below the ESP32 port.
-  1S LiPo under the joystick in the front half, with a printed joystick carrier over it.
-  Mini rocker switch (KCD11 / KCD117S class, snap-in) recessed flush in the bottom.
-  Pololu 5 V step-up (U1V11F5) in a pocket under the ESP32; its output feeds the DevKit's 5V/VIN pin.
+  Adafruit parts (default, 2026-11-18 cart): Micro-Lipo USB-C charger (#4410) under the ESP32, its port in the rear
+  end below the ESP32 port; 1200 mAh LiPo (#258) under the joystick in the front half, with a printed joystick
+  carrier over it; mini toggle switch (#3221, MTS-102) in the rear end between the two USB ports; MiniBoost 5 V
+  (#4654) in a pocket under the ESP32, its output feeds the DevKit's 5V/VIN pin.
+  sw_type = "rocker" switches back to a 15 x 10 mm snap-in rocker recessed flush in the bottom.
 
 Three printed parts: remote_base (tray), remote_lid (cap), js_carrier (joystick carrier / battery cover).
 Lid -> base: 4 x M2 from underneath into heat-set inserts in the lid. Carrier -> base and joystick -> carrier:
@@ -89,19 +90,32 @@ PARAMS = {
     "js_hdr_len": 8.0,     # [M] right-angle header pins beyond the PCB edge (rigid)
     "js_plug_len": 14.0,   # [D] jumper housings + bend beyond the pins (flexible)
     "js_hdr_w": 13.0, "js_hdr_h": 2.6,
-    # --- battery: 1S LiPo pouch 803040 (1000 mAh) with protection PCB and JST-PH lead ---------------------------
-    "bat_l": 40.0, "bat_w": 30.0, "bat_h": 8.0,   # [M] incl. the protection PCB fold
+    # --- battery: Adafruit #258, 1S LiPo 1200 mAh with protection circuit and JST-PH lead -------------------------
+    "bat_l": 62.0, "bat_w": 34.0, "bat_h": 5.0,   # [V adafruit.com: 34 x 62 x 5] [M] incl. the protection PCB fold
     "bat_swell": 0.8,      # [D] room above the pouch (LiPo swells ~10 % with age)
     "bat_wall_h": 4.0,     # [D] pocket walls
     "ant_gap": 8.0,        # [D] ESP32 antenna end -> battery (a metal-foil pouch next to the antenna costs range)
-    # --- TP4056 USB-C charger with protection (DW01A + 8205A) --------------------------------------------
-    "tp_l": 28.0, "tp_w": 17.2, "tp_pcb_t": 1.6,   # [V 28 x 17 .. 29 x 17.3] [M]
+    # --- charger: Adafruit Micro-Lipo USB-C #4410 (MCP73831); USB-C at the rear end, JST-PH battery socket at the
+    #     front end (the battery plugs straight into it) -----------------------------------------------------------
+    "tp_l": 24.0, "tp_w": 19.0, "tp_pcb_t": 1.6,   # [V adafruit.com: 24.0 x 19.0 x 7.2 overall] [M] board outline
     "tp_usb_w": 9.0, "tp_usb_h": 3.3, "tp_usb_l": 7.4, "tp_usb_over": 0.6,   # [M]
     "tp_plug_w": 12.5, "tp_plug_h": 7.0,   # [M] overmould of YOUR charging cable
-    "tp_comp_h": 3.5, "tp_lift": 1.5,      # [D] board sits on two rails this high (parts on its underside)
-    # --- Pololu U1V11F5 5 V step-up ------------------------------------------------------------------------------
-    "bst_l": 11.4, "bst_w": 10.2, "bst_h": 4.5,   # [V 0.45" x 0.4"] height incl. inductor and wire stubs
-    # --- mini rocker switch, snap-in, 15 x 10 mm bezel (KCD11 / KCD117S class) ---------------------------------
+    "tp_comp_h": 5.6, "tp_lift": 1.2,      # [V 7.2 overall - 1.6 PCB] tallest part; board on two rails
+    "tp_jst_len": 12.0, "tp_jst_w": 8.0, "tp_jst_h": 6.5,   # [M] battery plug + lead bend in front of the charger
+    # --- step-up: Adafruit MiniBoost 5 V @ 1 A #4654 (TPS61023) -------------------------------------------------------
+    "bst_l": 17.8, "bst_w": 11.3, "bst_h": 5.6,   # [V adafruit.com: 17.8 x 11.3 x 5.6] height incl. inductor
+    # --- power switch --------------------------------------------------------------------------------------------------
+    "sw_type": "toggle",   # [D] "toggle": Adafruit #3221 in the rear end; "rocker": snap-in rocker in the bottom
+    # mini toggle (Adafruit #3221 = MTS-102 drawing): M6 x 0.75 bushing in a 6 mm hole + 2.4 mm anti-rotation hole
+    "tg_hole": 6.3,        # [D] 6 mm hole + 0.3 for the print
+    "tg_key_d": 2.6, "tg_key_off": 6.4, "tg_key_depth": 1.2,   # [V drawing: d2.4 at 6.4] blind hole for the washer tab
+    "tg_body_w": 13.2, "tg_body_h": 7.9, "tg_body_d": 9.5,     # [V drawing] body behind the panel
+    "tg_lug": 4.0, "tg_wire": 4.0,                             # [V drawing: lugs 4] + solder joints and wire bend
+    "tg_bush_l": 8.8,      # [V drawing] threaded bushing above the body
+    "tg_panel": 1.8,       # [D] rear wall spot-faced from inside to this thickness around the switch
+    "tg_nut_af": 8.0, "tg_nut_t": 2.0,                         # [M] hex nut across flats / thickness (two nuts)
+    "tg_lever_l": 11.0, "tg_lever_ang": 24.0,                  # [V drawing] lever length / throw each side
+    # mini rocker switch, snap-in, 15 x 10 mm bezel (KCD11 / KCD117S class), only with sw_type = "rocker"
     "sw_cut_l": 13.5, "sw_cut_w": 9.0,     # [V one listing: 13.5 x 9] [M] check YOUR switch's drawing
     "sw_bez_l": 15.0, "sw_bez_w": 10.3, "sw_bez_h": 2.0,   # [V 14.8 x 10.3] [M] bezel
     "sw_depth": 14.5,      # [M] body + terminals behind the panel (overall 16.5 incl. bezel)
@@ -317,7 +331,20 @@ def _layout(P):
     # the joystick's jumper housings run under the ESP32's front end: keep the ESP32 above them
     js_jumper_top = fl + P["bat_h"] + P["bat_swell"] + 0.5 + P["car_t"] + P["js_under"] + 0.5 + P["js_pcb_t"] \
         + P["js_hdr_h"] + 0.5
-    D["z_e0"] = max(fl + P["esp_under"], js_jumper_top + 0.5)
+    # toggle switch in the rear end between the two USB openings: its nut face needs room above the charger's
+    # opening, and the ESP32's opening goes above it
+    D["z_t0"] = fl + P["tp_lift"]
+    D["z_t1"] = D["z_t0"] + P["tp_pcb_t"]
+    D["z_usb_t"] = D["z_t1"] + P["tp_usb_h"] / 2
+    tun_t_top = D["z_usb_t"] + P["tp_plug_h"] / 2 + P["port_clr"]
+    z_esp_min = 0.0
+    if P["sw_type"] == "toggle":
+        D["tg_face_r"] = P["tg_nut_af"] / math.sqrt(3.0) + 0.6            # hex corner radius + washer margin
+        D["z_tg"] = max(tun_t_top + 0.8 + D["tg_face_r"],
+                        D["z_t1"] + P["tp_comp_h"] + P["clr_part"] + P["tg_body_h"] / 2)
+        tun_e_bot = D["z_tg"] + D["tg_face_r"] + 0.8
+        z_esp_min = tun_e_bot + P["esp_plug_h"] / 2 + P["port_clr"] - P["esp_usb_h"] / 2 - P["esp_pcb_t"]
+    D["z_e0"] = max(fl + P["esp_under"], js_jumper_top + 0.5, z_esp_min)
     D["z_e1"] = D["z_e0"] + P["esp_pcb_t"]
     D["esp_top"] = D["z_e1"] + max(P["esp_mod_h"], P["esp_usb_h"], P["esp_comp_h"])
     D["esp_end_margin"] = (P["esp_l"] - P["esp_pins_side"] * 2.54) / 2   # PCB end -> first jumper housing
@@ -328,8 +355,13 @@ def _layout(P):
     D["x_face_t"] = t + 0.3
     D["x_t0"] = D["x_face_t"] + P["tp_usb_over"]
     D["x_t1"] = D["x_t0"] + P["tp_l"]
-    D["x_sw"] = D["x_t1"] + P["clr_pcb"] + 1.2 + 2.0 + P["sw_bez_l"] / 2 + 1.5
-    D["x_bst0"] = D["x_sw"] + P["sw_bez_l"] / 2 + 1.5
+    x_after_tp = D["x_t1"] + P["clr_pcb"] + max(1.2, P["tp_jst_len"])   # pocket front wall / battery plug
+    if P["sw_type"] == "rocker":
+        D["x_sw"] = x_after_tp + 2.0 + P["sw_bez_l"] / 2 + 1.5
+        D["x_bst0"] = D["x_sw"] + P["sw_bez_l"] / 2 + 1.5
+    else:
+        D["x_sw"] = None
+        D["x_bst0"] = x_after_tp + 1.5 + 1.2 + P["clr_pcb"]
     D["x_bst1"] = D["x_bst0"] + P["bst_l"]
     # battery under the joystick, front half: away from the antenna and behind the step-up pocket
     D["x_b0"] = max(D["x_e1"] + P["ant_gap"], D["x_bst1"] + P["clr_pcb"] + 1.2 + P["clr_part"] + 0.3)
@@ -365,12 +397,9 @@ def _layout(P):
     D["L_need"] = L_need
     # split plane: the lap joint must lie in the vertical part of the wall, under the top bevel
     D["s"] = math.floor((D["H"] - P["c_top"] - P["lip_h"] - P["lip_vert"] - 0.5) * 2) / 2
-    D["z_t0"] = fl + P["tp_lift"]
-    D["z_t1"] = D["z_t0"] + P["tp_pcb_t"]
     D["z_panel"] = P["sw_bez_h"] + P["sw_panel"]          # top of the panel around the switch cut-out
     # port centres
     D["z_usb_e"] = D["z_e1"] + P["esp_usb_h"] / 2
-    D["z_usb_t"] = D["z_t1"] + P["tp_usb_h"] / 2
     # screws: rear pair at the end of the straight sides, front pair likewise
     D["col_x"] = (P["R_plan"], D["L"] - P["R_plan"])
     D["engage_case"] = min(P["ins_m2_len"] - 0.5, P["case_screw_len"] - 4.5)
@@ -488,15 +517,25 @@ def build_model(P=None):
         b_adds.append(box(xt0 - 1.0, xt1 + cp + 1.2, *wy, fl - 0.5, D["z_t1"] + 1.2))
         ly = sorted((sy * (tw - 0.4), sy * (tw + cp + 0.1)))
         b_adds.append(box(xt0 + 4.0, xt1 - 4.0, *ly, D["z_t1"] + 0.15, D["z_t1"] + 1.2))   # snap lip
-    b_adds.append(box(xt1 + cp, xt1 + cp + 1.2, -(tw + cp + 1.2), tw + cp + 1.2, fl - 0.5, D["z_t1"] + 0.8))
-    # switch: flush recess for the bezel, thicker pad inside, snap-in cut-out
+    gy = P["tp_jst_w"] / 2 + P["clr_part"]     # gap in the front wall for the battery plug
+    for sy in (-1, 1):
+        b_adds.append(box(xt1 + cp, xt1 + cp + 1.2, *sorted((sy * gy, sy * (tw + cp + 1.2))), fl - 0.5,
+                          D["z_t1"] + 0.8))
     xs = D["x_sw"]
-    pad = [P["sw_bez_l"] / 2 + 2.5, P["sw_bez_w"] / 2 + 2.5]
-    b_adds.append(box(xs - pad[0], xs + pad[0], -pad[1], pad[1], fl - 0.5, D["z_panel"]))
-    b_cuts.append(box(xs - P["sw_bez_l"] / 2 - cp, xs + P["sw_bez_l"] / 2 + cp, -P["sw_bez_w"] / 2 - cp,
-                      P["sw_bez_w"] / 2 + cp, -1.0, P["sw_bez_h"]))
-    b_cuts.append(box(xs - P["sw_cut_l"] / 2, xs + P["sw_cut_l"] / 2, -P["sw_cut_w"] / 2, P["sw_cut_w"] / 2,
-                      -1.0, D["z_panel"] + 1.0))
+    if P["sw_type"] == "rocker":
+        # flush recess for the bezel, thicker pad inside, snap-in cut-out
+        pad = [P["sw_bez_l"] / 2 + 2.5, P["sw_bez_w"] / 2 + 2.5]
+        b_adds.append(box(xs - pad[0], xs + pad[0], -pad[1], pad[1], fl - 0.5, D["z_panel"]))
+        b_cuts.append(box(xs - P["sw_bez_l"] / 2 - cp, xs + P["sw_bez_l"] / 2 + cp, -P["sw_bez_w"] / 2 - cp,
+                          P["sw_bez_w"] / 2 + cp, -1.0, P["sw_bez_h"]))
+        b_cuts.append(box(xs - P["sw_cut_l"] / 2, xs + P["sw_cut_l"] / 2, -P["sw_cut_w"] / 2, P["sw_cut_w"] / 2,
+                          -1.0, D["z_panel"] + 1.0))
+    else:
+        # toggle: 6 mm hole through the rear wall + blind hole for the lock washer's anti-rotation tab
+        zt = D["z_tg"]
+        b_cuts.append(cyl((-1.0, 0.0, zt), (t + 1.0, 0.0, zt), P["tg_hole"] / 2))
+        b_cuts.append(cyl((P["tg_panel"], 0.0, zt), (t + 1.0, 0.0, zt), D["tg_face_r"] + 0.5))   # inside spot-face
+        b_cuts.append(cyl((-1.0, P["tg_key_off"], zt), (P["tg_key_depth"], P["tg_key_off"], zt), P["tg_key_d"] / 2))
     # step-up pocket (open top, snap lips on the long sides)
     bw = P["bst_w"] / 2
     xb0, xb1 = D["x_bst0"], D["x_bst1"]
@@ -638,20 +677,43 @@ def build_model(P=None):
     # battery, charger, step-up, switch
     hwd.append(("battery", "battery", COL["battery"],
                 rbox(D["x_b0"], D["x_b1"], -P["bat_w"] / 2, P["bat_w"] / 2, fl, D["z_b1"], 2.0), "base", False))
-    hwd.append(("tp4056", "tp4056", COL["pcb_blue"],
+    hwd.append(("charger", "charger", COL["pcb_blue"],
                 [box(xt0, xt1, -tw, tw, D["z_t0"], D["z_t1"]),
                  box(D["x_face_t"], D["x_face_t"] + P["tp_usb_l"], -P["tp_usb_w"] / 2, P["tp_usb_w"] / 2, D["z_t1"],
                      D["z_t1"] + P["tp_usb_h"]),
-                 box(xt0 + P["tp_usb_l"], xt1 - 1.0, -tw + 2.0, tw - 2.0, D["z_t1"], D["z_t1"] + 1.5)],
+                 box(xt0 + P["tp_usb_l"], xt1, -tw + 1.5, tw - 1.5, D["z_t1"], D["z_t1"] + P["tp_comp_h"])],
                 "base", False))
+    hwd.append(("battery_plug", "battery_plug", COL["dark"],
+                [box(xt1, xt1 + P["tp_jst_len"], -P["tp_jst_w"] / 2, P["tp_jst_w"] / 2, D["z_t1"],
+                     D["z_t1"] + P["tp_jst_h"])], "base", True))
     hwd.append(("stepup", "stepup", COL["pcb_green"],
                 [box(xb0, xb1, -bw, bw, fl + 0.6, zbt),
                  box(xb0 + 0.5, xb1 - 0.5, -bw + 1.0, bw - 1.0, zbt, fl + 0.6 + P["bst_h"])], "base", False))
-    hwd.append(("switch", "switch", COL["dark"],
-                [box(xs - P["sw_bez_l"] / 2, xs + P["sw_bez_l"] / 2, -P["sw_bez_w"] / 2, P["sw_bez_w"] / 2, 0.0,
-                     P["sw_bez_h"]),
-                 box(xs - P["sw_body_l"] / 2, xs + P["sw_body_l"] / 2, -P["sw_body_w"] / 2, P["sw_body_w"] / 2,
-                     P["sw_bez_h"], P["sw_bez_h"] + P["sw_panel"] + P["sw_depth"])], "base", False))
+    if P["sw_type"] == "rocker":
+        hwd.append(("switch", "switch", COL["dark"],
+                    [box(xs - P["sw_bez_l"] / 2, xs + P["sw_bez_l"] / 2, -P["sw_bez_w"] / 2, P["sw_bez_w"] / 2, 0.0,
+                         P["sw_bez_h"]),
+                     box(xs - P["sw_body_l"] / 2, xs + P["sw_body_l"] / 2, -P["sw_body_w"] / 2, P["sw_body_w"] / 2,
+                         P["sw_bez_h"], P["sw_bez_h"] + P["sw_panel"] + P["sw_depth"])], "base", False))
+    else:
+        zt, nr = D["z_tg"], P["tg_nut_af"] / math.sqrt(3.0)
+        xb_in = max(t, P["tg_panel"] + P["tg_nut_t"] + 0.5)   # body sits behind the inner nut + lock washer
+        D["tg_x"] = (xb_in, xb_in + P["tg_body_d"])
+        bh, bw_ = P["tg_body_h"] / 2, P["tg_body_w"] / 2
+        lev = []
+        for sgn in (-1, 1):                                  # lever at both end positions (throws sideways, in y)
+            a = math.radians(P["tg_lever_ang"]) * sgn
+            p0 = (-P["tg_bush_l"] + xb_in + 0.5, 0.0, zt)
+            p1 = (p0[0] - P["tg_lever_l"] * math.cos(a), P["tg_lever_l"] * math.sin(a), zt)
+            lev.append(cyl(p0, p1, 1.5))
+        hwd.append(("switch", "switch", COL["dark"],
+                    [box(xb_in, xb_in + P["tg_body_d"], -bw_, bw_, zt - bh, zt + bh),
+                     box(xb_in + P["tg_body_d"], xb_in + P["tg_body_d"] + P["tg_lug"], -bw_ + 1.0, bw_ - 1.0,
+                         zt - 1.0, zt + 1.0),
+                     cyl((xb_in - P["tg_bush_l"], 0.0, zt), (xb_in, 0.0, zt), 3.0),          # M6 bushing
+                     cyl((P["tg_panel"], 0.0, zt), (P["tg_panel"] + P["tg_nut_t"], 0.0, zt), nr),  # inner nut
+                     cyl((-P["tg_nut_t"] - 0.5, 0.0, zt), (-0.5, 0.0, zt), nr)] + lev,       # outer nut + washer
+                    "base", False))
     for name, asm, col, prims, mount, flex in hwd:
         M.part(name, "hardware", col, prims, mount=mount, assembly=asm, flexible=flex)
 
@@ -690,16 +752,34 @@ def build_model(P=None):
         ("battery %.2f mm per side + swell %.1f mm" % (P["clr_part"], P["bat_swell"]),
          rbox(D["x_b0"] - cq, D["x_b1"] + cq, -P["bat_w"] / 2 - cq, P["bat_w"] / 2 + cq, fl + 0.01,
               D["z_b1"] + P["bat_swell"] - e, 2.0)),
-        ("TP4056 PCB, %.2f mm per side" % cp, [box(xt0 - cpe, xt1 + cpe, -tw - cpe, tw + cpe, D["z_t0"] + 0.01, D["z_t1"])]),
-        ("TP4056 parts on top", [box(xt0, xt1 - 0.5, -tw + 0.45, tw - 0.45, D["z_t1"] + 0.01, D["z_t1"] + P["tp_comp_h"])]),
+        ("battery plug in the charger + lead bend", [box(xt1 + 0.01, xt1 + P["tp_jst_len"], -P["tp_jst_w"] / 2 - 0.45,
+                                                       P["tp_jst_w"] / 2 + 0.45, D["z_t1"] + 0.01,
+                                                       D["z_t1"] + P["tp_jst_h"])]),
+        ("charger PCB, %.2f mm per side" % cp, [box(xt0 - cpe, xt1 + cpe, -tw - cpe, tw + cpe, D["z_t0"] + 0.01, D["z_t1"])]),
+        ("charger parts on top", [box(xt0, xt1 - 0.5, -tw + 0.45, tw - 0.45, D["z_t1"] + 0.01, D["z_t1"] + P["tp_comp_h"])]),
         ("step-up PCB, %.2f mm per side" % cp, [box(xb0 - cpe, xb1 + cpe, -bw - cpe, bw + cpe, fl + 0.61, zbt)]),
         ("step-up parts on top", [box(xb0 + 0.5, xb1 - 0.5, -bw + 0.45, bw - 0.45, zbt + 0.01, fl + 0.6 + P["bst_h"])]),
+    ]
+    if P["sw_type"] == "rocker":
+        M.fits += [
         ("switch bezel in its recess, %.2f mm" % cp,
          [box(xs - P["sw_bez_l"] / 2 - cpe, xs + P["sw_bez_l"] / 2 + cpe, -P["sw_bez_w"] / 2 - cpe,
               P["sw_bez_w"] / 2 + cpe, -1.0, P["sw_bez_h"] - e)]),
         ("switch body + terminals, %.2f mm" % P["clr_part"],
          [box(xs - P["sw_body_l"] / 2 - cq, xs + P["sw_body_l"] / 2 + cq, -P["sw_body_w"] / 2 - cq,
               P["sw_body_w"] / 2 + cq, D["z_panel"] + e, D["z_panel"] + P["sw_depth"] + 2.0)]),
+        ]
+    else:
+        zt = D["z_tg"]
+        x0b, x1b = D["tg_x"]
+        M.fits += [
+            ("toggle body + lugs + wires, %.2f mm" % P["clr_part"],
+             [box(x0b, x1b + P["tg_lug"] + P["tg_wire"], -P["tg_body_w"] / 2 - cq, P["tg_body_w"] / 2 + cq,
+                  zt - P["tg_body_h"] / 2 - cq, zt + P["tg_body_h"] / 2 + cq)]),
+            ("toggle inner nut + spanner room", [cyl((P["tg_panel"] + e, 0.0, zt), (x0b, 0.0, zt),
+                                                     D["tg_face_r"] + 0.5 - e)]),
+        ]
+    M.fits += [
         ("ESP32 USB plug overmould, %.2f mm per side" % pc,
          rbox_x(-20.0, D["x_face_e"] - e, -P["esp_plug_w"] / 2 - pc + e, P["esp_plug_w"] / 2 + pc - e,
                 D["z_usb_e"] - P["esp_plug_h"] / 2 - pc + e, D["z_usb_e"] + P["esp_plug_h"] / 2 + pc - e,

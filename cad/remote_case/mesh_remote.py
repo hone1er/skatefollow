@@ -239,6 +239,8 @@ def main():
         return out
 
     names = list(meshes)
+    render(mset(names), os.path.join(rep_dir, "rear.png"), 15, -160,
+           "rear end: ESP32 USB (top), power toggle (middle), charger USB-C (bottom)")
     render(mset(names), os.path.join(rep_dir, "assembled.png"), 24, -128,
            "honebot remote: %.1f x %.0f x %.1f mm (rear end with the USB ports at the left)" % (D["L"], D["W"], D["H"]))
     render(mset(names, lift={"lid": 45.0, "carrier": 18.0}), os.path.join(rep_dir, "exploded.png"), 20, -128,
@@ -259,7 +261,7 @@ def main():
     render(sec, os.path.join(rep_dir, "section.png"), 4, -90, "section on the centre line: USB end at the left, joystick at the right",
            size=(12, 6))
     # bottom view
-    render(mset(names), os.path.join(rep_dir, "bottom.png"), -60, -60, "underside: flush rocker switch, 4 lid screws")
+    render(mset(names), os.path.join(rep_dir, "bottom.png"), -60, -60, "underside: 4 lid screws")
     # print layout
     pl = []
     x_off = 0.0
