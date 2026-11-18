@@ -35,7 +35,7 @@ PARAMS = {
     "wheel_d": 90.0, "wheel_w": 52.0, "axle_z": 45.0,
     # tub (main printed body, PAHT-CF)
     "tub_x0": -242.0, "tub_x1": 58.0, "tub_hw": 62.0, "wall": 4.0, "floor_z0": 28.0, "floor_t": 4.0,
-    "tub_top": 140.0, "front_t": 6.0, "rear_t": 6.0,
+    "tub_top": 145.0, "front_t": 6.0, "rear_t": 6.0,
     # battery: 3S 5000 mAh hard case. Tunnel fits <= 145 x 50 x 30 [M]
     "bat_l": 145.0, "bat_w": 50.0, "bat_h": 30.0, "bat_x0": -141.0,
     # electronics deck (removable tray, PETG or PAHT-CF)
@@ -63,11 +63,20 @@ PARAMS = {
     "belt_w": 9.0,
     "motor_plate": 66.0, "motor_plate_t": 8.0, "motor_bolt_r": 27.0, "tension_travel": 8.0,
     "esp_l": 55.0, "esp_w": 28.5,                  # [M] ESP32 DevKit PCB (38-pin DevKit V1 class)
+    # SunFounder ESP32 extension adapter: one printed plate that slides into the cradle grooves, 4 plain printed
+    # spacer tubes in counterbores, M2 screws into heat-set inserts in bosses under the plate, vent slots
+    "ext_board_x": 64.0, "ext_board_y": 67.0, "ext_hole_dx": 57.0, "ext_hole_dy": 60.0,   # [V] SunFounder drawing
+    "ext_fit_side": 0.2,   # [D] clearance per side, tongue web/flange to the cradle rails (snug slide, PETG on PETG)
+    "ext_fit_vert": 0.25,  # [D] clearance above and below the 1.6 mm flange (groove roofs sag a little when printed)
+    "ext_tongue_l": 50.0, "ext_plate_t": 2.5, "ext_boss_d": 13.0, "ext_boss_h": 5.5,
+    "ext_standoff_h": 6.0,   # [D] printed spacer tube length (plain tube, no threads)
+    "ext_spacer_od": 5.0, "ext_spacer_id": 2.4,   # [D] tube: M2 screw passes through
+    "ext_cbore_d": 5.4, "ext_cbore_depth": 2.0,   # [D] spacer seat (0.2 mm per side): 6 mm tube -> 4 mm gap under the board
     # front: HC-SR04 bracket tilted up so the beam's lower edge meets the ground beyond slow_distance
     "us_z": 102.0, "us_tilt_deg": 12.0, "us_beam_half_deg": 15.0,   # [M] beam half-angle: measure (see docs)
     # camera mast (removable), standard servo pan head, GoPro HERO9
     "pi_x0": -100.0,       # [D] Pi 5 rear (USB) edge; board is 85 long [V]
-    "mast_x": 38.0, "mast_sq": 22.0, "mast_wall": 3.0, "servo_seat_z": 195.0,
+    "mast_x": 38.0, "mast_sq": 22.0, "mast_wall": 3.0, "servo_seat_z": 200.0,
     "gopro_w": 71.0, "gopro_h": 55.0, "gopro_d": 33.6, "gopro_mass": 0.158,      # [V]
     "gopro_lens_dy": 17.0, "gopro_lens_dz": 6.0, "gopro_lens_protrude": 5.0,    # [M] approx. lens centre offset
     "pan_half_range_deg": 45.0, "cam_tilt_deg": 0.0,                             # [D] matches camera_aim default
@@ -954,20 +963,77 @@ def build_model(P=None):
         ey0, ey1 = (29, 56) if s > 0 else (-56, -29)
         m.part("esc_" + side, H, COL["hw_dark"], [box(-179, -131, ey0, ey1, dz1 + 0.01, dz1 + 14)],
                mass=0.03, mates={"deck"}, note="AM32 ESC envelope 48 x 28 x 14 [M], zip-tied to the deck")
+    # ---------------- SunFounder ESP32 extension board on a slide-in adapter ----------------
+    # One printed plate: its T-tongue slides into the deck cradle (the grooves the bare DevKit used to slide in).
+    # Four plain printed spacer tubes sit in 2 mm counterbores and hold the board 4 mm above the plate (room for its
+    # through-hole solder joints; vent slots let air through). M2 screws go through the board and the tubes into
+    # heat-set inserts in bosses under the plate (the same 3.6 mm hole as the Pi standoffs, which fits the owner's
+    # inserts). The holes run through, so a long screw just pokes out the bottom.
+    # Board 64 (x) x 67 (y), holes 57 x 60 [V, SunFounder drawing]; screw terminals along the 64 mm edges (wires
+    # leave sideways, +/-y), DevKit on female headers along x, its micro-USB toward the Pi (+x).
+    fs, fv = P["ext_fit_side"], P["ext_fit_vert"]
+    rail_in = ew / 2 + 0.3                          # cradle channel half-width (rail inner face)
+    g_lo, g_hi, g_out = pcb_z - 0.2, pcb_z + 1.9, ew / 2 + 0.3 + 1.2   # cradle groove (see the deck cuts)
+    rail_top = pcb_z + 5
+    pl_t = P["ext_plate_t"]
+    pl_z1 = rail_top + pl_t
+    seat_z = pl_z1 - P["ext_cbore_depth"]           # standoff seat (counterbore floor)
+    bd_z0 = seat_z + P["ext_standoff_h"]            # extension board underside
+    hx, hy = P["ext_hole_dx"] / 2, P["ext_hole_dy"] / 2
+    bx, by = P["ext_board_x"] / 2, P["ext_board_y"] / 2
+    boss_r, boss_z0 = P["ext_boss_d"] / 2, rail_top - P["ext_boss_h"]
+    tl = P["ext_tongue_l"] / 2
+    pw = max(bx, hx + boss_r) + 0.5                 # plate half sizes: board footprint, bosses inside
+    pd = max(by, hy + boss_r) + 0.5
+    plate = m.part("esp_ext_plate", "printed", COL["light"],
+                   rbox(ecx - pw, ecx + pw, -pd, pd, rail_top, pl_z1, 4)
+                   + [box(ecx - rail_in + fs, ecx + rail_in - fs, -tl, tl, g_lo + fv + 1.6 - 0.01, rail_top + 0.01),   # web
+                      box(ecx - g_out + fs, ecx + g_out - fs, -tl, tl, g_lo + fv, g_lo + fv + 1.6)]                 # flange
+                   + [cyl((ecx + sx * hx, sy * hy, boss_z0), (ecx + sx * hx, sy * hy, rail_top + 0.01), boss_r)
+                      for sx in (-1, 1) for sy in (-1, 1)],
+                   material="PETG", mates={"deck"},
+                   note="slide-in adapter for the SunFounder ESP32 extension: T-tongue in the cradle grooves, "
+                        "%.2f mm clearance per side, %.2f mm above/below the flange; 4 heat-set inserts; vent slots; "
+                        "print top face down, one piece, no supports" % (fs, fv))
+    assert g_lo + fv + 1.6 <= g_hi - fv + 1e-6, "flange does not fit the cradle groove"
+    for xc in (17.5, 22.0, 26.5):                   # vent slots beside the tongue, clear of the bosses
+        for sx in (-1, 1):
+            plate["cuts"].append(box(ecx + sx * xc - 1.25, ecx + sx * xc + 1.25, -21, 21, rail_top - co, pl_z1 + co))
+    for k, (sx, sy) in enumerate(((-1, -1), (1, -1), (1, 1), (-1, 1))):
+        hc = (ecx + sx * hx, sy * hy)
+        m.hole("esp_ext_plate", "ext_insert_%d" % (k + 1), (hc[0], hc[1], seat_z + 0.01), (hc[0], hc[1], boss_z0 - co),
+               P["ins_m25"], kind="insert", for_item="SunFounder board M2 screw into a heat-set insert (same hole as the Pi's)")
+        m.hole("esp_ext_plate", "ext_cbore_%d" % (k + 1), (hc[0], hc[1], seat_z), (hc[0], hc[1], pl_z1 + co),
+               P["ext_cbore_d"], kind="cbore", for_item="printed spacer seat", audit=False)
+    so_r, si_r = P["ext_spacer_od"] / 2, P["ext_spacer_id"] / 2
+    m.part("esp_ext_spacers", "printed", COL["accent"],
+           [cyl((ecx + sx * hx, sy * hy, seat_z), (ecx + sx * hx, sy * hy, bd_z0), so_r) for sx in (-1, 1) for sy in (-1, 1)],
+           [cyl((ecx + sx * hx, sy * hy, seat_z - co), (ecx + sx * hx, sy * hy, bd_z0 + co), si_r) for sx in (-1, 1) for sy in (-1, 1)],
+           material="PETG", mates={"esp_ext_plate", "esp_ext_board"},
+           note="4 plain printed spacer tubes (print upright, all four at once); M2 screw through board + tube into the plate")
+    term_h, hdr_h = 9.5, 8.5
+    hdr_y = ew / 2 - 2.5
+    m.part("esp_ext_board", H, COL["pcb_blue"],
+           rbox(ecx - bx, ecx + bx, -by, by, bd_z0, bd_z0 + 1.6, 3)
+           + [box(ecx - 23, ecx + 23, s * (by - 7.5), s * (by - 0.5), bd_z0 + 1.6, bd_z0 + 1.6 + term_h) for s in (1, -1)]
+           + [box(ecx - 24.2, ecx + 24.2, s * hdr_y - 1.27, s * hdr_y + 1.27, bd_z0 + 1.6, bd_z0 + 1.6 + hdr_h) for s in (1, -1)],
+           mass=0.03, mates={"esp_ext_plate", "esp32", "esp_ext_wires", "esp_ext_spacers"},
+           note="SunFounder ESP32 camera extension 64 x 67, screw terminals + female headers [V drawing, heights M]")
+    dk_z = bd_z0 + 1.6 + hdr_h                      # DevKit PCB underside, sitting on the female headers
     m.part("esp32", H, COL["pcb_blue"],
-           [box(ecx - ew / 2, ecx + ew / 2, -el / 2, el / 2, pcb_z, pcb_z + 1.6),
-            box(ecx - 9, ecx + 9, -el / 2 + 1, -el / 2 + 26.5, pcb_z + 1.6, pcb_z + 4.8),
-            box(ecx - 4, ecx + 4, el / 2 - 5, el / 2 + 1, pcb_z + 1.6, pcb_z + 4.6)]
-           + [box(ecx + sx * (ew / 2 - 2.5) - 1.25, ecx + sx * (ew / 2 - 2.5) + 1.25, -24, 24, pcb_z - 8.5, pcb_z)
-              for sx in (-1, 1)],
-           mass=0.012, mates={"deck", "esp32_plugs"}, note="ESP32 DevKit (WROOM-32, CP2102) [M size]")
-    m.part("esp32_plugs", "keepout", COL["keepout"],
-           [box(ecx + sx * (ew / 2 - 2.5) - 1.8, ecx + sx * (ew / 2 - 2.5) + 1.8, -24, 24, pcb_z - 8.5 - 18, pcb_z - 2.5)
-            for sx in (-1, 1)], note="female jumper plugs on the downward pins + wire bend", mates={"esp32", "deck"})
-    m.part("esp32_usb", "keepout", COL["keepout"], [box(ecx - 6, ecx + 6, el / 2 + 1, el / 2 + 22, pcb_z - 3, pcb_z + 8)],
+           [box(ecx - el / 2, ecx + el / 2, -ew / 2, ew / 2, dk_z, dk_z + 1.6),
+            box(ecx - el / 2 + 1, ecx - el / 2 + 26.5, -9, 9, dk_z + 1.6, dk_z + 4.8),
+            box(ecx + el / 2 - 5, ecx + el / 2 + 1, -4, 4, dk_z + 1.6, dk_z + 4.6)],
+           mass=0.012, mates={"esp_ext_board", "esp32_usb"}, note="ESP32 DevKit (WROOM-32, CP2102) [M size]")
+    m.part("esp32_usb", "keepout", COL["keepout"], [box(ecx + el / 2 + 1, ecx + el / 2 + 22, -6, 6, dk_z - 3, dk_z + 8)],
            note="right-angle micro-USB plug to the Pi", mates={"esp32"})
-    esp_pin = (ecx + ew / 2 - 2.5, 0.0, pcb_z - 16)
-    m.info["esp32"] = {"pcb_z": pcb_z, "x": ecx}
+    m.part("esp_ext_wires", "keepout", COL["keepout"],
+           [box(ecx - 23, ecx + 23, s * (by + 0.01) if s > 0 else -by - 14, by + 14 if s > 0 else -by - 0.01,
+                bd_z0 + 3, bd_z0 + 1.6 + term_h - 1) for s in (1, -1)],
+           note="wires into the screw terminals + bend", mates={"esp_ext_board"})
+    term_y, term_z = by + 10, bd_z0 + 6.5             # where the signal harnesses end (+y terminal strip)
+    m.info["esp32"] = {"pcb_z": dk_z, "x": ecx, "board_z": bd_z0, "plate_top": pl_z1,
+                       "top": dk_z + 4.8, "usb_top": dk_z + 8}
     m.part("fuse_zone", "keepout", (255, 160, 0), [box(-180, -146, -30, 30, zf1 + 1, zf1 + 28)],
            note="20 A blade fuse + XT30/Wago distribution, below the deck behind the battery [M]", mates={"tub"})
     m.part("xt60_plug", H, COL["battery"], [box(x0 - 14, xr_in, -38, -22, 117, 125)], mass=0.01, mates={"tub"},
@@ -1014,7 +1080,8 @@ def build_model(P=None):
     m.nests += [("gopro", "pan_buckle", "camera fingers interleave the buckle prongs"),
                 ("servo", "servo9g_adapter", "alternatives: only one is fitted")]
     mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_anchor", "servo9g_adapter"]
-    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp32"]
+    deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp_ext_plate", "esp_ext_spacers", "esp_ext_board",
+                "esp32"]
     bolts = ["plate_bolt_%s%d" % (sd_, k) for sd_ in "LR" for k in range(3)]
     m.removals = [
         (mast_grp, (0, 0, 1), 170, []),
@@ -1042,7 +1109,7 @@ def build_model(P=None):
     ch = (mx - sq / 2 + mw / 2, 0.0)
     cz = head_z0 - 7
     pz = dz1 + 12
-    ein = [(ecx + 22, 36, esp_pin[2]), (esp_pin[0], 36, esp_pin[2]), esp_pin]   # into the cradle from its open +y end
+    ein = [(ecx + 15, term_y + 6, term_z), (ecx + 10, term_y, term_z), (ecx + 10, term_y - 12, term_z)]   # into the +y screw terminals
     fz = (-163, 0, zf1 + 14)                                                    # fuse / distribution block
     m.routes = [
         ("battery main 12 AWG", [(48, -26, 48), (38, -26, 60), (30, -45, 73), (-150, -45, 73), (-163, -20, zf1 + 20), fz]),
@@ -1058,7 +1125,8 @@ def build_model(P=None):
         ("UWB anchor USB -> Pi", [(upx + 8, 22, uwz0 + 6), (upx + 8, 33, uwz0 + 6), (upx - 3, 33, uwz0 + 6), (mx, 26, cz),
                                   (mx - 16, 26, cz), (mx - 16, 0, cz), (ch[0], -2, cz),
                                   (ch[0], -2, 118), (sx, -3, 118), (pi_x0 - 12, 0, 118), (pi_x0 - 12, 0, pz)]),
-        ("ESP32 USB", [(ecx, el / 2 + 18, pcb_z + 2), (ecx + 30, 40, pcb_z + 2), (pi_x0 - 12, 10, 120), (pi_x0 - 12, 10, pz)]),
+        ("ESP32 USB", [(ecx + el / 2 - 2, 0, dk_z + 3), (ecx + el / 2 + 18, 0, dk_z + 3), (ecx + 60, 10, dk_z + 3),
+                       (pi_x0 - 12, 10, 120), (pi_x0 - 12, 10, pz)]),
         ("ESC signals -> ESP32", [(-134, 40, dz1 + 15), (-150, 36, 120)] + ein),
         ("Pi 5 V from reg L", [(20, 39, dz1 + 11), (20, 30, 116), (pi_x0 + 40, 26, 116), (pi_x0 + 40, 26, dz1 + 12)]),
         ("HC-SR04", [(plug[0], 0, plug[2] + 8), (x1 + 6, -12, 133), (x1 + 3, -30, 131), (xf_in - 8, -30, 131),

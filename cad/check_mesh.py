@@ -50,7 +50,7 @@ ORIENT = {
     "shell": ("x", 180), "bumper_door": ("z", 0), "motor_plate_L": ("x", -90), "motor_plate_R": ("x", 90),
     "wheel_pulley_FL": ("x", -90), "wheel_pulley_RL": ("x", -90), "wheel_pulley_FR": ("x", 90),
     "wheel_pulley_RR": ("x", 90), "motor_pulley_L": ("x", 90), "motor_pulley_R": ("x", -90), "mast": ("x", 90), "us_bracket": ("x", 90),
-    "servo9g_adapter": ("x", 180),
+    "servo9g_adapter": ("x", 180), "esp_ext_plate": ("x", 180), "esp_ext_spacers": ("z", 0),
 }
 
 

@@ -2,7 +2,7 @@
 
 Files:
 - `cad/fusion/HonebotChassis/HonebotChassis.py` (+ `.manifest`): **Fusion 360 script that builds the whole robot**:
-  15 printed parts on the robot (+ a bench-only 9 g servo adapter and a drill jig, both hidden), reference hardware and
+  15 printed parts on the robot + the ESP32 extension adapter (+ a bench-only 9 g servo adapter and a drill jig, both hidden), reference hardware and
   keep-out volumes. It is the single geometry source.
 - `cad/check_design.py`: offline checker. It imports the same file without Fusion and checks:
   - clearances, holes and assembly paths;
@@ -16,7 +16,7 @@ Files:
 
 > **Run it:** Fusion → Utilities → Add-Ins → Scripts and Add-Ins → "+" next to *My Scripts* → pick the
 > `cad/fusion/HonebotChassis` folder → select *HonebotChassis* → Run. Expect a new document and a message
-> **"built 83 of 83 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
+> **"built 86 of 86 parts"**. The previous (caster) version built 72 of 72 in the owner's Fusion; this version uses
 > the same API calls. If any part or boolean fails, the message box names it: send the text back.
 > If the model looks like it is lying on its back, your Fusion uses "Y up": the script models Z up (x forward, y left).
 
@@ -33,7 +33,7 @@ Files:
 | Rear-belt tension | — | **Idler (2 × 608-2RS side by side)** on an M8 hex bolt in a vertical wall slot, pressing the 1:1 belt's upper run down at mid-span. The wheelbase (**200.0 mm**) is solved from the belt length for 2 mm of take-up; the 15.6 mm slot covers 0.3–4.5 mm (±0.3 % print shrink on 200 mm is ±1.2 mm of belt path, plus belt tolerance). The bolt head sits in a hex channel inside, so the nyloc tightens from outside | Rear axle stays a fixed captive-nut stub axle like the front one |
 | Pulley fixing | M3 × 80 through the wheel core into nylocs | **Heat-set inserts in the pulleys**, M3 screws from the wheel's outer face | The 36T neck left no room for a nut; 16 nuts fewer |
 | Axle sleeves | 7075 turned 18 mm | **Stock steel tubes**: 12 × 2 inside 16 × 2 (E355, no lathe) | Buyable; SF 2.0 |
-| Size / mass | 399 × 343 × 173 mm, 3.4 kg | **343 × 343 × 145 mm** (mast off), 288 mm tall with the GoPro, **≈ 3.9 kg** (estimate) | Two more wheels, axles and belts (+0.4 kg); shorter (no tail) |
+| Size / mass | 399 × 343 × 173 mm, 3.4 kg | **343 × 343 × 150 mm** (mast off; lid raised 5 mm 2026-11-17 for the ESP32 extension), 293 mm tall with the GoPro, **≈ 3.9 kg** (estimate) | Two more wheels, axles and belts (+0.4 kg); shorter (no tail) |
 | Stability | sideways tip 0.79 g, pitch-over 0.71 g | **sideways 1.77 g, pitch-over 0.88 g**, backward 1.67 g | Rectangle of 4 contacts instead of a triangle |
 
 Costs of skid steer, and how they are handled:
@@ -189,6 +189,8 @@ face-down orientations of each part.
 | tub | 1 | PAHT-CF (PETG is fine for a walking/jogging-speed prototype) | Floor on the bed | Tree supports from the floor under the two axle tie beams (62 mm bridges over the battery tunnel), the short ledge under the mast socket (12 × 48 mm) and the two belt pull-screw bosses. Everything else hanging off a wall runs to the floor or has a 45° underside. Put **support blockers** in the 4 axle holes and the 2 motor-plate pockets: they print as arches |
 | shell (lid + pods) | 1 | PETG | **Lid on the bed** (flat top) | None |
 | deck (with ESP32 cradle) | 1 | PETG | Flat, cradle up | None |
+| esp_ext_plate (SunFounder extension adapter) | 1 | PETG | **Top face down** (tongue and bosses up) | None (the 1.2 mm flange lip and the 5.4 mm counterbore roofs print as short overhangs/bridges) |
+| esp_ext_spacers (4 plain tubes, one file) | 1 set | PETG | Upright | None |
 | motor_plate_L/R | 2 | PAHT-CF | Motor face down, counterbores up | None |
 | wheel_pulley_FL/FR/RL/RR | 4 | PAHT-CF, 0.12 mm layers | Wheel-side disc down (axis vertical) | None. The upper 3 mm flange of each tooth section is a short overhang that prints |
 | motor_pulley_L/R | 2 | PAHT-CF, 0.12 mm layers | Bell side down | None |
@@ -198,6 +200,20 @@ face-down orientations of each part.
 | pan_buckle | 1 | PETG | Horn disc down | None |
 | servo9g_adapter, pulley_drill_jig | 1 each | PETG | Bench only / tool (hidden in Fusion) | |
 | prototype kit (sleeves, TPU belts) | | see §6b | Flat as laid out | None |
+
+**ESP32 extension adapter (2026-11-17, v4: M2 screws into heat-set inserts, printed spacers, nothing to buy).** The SunFounder ESP32
+extension board sits on **one printed plate** whose T-tongue slides into the deck cradle (the grooves the bare DevKit
+used). Fit: tongue web and flange **0.20 mm per side** narrower than the channel and groove, flange 1.6 mm in a 2.1 mm
+groove (**0.25 mm above and below**); the plate rests on the rail tops. Change `ext_fit_side` / `ext_fit_vert` in
+PARAMS if your printer runs tight or loose. Four **plain printed spacer tubes** (OD 5, bore 2.4, 6 long) sit in 2 mm
+counterbores and keep the board 4 mm above the plate, clear of its through-hole solder joints; six vent slots let air
+through. **M2 screws** go through the board and the tubes into **heat-set inserts** pressed into bosses under the
+plate from the top. The insert holes are the **same 3.6 mm as the Pi standoffs** (`ins_m25`), which fit the owner's
+M2 inserts; they run through the 6 mm boss, so any screw from about 10 to 16 mm works (a long one pokes out the
+bottom). Press the inserts before fitting the spacers.
+Print the plate top face down and the spacers upright, no supports. Stack (z above the ground): plate top 119.5,
+board underside 123.5, DevKit underside 133.6, module top 138.4, micro-USB plug keep-out to 141.6, lid underside 145
+(the 3 mm keep-out rule passes).
 
 **Slicer settings (Bambu Studio).** These matter more than geometry for cost and time:
 - Walls: 3. Top/bottom: 5 layers. Sparse infill: 15 % gyroid.
@@ -273,6 +289,7 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | XT60 pigtails, 20 A blade fuse holder, panel XT60 as arming plug | | pull the plug = everything off |
 | MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
 | Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
+| SunFounder ESP32 camera extension board + 4 × M2 × 10–16 screws + 4 heat-set inserts (owned; same 3.6 mm hole as the Pi standoffs) | 1 | screws pass the board and the printed spacers into the inserts |
 | 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
 
 ## 6b. Prototype kit: drive it before buying the metal
@@ -333,6 +350,7 @@ the motor plates, and the mast's servo-lead notch.
 |---|---|---|
 | tub | 1 | PAHT-CF (or PETG at walking/jogging speeds) |
 | shell, deck (with Pi standoffs and ESP32 cradle), bumper_door, us_bracket, pan_buckle | 1 each | PETG |
+| esp_ext_plate + esp_ext_spacers (SunFounder ESP32 extension adapter) | 1 + 1 set | PETG |
 | motor_plate_L/R, motor_pulley_L/R, wheel_pulley_FL/FR/RL/RR | 1 each | PAHT-CF |
 | mast | 1 | PAHT-CF (only needed for the camera) |
 | pulley_drill_jig | 1 | PETG, to drill the 4 wheel cores |
