@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Handheld remote -> ROS 2 Twist, so the remote can drive a turtle (or show what the robot is doing).
+"""Handheld remote (+ the follow-bot code) -> the Twist that moves the "robot" turtle.
 
-source:=serial (bench, no robot ESP32 needed)
-    Reads the remote board's own USB printout (`state=RUN x=+0.50 y=-0.20 ...`, 5 per second) on `port`
-    and applies the robot firmware's rules: only RUN drives, same deadband, mixing and speed limit
-    (remote_logic.remote_to_wheels). No ramps. Nothing heard for `remote_timeout` -> stop, like the robot.
+source:=serial (bench: only the remote board, on this machine's USB)
+    Reads the remote's own printout (`state=RUN x=+0.50 y=-0.20 ...`, 5 per second) on `port`, and takes the
+    follow-bot code's commands on `cmd_vel_in` (Twist). Decides who drives exactly like the robot firmware
+    (remote_logic.Arbiter = drive::decide): remote STOP or lost -> nobody; RUN + stick pushed -> the stick
+    (same deadband, mixing and 2.4 m/s limit as the firmware); stick released for 0.8 s -> the follower again.
+    No ramps, no safety gate (no ultrasonic sensor without the robot ESP32).
 
-source:=esp32 (the real chain: remote --ESP-NOW--> robot ESP32 --USB--> esp32_bridge)
-    Subscribes esp32/outputs (geometry_msgs/Vector3: x = left, y = right, z = failsafe), published by
-    esp32_bridge from the robot ESP32's S line: what the wheels are really doing, whoever drives them
-    (stick or Pi), after the kill switch, ramps and limits. Needs esp32_bridge running on the robot ESP32.
+source:=esp32 (the real chain: remote --ESP-NOW--> robot ESP32 <--USB-- esp32_bridge <-- safety_gate <-- follower)
+    The robot ESP32's firmware makes that decision itself. This node only mirrors the result: it subscribes
+    esp32/outputs (geometry_msgs/Vector3: x = left, y = right, z = failsafe) from esp32_bridge, i.e. the wheel
+    commands the robot is really producing after kill switch, ramps and limits.
 
-Either way the wheel commands become a Twist on `cmd_vel_out` (remap it, e.g. to /turtle1/cmd_vel),
-published at `rate_hz` (zeros when stopped or stale), and the remote state on `remote/state` (std_msgs/String:
-run | stop | fault | lost, serial source only).
+Publishes `cmd_vel_out` (geometry_msgs/Twist at `rate_hz`, zeros when nobody drives; remap it to the turtle),
+`remote/state` (never | lost | stop | run) and `remote/source` (none | pi | manual), both std_msgs/String.
+`scale` slows the stick's speed for the small turtlesim window; the follower's commands are never scaled.
 
 On the real robot nothing here is in the driving path: the robot ESP32 takes the stick directly over ESP-NOW,
-even with the Pi off. This node only mirrors it.
+even with the Pi off.
 """
 
 import rclpy
@@ -24,10 +26,11 @@ import serial
 from geometry_msgs.msg import Twist, Vector3
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
-from honebot_remote_bridge.remote_logic import (FULL_SCALE_MPS, TRACK_WIDTH, parse_remote_line,
-                                                remote_to_wheels, wheels_to_twist)
+from honebot_remote_bridge.remote_logic import (FULL_SCALE_MPS, SRC_MANUAL, SRC_NONE, SRC_PI, TRACK_WIDTH,
+                                                Arbiter, ArbiterConfig, parse_remote_line, remote_to_wheels,
+                                                wheels_to_twist)
 
 
 class RemoteBridge(Node):
@@ -37,6 +40,8 @@ class RemoteBridge(Node):
         self.port = self.declare_parameter('port', '/dev/ttyUSB0').value
         self.baud = self.declare_parameter('baud', 115200).value
         self.remote_timeout = self.declare_parameter('remote_timeout', 0.5).value
+        manual_hold = self.declare_parameter('manual_hold', 0.8).value
+        cmd_timeout = self.declare_parameter('cmd_timeout', 0.5).value
         rate_hz = self.declare_parameter('rate_hz', 20.0).value
         self.track_width = self.declare_parameter('track_width', TRACK_WIDTH).value
         self.full_scale_mps = self.declare_parameter('full_scale_mps', FULL_SCALE_MPS).value
@@ -47,23 +52,39 @@ class RemoteBridge(Node):
 
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel_out', 10)
         self.state_pub = self.create_publisher(String, 'remote/state', 10)
+        self.source_pub = self.create_publisher(String, 'remote/source', 10)
 
         self.ser = None
         self.buf = b''
-        self.latest = None              # (left, right) wheel commands
-        self.latest_stamp = None
-        self.last_state = None
+        self.remote = None              # serial: last parsed RemoteState
+        self.remote_time = None
+        self.pi_cmd = None              # serial: last follower Twist
+        self.pi_time = None
+        self.arbiter = Arbiter(ArbiterConfig(remote_timeout=self.remote_timeout, manual_hold=manual_hold,
+                                             cmd_timeout=cmd_timeout))
+        self.outputs = None             # esp32: last (left, right)
+        self.outputs_time = None
+        self.esp32_manual = False
+        self.esp32_remote = None
+        self.last_logged = (None, None)
 
         if self.source == 'serial':
+            self.create_subscription(Twist, 'cmd_vel_in', self._on_pi_cmd, 10)
             self.create_timer(0.01, self._poll)          # read serial at 100 Hz, never blocks
             self.create_timer(1.0, self._ensure_open)
             self._ensure_open()
         else:
             self.create_subscription(Vector3, 'esp32/outputs', self._on_outputs, 10)
+            self.create_subscription(Bool, 'esp32/manual', self._on_esp32_manual, 10)
+            self.create_subscription(String, 'esp32/remote', self._on_esp32_remote, 10)
         self.create_timer(1.0 / rate_hz, self._publish)
         self.get_logger().info(
-            f'source={self.source}' + (f' port={self.port}' if self.source == 'serial' else ' (esp32/outputs)')
-            + f', scale={self.scale}')
+            f'source={self.source}' + (f' port={self.port}, follower commands on cmd_vel_in'
+                                       if self.source == 'serial' else ' (mirroring esp32/outputs)')
+            + f', stick scale={self.scale}')
+
+    def _now(self):
+        return self.get_clock().now().nanoseconds * 1e-9
 
     # --- serial source ----------------------------------------------------------
     def _ensure_open(self):
@@ -95,43 +116,52 @@ class RemoteBridge(Node):
         self.buf += data
         while b'\n' in self.buf:
             line, self.buf = self.buf.split(b'\n', 1)
-            self._handle_line(line.decode('ascii', errors='replace'))
+            text = line.decode('ascii', errors='replace')
+            s = parse_remote_line(text)
+            if s is not None:
+                self.remote, self.remote_time = s, self._now()
+            elif text.strip():
+                self.get_logger().debug(f'Ignoring line: {text.strip()!r}')
         if len(self.buf) > 512:          # no newline for a long time: junk
             self.buf = b''
 
-    def _handle_line(self, line):
-        s = parse_remote_line(line)
-        if s is None:
-            if line.strip():
-                self.get_logger().debug(f'Ignoring line: {line.strip()!r}')
-            return
-        self.latest = remote_to_wheels(s)
-        self.latest_stamp = self.get_clock().now()
-        self._set_state(s.state.lower())
+    def _on_pi_cmd(self, msg: Twist):
+        self.pi_cmd, self.pi_time = msg, self._now()
 
     # --- esp32 source -----------------------------------------------------------
     def _on_outputs(self, msg: Vector3):
-        self.latest = (float(msg.x), float(msg.y))
-        self.latest_stamp = self.get_clock().now()
+        self.outputs, self.outputs_time = (float(msg.x), float(msg.y)), self._now()
+
+    def _on_esp32_manual(self, msg: Bool):
+        self.esp32_manual = bool(msg.data)
+
+    def _on_esp32_remote(self, msg: String):
+        self.esp32_remote = msg.data
 
     # --- output -----------------------------------------------------------------
-    def _set_state(self, state):
-        if state != self.last_state:
-            self.get_logger().info(f'Remote: {state}')
-            self.last_state = state
-
     def _publish(self):
-        fresh = False
-        if self.latest_stamp is not None:
-            age = (self.get_clock().now() - self.latest_stamp).nanoseconds * 1e-9
-            fresh = age <= self.remote_timeout
-        left, right = self.latest if fresh else (0.0, 0.0)
+        now = self._now()
+        linear = angular = 0.0
         if self.source == 'serial':
-            if not fresh and self.last_state not in (None, 'lost'):
-                self._set_state('lost')
-            if self.last_state is not None:
-                self.state_pub.publish(String(data=self.last_state))
-        linear, angular = wheels_to_twist(left, right, self.track_width, self.full_scale_mps, self.scale)
+            source, rstate = self.arbiter.decide(now, self.remote, self.remote_time, self.pi_time)
+            if source == SRC_MANUAL:
+                left, right = remote_to_wheels(self.remote)
+                linear, angular = wheels_to_twist(left, right, self.track_width, self.full_scale_mps, self.scale)
+            elif source == SRC_PI:
+                linear, angular = self.pi_cmd.linear.x, self.pi_cmd.angular.z
+        else:
+            fresh = self.outputs_time is not None and now - self.outputs_time <= self.remote_timeout
+            if fresh:
+                linear, angular = wheels_to_twist(*self.outputs, self.track_width, self.full_scale_mps)
+            rstate = self.esp32_remote or 'never'
+            moving = abs(linear) > 1e-3 or abs(angular) > 1e-3
+            source = SRC_MANUAL if self.esp32_manual else (SRC_PI if moving else SRC_NONE)
+
+        if (source, rstate) != self.last_logged:
+            self.get_logger().info(f'Remote: {rstate}, driving: {source}')
+            self.last_logged = (source, rstate)
+        self.state_pub.publish(String(data=rstate))
+        self.source_pub.publish(String(data=source))
         msg = Twist()
         msg.linear.x = float(linear)
         msg.angular.z = float(angular)

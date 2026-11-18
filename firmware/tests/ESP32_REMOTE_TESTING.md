@@ -24,8 +24,9 @@ sources:
 | `serial` (default) | the **remote** board | what the robot *would* do: same STOP/RUN rule, deadband, mixing and 2.4 m/s limit as the robot firmware, no ramps |
 | `esp32` | the **robot** ESP32 (the remote talks to it by radio) | what the robot ESP32 *really* outputs, from its `S` line: kill switch, ramps and limits included. This is the real chain |
 
-`follow:=true` also starts the follow-bot code (`honebot_follow`, turtle2) chasing turtle1. The remote drives
-turtle1, which stands in for the skater.
+Without `follow`, the remote simply drives turtle1. With `follow:=true` you test **both** together, as on the
+robot: turtle1 is the skater (you drive it with the keyboard), turtle2 is the robot, driven by the follow-bot
+code, and the remote overrides it (section D).
 
 ## 0. Get the code onto the Pi and build it (Pi)
 
@@ -115,15 +116,47 @@ ros2 topic echo /esp32/outputs
 ```
 `x` = left wheel, `y` = right wheel (-1..1), `z` = 1.0 while the ESP32 forces neutral.
 
-## D. Remote drives the "skater", follow-bot code chases it
+## D. Follow bot + remote override (the full test before the robot)
 
-Add `follow:=true` to any of the launches above, for example:
+turtle1 = the skater, turtle2 = the robot. The follow-bot code (`honebot_follow`, through the same
+simulated-UWB `/target` pipeline the robot uses) drives turtle2, and the remote decides who really drives:
+
+| Remote | turtle2 (the robot) |
+|---|---|
+| STOP (power-up, or click) | stays still, even though the follower wants to drive (the kill switch holds the follow bot too) |
+| off / out of range | stops within 0.5 s |
+| RUN, stick centred | the follower drives: it chases the skater and keeps `follow_distance` (1.5 m) |
+| RUN, stick pushed | **you** drive (overrides the follower) |
+| stick released | 0.8 s later the follower takes over again |
+
+**First without hardware** (automatic, 7 PASS/FAIL checks covering every row above):
 ```bash
-QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py follow:=true
+tests/test_esp32_remote.sh fake follow
 ```
-turtle2 (the follower, through the same simulated-UWB `/target` pipeline the robot uses) keeps
-`follow_distance` (1.5 m) behind turtle1. Drive turtle1 around with the stick and watch it follow; switch the
-remote to STOP and turtle1 stops, then turtle2 stops at its follow distance.
+Expected: `7/7 checks passed`.
+
+**With the remote board on the Pi's USB** (the Pi applies the firmware's rules; no safety gate):
+```bash
+tests/test_esp32_remote.sh serial /dev/ttyUSB0 follow
+```
+
+**With the robot ESP32 on the Pi's USB** (remote by radio). This runs the robot's real decision logic in its
+firmware, plus the real safety gate with the HC-SR04:
+`follower -> /cmd_vel_raw -> safety_gate -> /cmd_vel -> esp32_bridge -> ESP32 -> /esp32/outputs -> turtle2`.
+```bash
+tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
+```
+Point the ultrasonic sensor at open space (more than 1 m), or the gate slows and stops the follower. That is
+also a test: cover the sensor with your hand and turtle2 stops following, but the stick still drives it
+(manual drive bypasses the Pi, as on the robot).
+
+In either case drive the skater from a **second terminal** (arrow keys; the window needs focus):
+```bash
+ros2 run turtlesim turtle_teleop_key
+```
+
+The launch logs `Remote: run, driving: pi` / `manual` / `none` whenever that changes; `/remote/source` carries
+the same in Foxglove.
 
 ## Output format of the remote (USB serial, 115200, 5 lines a second)
 
