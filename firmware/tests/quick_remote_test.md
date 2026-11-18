@@ -13,6 +13,12 @@ arduino-cli monitor -p /dev/cu.usbserial-0001 -c baudrate=115200
 - [ ] stick away from you: `x=+1.00`; stick left: `y=+1.00`
 - [ ] hold the button 1.5 s, stick centred: `state=RUN`; click: `state=STOP`
 
+Or let the script walk you through those checks (close the monitor first):
+```bash
+python3 tests/test_remote_basic.py /dev/cu.usbserial-0001
+```
+- [ ] `9/9 steps passed`
+
 ## Pi: build once
 ```bash
 cd ~/honebot_ws && colcon build --symlink-install --packages-select honebot_remote_bridge honebot_hardware
@@ -22,6 +28,11 @@ source install/setup.bash
 ```
 
 ## Pi: no hardware (fake remote)
+One command (checks the setup, launches, runs the check, stops):
+```bash
+tests/test_esp32_remote.sh fake
+```
+or by hand, two terminals:
 ```bash
 QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py port:=/tmp/honebot_fake_remote
 ```
@@ -38,6 +49,8 @@ QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py port:
 ```bash
 QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py source:=esp32 port:=/dev/ttyUSB0
 ```
+(`tests/test_esp32_remote.sh serial|esp32 /dev/ttyUSB0` checks the setup first, then runs the same launch.)
+
 For either:
 - [ ] STOP (power-up): turtle still, even with the stick pushed
 - [ ] hold 1.5 s (stick centred) -> RUN; stick away: forward; stick left: turns counter-clockwise

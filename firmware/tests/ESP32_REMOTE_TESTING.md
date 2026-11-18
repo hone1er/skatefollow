@@ -47,9 +47,13 @@ demo (or from SSH with the `sg video` wrapper in CLAUDE.md).
 
 ## A. No hardware: fake remote (Pi, or any machine with ROS 2)
 
-Checks the bridge and turtlesim before any board is involved.
+Checks the bridge and turtlesim before any board is involved. One command, from the repo root:
+```bash
+tests/test_esp32_remote.sh fake
+```
+It checks the setup, starts the launch, runs the automatic check below and stops everything again.
 
-Terminal 1 (the bridge keeps retrying until the fake port exists):
+Or step by step. Terminal 1 (the bridge keeps retrying until the fake port exists):
 ```bash
 QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py port:=/tmp/honebot_fake_remote
 ```
@@ -64,11 +68,15 @@ Or drive it by hand: run `python3 firmware/tests/sim_remote.py` in terminal 2 an
 
 ## B. Remote board plugged into the Pi (source:=serial)
 
-1. Flash the remote from the Mac and check its serial output (`firmware/tests/test_remote_turtle.sh <port>`
-   does both; see `firmware/esp32_remote/README.md`).
+1. Flash the remote from the Mac (`firmware/tests/test_remote_turtle.sh <port>`), then let a script walk you
+   through the stick and button checks (no ROS needed; it says PASS/FAIL per step):
+   ```bash
+   python3 tests/test_remote_basic.py /dev/cu.usbserial-0001
+   ```
+   (`--watch` instead just prints every line with what the robot would do.)
 2. Plug the remote into the Pi's USB. With only that board plugged in it is `/dev/ttyUSB0` (check with
    `ls /dev/ttyUSB*`).
-3. On the Pi:
+3. On the Pi (`tests/test_esp32_remote.sh serial /dev/ttyUSB0` does the same after checking the setup):
    ```bash
    QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py port:=/dev/ttyUSB0
    ```
@@ -92,7 +100,8 @@ This tests exactly what the robot will run, including the kill switch.
    <robot_port>`). Keep `REMOTE_REQUIRED = true`.
 2. Plug the **robot** ESP32 into the Pi (`/dev/ttyUSB0`). Power the remote from a power bank. Its LED should
    blink fast (robot answering).
-3. On the Pi (stop the boot service first if it is installed, it holds the port: `sudo systemctl stop honebot`):
+3. On the Pi (stop the boot service first if it is installed, it holds the port: `sudo systemctl stop honebot`;
+   `tests/test_esp32_remote.sh esp32 /dev/ttyUSB0` checks that and then runs the same launch):
    ```bash
    QT_QPA_PLATFORM=linuxfb ros2 launch honebot_remote_bridge bridge_launch.py source:=esp32 port:=/dev/ttyUSB0
    ```
@@ -162,5 +171,7 @@ spin test.
 | `src/honebot_hardware/.../esp32_bridge.py` | publishes `/esp32/outputs` from the robot ESP32's `S` line |
 | `firmware/tests/sim_remote.py` | fake remote on a pseudo-terminal (no ESP32 needed) |
 | `tests/test_remote_turtlesim.py` | end-to-end check: fake remote -> bridge -> turtle, PASS/FAIL |
+| `tests/test_esp32_remote.sh` | Pi: checks the setup, then launches `fake` (+ the check), `serial` or `esp32` mode |
+| `tests/test_remote_basic.py` | no ROS: guided stick/button check of a remote on USB (`--watch`, `--sim`) |
 | `firmware/tests/test_remote_turtle.sh` | flash the remote (and robot) from the Mac, then print the checks |
 | `firmware/tests/quick_remote_test.md` | one-page checklist of this guide |

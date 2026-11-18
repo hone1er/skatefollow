@@ -1,189 +1,177 @@
 #!/usr/bin/env python3
-"""Basic ESP32 Remote Test (Standalone, No ROS 2).
+"""Check the handheld remote's serial output, no ROS needed (Mac or Pi). Needs pyserial.
 
-This tests the ESP32 remote serial output parsing without requiring ROS 2 or turtlesim.
+Guided check of a real remote board on USB (it asks you to move the stick and press the button, and checks
+each step from the serial lines):
+    python3 tests/test_remote_basic.py /dev/cu.usbserial-0001      # Mac
+    python3 tests/test_remote_basic.py /dev/ttyUSB0                # Pi
 
-Usage:
-    pip install pyserial
-    python test_remote_basic.py <serial_port>
+Just watch the lines, with what the robot would do for each (wheel commands, speed, turn rate):
+    python3 tests/test_remote_basic.py /dev/ttyUSB0 --watch
 
-Or just run:
-    python test_remote_basic.py /dev/cu.usbserial-0001
+No hardware: runs the same guided check against the fake remote (firmware/tests/sim_remote.py), playing the
+person too. Checks this script, the parser and the pseudo-terminal plumbing:
+    python3 tests/test_remote_basic.py --sim
+
+Lines are parsed with the same code the ROS bridge uses (src/honebot_remote_bridge/.../remote_logic.py).
+Exit code 0 when every step passed.
 """
 
+import argparse
+import os
 import sys
-import re
+import threading
 import time
-from datetime import datetime
 
-def parse_remote_line(line):
-    """Parse firmware output line into structured data."""
-    if not line.strip():
-        return None
-    
-    result = {}
-    
-    # Match patterns like: state=RUN, x=-0.5, y=-0.5, btn=1, robot=1, pi=0, failsafe=0, manual=1
-    for match in re.finditer(r'(\w+)=([+-]?\d+(?:\.\d+)?)', line):
-        key, val = match.groups()
-        if '.' in val:
-            result[key] = float(val)
-        else:
-            result[key] = int(val)
-    
-    return result
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [os.path.join(HERE, '..', 'src', 'honebot_remote_bridge'),
+                os.path.join(HERE, '..', 'firmware', 'tests')]
+from honebot_remote_bridge.remote_logic import parse_remote_line, remote_to_wheels, wheels_to_twist  # noqa: E402
 
-def test_remote_serial(port='/dev/cu.usbserial-0001'):
-    """Test ESP32 remote by reading serial output."""
-    import serial
-    
-    print(f"Connecting to ESP32 remote at {port}...")
-    
-    try:
-        ser = serial.Serial(port, 115200, timeout=3)
-        time.sleep(1)  # Wait for firmware to initialize
-        print("Connected! Testing remote...")
-        print()
-    except serial.SerialException as e:
-        print(f"Failed to connect to {port}: {e}")
-        print("\nPossible solutions:")
-        print("  - Check if ESP32 is powered (USB power bank)")
-        print("  - Try a different USB port")
-        print("  - Find your actual port: ls /dev/tty.usbserial*")
-        return
-    
-    # Display header
-    print("=" * 70)
-    print(f"ESP32 Remote Serial Test")
-    print(f"Port: {port}")
-    print(f"Baud: 115200")
-    print()
-    print("Joystick test:")
-    print("  Push stick away from you → x should go to +1.00")
-    print("  Push stick left → y should go to +1.00")
-    print("  Click button → btn becomes 1")
-    print()
-    print("Button hold test (stick centered):")
-    print("  Press and HOLD button for 1.5 seconds with stick at rest")
-    print("  → state changes from STOP to RUN")
-    print()
-    print("-" * 70)
-    print()
-    
-    # Main loop - display output
-    last_normal = time.time()
-    
-    try:
-        while True:
-            line = ser.readline().decode('utf-8', errors='replace').strip()
-            
-            if not line:
+STEP_TIMEOUT_S = 20.0
+
+
+class LineReader:
+    """Reads remote lines from a serial port in the background; keeps the newest parsed one."""
+
+    def __init__(self, port):
+        import serial      # pyserial, only needed here
+        self.ser = serial.Serial(port, 115200, timeout=0.2)
+        self.latest = None
+        self.latest_time = 0.0
+        self.count = 0
+        self.raw_last = ''
+        self._stop_evt = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self):
+        buf = b''
+        while not self._stop_evt.is_set():
+            try:
+                buf += self.ser.read(256)
+            except Exception:
+                time.sleep(0.2)
                 continue
-            
-            data = parse_remote_line(line)
-            
-            # Skip garbage / initialization noise
-            if 'state' not in data or len(data) < 2:
-                continue
-            
-            # Format output nicely
-            now = time.strftime('%H:%M:%S')
-            state = data.get('state', 'STOP').upper()
-            x = f"{data.get('x', 0):+.2f}" if data.get('x') is not None else "N/A"
-            y = f"{data.get('y', 0):+.2f}" if data.get('y') is not None else "N/A"
-            btn = data.get('btn', 0)
-            manual = data.get('manual', 0)
-            
-            print(f"[{now}] state={state:5s} x={x:6s} y={y:6s} btn={btn:3d} manual={manual}")
-            
-            # Highlight interesting events
-            if state == 'RUN':
-                print("       ↑ RUN MODE! (LED solid on remote)")
-            elif state == 'STOP':
-                print("       ↑ STOP mode")
-            
-            if manual:
-                print("       ↑ MANUAL OVERRIDE active - joystick controls robot!")
-            
-            if btn == 1 and state == 'RUN':
-                print("       ↑ Button pressed while running - preparing to stop...")
-            
-            # Track last normal output
-            if data.get('state') in ['STOP', 'RUN'] and len(data) >= 2:
-                last_normal = time.time()
-    
-    except KeyboardInterrupt:
-        print("\n" + "-" * 70)
-        print("Test ended by user. Press Ctrl+C again to close serial port.")
+            while b'\n' in buf:
+                line, buf = buf.split(b'\n', 1)
+                text = line.decode('ascii', errors='replace').strip()
+                self.raw_last = text
+                s = parse_remote_line(text)
+                if s is not None:
+                    self.latest, self.latest_time = s, time.time()
+                    self.count += 1
+
+    def close(self):
+        self._stop_evt.set()
+        self._thread.join(timeout=1.0)
+        self.ser.close()
+
+
+def describe(s):
+    left, right = remote_to_wheels(s)
+    linear, angular = wheels_to_twist(left, right)
+    return (f'state={s.state:5s} x={s.x:+.2f} y={s.y:+.2f} btn={int(s.btn)} robot={int(s.robot)} '
+            f'manual={int(s.manual)}  ->  wheels L={left:+.3f} R={right:+.3f}  '
+            f'robot {linear:+.2f} m/s {angular:+.2f} rad/s')
+
+
+def wait_for(reader, prompt, ok, act=None):
+    """Show the prompt, (sim: do the action), wait until ok(state) holds. Returns True/False."""
+    print(f'\n-> {prompt}')
+    if act:
+        act()
+    deadline = time.time() + STEP_TIMEOUT_S
+    while time.time() < deadline:
+        s = reader.latest
+        if s is not None and time.time() - reader.latest_time < 1.0 and ok(s):
+            print(f'   PASS  {describe(s)}')
+            return True
+        time.sleep(0.05)
+    s = reader.latest
+    print(f'   FAIL  (nothing matching in {STEP_TIMEOUT_S:.0f} s; last: {describe(s) if s else reader.raw_last!r})')
+    return False
+
+
+def guided(reader, sim=None):
+    """The checks from firmware/esp32_remote/README.md, one at a time. `sim` plays the person."""
+    act = (lambda f: (lambda: f(sim))) if sim else (lambda f: None)
+    steps = [
+        ('Let go of the stick (centred), remote in STOP.',
+         lambda s: s.state == 'STOP' and abs(s.x) < 0.15 and abs(s.y) < 0.15,
+         act(lambda r: (r.click(), r.stick(0, 0)))),
+        ('Push the stick AWAY from you, all the way.',
+         lambda s: s.x > 0.9 and abs(s.y) < 0.3, act(lambda r: r.stick(1, 0))),
+        ('Pull the stick TOWARD you, all the way.',
+         lambda s: s.x < -0.9 and abs(s.y) < 0.3, act(lambda r: r.stick(-1, 0))),
+        ('Push the stick LEFT, all the way.',
+         lambda s: s.y > 0.9 and abs(s.x) < 0.3, act(lambda r: r.stick(0, 1))),
+        ('Push the stick RIGHT, all the way.',
+         lambda s: s.y < -0.9 and abs(s.x) < 0.3, act(lambda r: r.stick(0, -1))),
+        ('STOP drives nothing: push the stick away again (wheels must stay 0).',
+         lambda s: s.x > 0.9 and s.state == 'STOP' and remote_to_wheels(s) == (0.0, 0.0),
+         act(lambda r: r.stick(1, 0))),
+        ('Let go of the stick, then press and HOLD the button for 1.5 s.',
+         lambda s: s.state == 'RUN', act(lambda r: (r.stick(0, 0), r.hold_to_run()))),
+        ('In RUN, push the stick away: the robot would drive forward.',
+         lambda s: s.run and wheels_to_twist(*remote_to_wheels(s))[0] > 2.0, act(lambda r: r.stick(1, 0))),
+        ('Click the button once: STOP.',
+         lambda s: s.state == 'STOP', act(lambda r: r.click())),
+    ]
+    if not sim:
+        print('Do each step when asked; each waits up to 20 s. Ctrl+C to quit.')
+    results = [wait_for(reader, prompt, ok, a) for prompt, ok, a in steps]
+    print(f'\n{sum(results)}/{len(results)} steps passed')
+    if not all(results) and not sim:
+        print('Axes wrong? Set SWAP_XY / X_REVERSED / Y_REVERSED at the top of firmware/esp32_remote/esp32_remote.ino.\n'
+              'Never RUN? Hold a full 1.5 s with the stick centred; state=FAULT means the stick was moved or is '
+              'loose at power-up: fix and press EN.')
+    return all(results)
+
+
+def watch(reader):
+    print('Showing every line (Ctrl+C to quit)...')
+    seen = 0
+    while True:
+        if reader.count != seen and reader.latest is not None:
+            seen = reader.count
+            print(describe(reader.latest))
+        time.sleep(0.02)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('port', nargs='?', help='remote serial port, e.g. /dev/cu.usbserial-0001 or /dev/ttyUSB0')
+    ap.add_argument('--watch', action='store_true', help='only print each line with what the robot would do')
+    ap.add_argument('--sim', action='store_true', help='no hardware: check against the fake remote')
+    args = ap.parse_args()
+    if not args.sim and not args.port:
+        ap.error('give the remote serial port, or --sim')
+
+    sim = None
+    if args.sim:
+        from sim_remote import FakeRemote
+        sim = FakeRemote(link=None).start()
+        args.port = sim.path
+    try:
+        reader = LineReader(args.port)
     except Exception as e:
-        print(f"\nError: {e}")
-    finally:
-        ser.close()
-        print("Serial port closed.")
-
-def test_simulated_remote():
-    """Simulate ESP-NOW output without hardware."""
-    import time
-    
-    print("\n" + "=" * 70)
-    print("Simulated Remote Output Test")
-    print("=" * 70)
-    print()
-    
-    # Simulate startup (STOP mode, stick centered)
-    print("POWER UP: Remote initializing...")
-    for _ in range(5):
-        t = time.strftime('%H:%M:%S')
-        print(f"[{t}] state=STOP   x={-0.02:+.2f} y={-0.01:+.2f} btn=0  manual=0")
-        time.sleep(0.5)
-    
-    print()
-    print("Testing joystick... (press any key to advance)")
-    
+        print(f'Cannot open {args.port}: {e}\nFind the port: Mac `ls /dev/cu.usbserial*`, Pi `ls /dev/ttyUSB*`. '
+              'Close any serial monitor or ROS launch that has it open.')
+        return 1
+    print(f'Reading the remote on {args.port}' + (' (fake remote)' if sim else ''))
     try:
-        while True:
-            import sys
-            line = input("Command? ").strip()
-            
-            if not line:
-                continue
-            
-            t = time.strftime('%H:%M:%S')
-            
-            if line in ['forward', 'fwd', 'FORWARD']:
-                print(f"[{t}] state=STOP   x={-0.50:+.2f} y={-1.00:+.2f} btn=0  manual=0")
-            elif line in ['backward', 'back', 'BACKWARD']:
-                print(f"[{t}] state=STOP   x={-0.50:+.2f} y={+1.00:+.2f} btn=0  manual=0")
-            elif line in ['left', 'l', 'LEFT']:
-                print(f"[{t}] state=STOP   x={-0.50:+.2f} y={-0.50:+.2f} btn=0  manual=0")
-            elif line in ['right', 'r', 'RIGHT']:
-                print(f"[{t}] state=STOP   x={+0.50:+.2f} y={-0.50:+.2f} btn=0  manual=0")
-            elif line in ['stop', 's', 'STOP']:
-                print(f"[{t}] state=STOP   x={0.00:+.2f} y={0.00:+.2f} btn=1  manual=0")
-            elif line in ['hold', 'h', 'HOLD']:
-                print(f"[{t}] state=RUN    x={0.00:+.2f} y={0.00:+.2f} btn=0  manual=1")
-                print("         ↑ RUN mode engaged! (press STOP or move stick to test manual)")
-            else:
-                # Default centered position
-                print(f"[{t}] state=STOP   x={-0.01:+.2f} y={-0.01:+.2f} btn=0  manual=0")
-    
+        if args.watch:
+            watch(reader)
+            return 0
+        return 0 if guided(reader, sim) else 1
     except KeyboardInterrupt:
-        pass
+        return 1
+    finally:
+        reader.close()
+        if sim:
+            sim.close()
+
 
 if __name__ == '__main__':
-    import argparse
-    
-    parser = argparse.ArgumentParser(
-        description='Test ESP32 remote serial output'
-    )
-    parser.add_argument('port', nargs='?', default='/dev/cu.usbserial-0001',
-                       help='Serial port (e.g., /dev/cu.usbserial-0001)')
-    parser.add_argument('--sim', action='store_true',
-                       help='Run simulation without hardware')
-    
-    args = parser.parse_args()
-    
-    if args.sim:
-        test_simulated_remote()
-    else:
-        test_remote_serial(args.port)
+    sys.exit(main())
