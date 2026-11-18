@@ -57,4 +57,20 @@ For either:
 - [ ] click: stops at once
 - [ ] remote unplugged / switched off: stops within 0.5 s
 
-Add `follow:=true` to have the follow-bot code (turtle2) chase the turtle you drive.
+## Pi: follow bot + remote override
+turtle1 = skater (keyboard), turtle2 = robot (follow-bot code), the remote overrides it.
+```bash
+tests/test_esp32_remote.sh fake follow
+```
+- [ ] `7/7 checks passed`
+```bash
+tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
+```
+(or `serial /dev/ttyUSB0 follow` with the remote board on USB), then in a second terminal:
+```bash
+ros2 run turtlesim turtle_teleop_key
+```
+- [ ] STOP: turtle2 still, even far from the skater
+- [ ] RUN, stick centred: turtle2 follows the skater
+- [ ] push the stick: you drive turtle2; let go: it follows again ~0.8 s later
+- [ ] click / remote off: turtle2 stops

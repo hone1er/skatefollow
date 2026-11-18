@@ -5,7 +5,8 @@
 #   tests/test_esp32_remote.sh fake                  # no ESP32: fake remote + automatic PASS/FAIL check
 #   tests/test_esp32_remote.sh serial [port]         # remote board on the Pi's USB (default /dev/ttyUSB0)
 #   tests/test_esp32_remote.sh esp32  [port]         # robot ESP32 on the Pi's USB, remote by radio
-#   add  follow  as the last word to also run the follower turtle, e.g.:  tests/test_esp32_remote.sh serial /dev/ttyUSB0 follow
+#   add  follow  as the last word: follow bot on turtle2 + remote override (turtle1 = the skater), e.g.
+#     tests/test_esp32_remote.sh fake follow           tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
 #
 # Flash the boards first, from the Mac: firmware/tests/test_remote_turtle.sh. Guide: firmware/tests/ESP32_REMOTE_TESTING.md
 set -uo pipefail
@@ -20,7 +21,7 @@ FAKE=/tmp/honebot_fake_remote
 
 case "$MODE" in
   fake|serial|esp32) ;;
-  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
 
 ok()   { echo "  ok    $*"; }
@@ -64,7 +65,7 @@ if [ "$MODE" = fake ]; then ARGS+=("port:=$FAKE"); else ARGS+=("port:=$PORT"); f
 
 echo
 echo "== ros2 launch honebot_remote_bridge bridge_launch.py ${ARGS[*]}"
-if [ "$MODE" != fake ]; then
+if [ "$MODE" != fake ] && [ "$FOLLOW" = false ]; then
   cat <<EOF
 Then, with the remote (stick at rest when it powers up):
   - remote in STOP: the turtle does not move, even with the stick pushed
@@ -74,6 +75,20 @@ Ctrl+C to quit.
 EOF
   exec ros2 launch honebot_remote_bridge bridge_launch.py "${ARGS[@]}"
 fi
+if [ "$MODE" != fake ]; then
+  cat <<EOF
+turtle1 = the skater, turtle2 = the robot (follow-bot code). In a SECOND terminal, drive the skater:
+    ros2 run turtlesim turtle_teleop_key
+Then, with the remote (stick at rest when it powers up):
+  - STOP (power-up): turtle2 stays still, even though the follower wants to drive
+  - hold the button 1.5 s, stick centred -> RUN: turtle2 follows the skater
+  - push the stick: YOU drive turtle2 (overrides the follower); let go: 0.8 s later it follows again
+  - click: turtle2 stops at once; remote off or out of range: stops within 0.5 s
+EOF
+  [ "$MODE" = esp32 ] && echo "  - (esp32) cover the ultrasonic sensor: the follower stops, but the stick still drives"
+  echo "Ctrl+C to quit."
+  exec ros2 launch honebot_remote_bridge bridge_launch.py "${ARGS[@]}"
+fi
 
 # fake: start the launch in its own process group, run the automatic check, then stop everything.
 setsid ros2 launch honebot_remote_bridge bridge_launch.py "${ARGS[@]}" > /tmp/honebot_remote_launch.log 2>&1 &
@@ -81,7 +96,11 @@ LAUNCH_PID=$!
 cleanup() { kill -TERM -- "-$LAUNCH_PID" 2>/dev/null; wait "$LAUNCH_PID" 2>/dev/null; }
 trap cleanup EXIT
 sleep 3
-python3 "$REPO/tests/test_remote_turtlesim.py"
+if [ "$FOLLOW" = true ]; then
+  python3 "$REPO/tests/test_remote_turtlesim.py" --follow
+else
+  python3 "$REPO/tests/test_remote_turtlesim.py"
+fi
 RESULT=$?
 [ "$RESULT" = 0 ] || echo "Launch log: /tmp/honebot_remote_launch.log"
 exit "$RESULT"

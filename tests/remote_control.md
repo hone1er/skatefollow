@@ -33,7 +33,14 @@ tests/test_esp32_remote.sh esp32 /dev/ttyUSB0
 ```
 Checks ROS, the build, the port and the `honebot` service first, then launches. `fake` also runs
 `test_remote_turtlesim.py` and stops everything afterwards (exit code 0 = all passed). Add `follow` as the
-last word to also run the follower turtle.
+last word to test the follow bot (turtle2) with the remote overriding it; turtle1 is the skater, driven from a
+second terminal with `ros2 run turtlesim turtle_teleop_key` (in `fake follow` the script drives it):
+```bash
+tests/test_esp32_remote.sh fake follow
+```
+```bash
+tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
+```
 
 ## test_remote_turtlesim.py: end-to-end PASS/FAIL (Pi)
 
@@ -53,3 +60,8 @@ It checks, in order: STOP with the stick pushed (no motion), RUN centred (no mot
 forward), RUN left (turns counter-clockwise), click (stops), remote silent (stops after the 0.5 s timeout).
 Expected: six `PASS` lines and `6/6 checks passed`. Restart the launch between runs so the turtle starts in the
 middle of the window.
+
+`--follow` (launch with `follow:=true`) checks the follow bot with the remote override instead, 7 checks: STOP
+holds the robot although the follower wants to drive; RUN centred lets the follower close in; it keeps up when
+the skater drives away; pulling the stick back overrides it; releasing the stick hands back to the follower
+after the hold; a click stops it; a silent remote stops it. Expected: `7/7 checks passed`.

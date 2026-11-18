@@ -6,8 +6,10 @@ remote_bridge:
     port: /dev/ttyUSB0        # serial source only
     baud: 115200
     remote_timeout: 0.5       # s without news -> stop (same as the robot firmware's REMOTE_TIMEOUT_MS)
+    manual_hold: 0.8          # s after the stick is released before the follower drives again (MANUAL_HOLD_MS)
+    cmd_timeout: 0.5          # s: follower commands older than this count as none (serial source)
     rate_hz: 20.0             # Twist output rate
     # Same values as esp32_bridge / the robot firmware, so the turtle moves like the robot would:
     track_width: 0.39         # m, effective (skid-steer scrub included)
     full_scale_mps: 9.6       # m/s at wheel command 1.0 (firmware FULL_SCALE_MPS)
-    scale: 1.0                # < 1 slows the turtle down without changing its path
+    scale: 1.0                # < 1 slows the stick's speed without changing the path (launch: 0.5, or 1.0 with follow)
