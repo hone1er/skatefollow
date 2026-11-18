@@ -31,8 +31,11 @@ FAILED=0
 echo "== Checks"
 if command -v ros2 >/dev/null; then ok "ros2 found"; else bad "ros2 not found: source /opt/ros/jazzy/setup.bash"; fi
 if [ -f "$REPO/install/setup.bash" ]; then
+  # ROS/colcon setup scripts read unset variables (COLCON_TRACE, AMENT_TRACE_SETUP_FILES, ...): relax -u for them
+  set +u
   # shellcheck disable=SC1091
   source "$REPO/install/setup.bash"
+  set -u
 fi
 if ros2 pkg prefix honebot_remote_bridge >/dev/null 2>&1; then
   ok "honebot_remote_bridge is built"
