@@ -64,12 +64,12 @@ python3 tests/test_remote_turtlesim.py
 ```
 You should see six `PASS` lines and `6/6 checks passed`.
 
-Or drive it by hand: run `python3 firmware/tests/sim_remote.py` in terminal 2 and type `run`, then `w`
+Or drive it by hand: run `python3 tests/sim_remote.py` in terminal 2 and type `run`, then `w`
 (forward), `a` / `d` (turn), `c` (centre), `stop`. `--demo` drives a loop by itself.
 
 ## B. Remote board plugged into the Pi (source:=serial)
 
-1. Flash the remote from the Mac (`firmware/tests/test_remote_turtle.sh <port>`), then let a script walk you
+1. Flash the remote from the Mac (`scripts/flash_remote.sh <port>`), then let a script walk you
    through the stick and button checks (no ROS needed; it says PASS/FAIL per step):
    ```bash
    python3 tests/test_remote_basic.py /dev/cu.usbserial-0001
@@ -97,7 +97,7 @@ Or drive it by hand: run `python3 firmware/tests/sim_remote.py` in terminal 2 an
 
 This tests exactly what the robot will run, including the kill switch.
 
-1. Flash both boards: robot firmware 2.2.1, remote 1.0.0 (`firmware/tests/test_remote_turtle.sh <remote_port>
+1. Flash both boards: robot firmware 2.2.1, remote 1.0.0 (`scripts/flash_remote.sh <remote_port>
    <robot_port>`). Keep `REMOTE_REQUIRED = true`.
 2. Plug the **robot** ESP32 into the Pi (`/dev/ttyUSB0`). Power the remote from a power bank. Its LED should
    blink fast (robot answering).
@@ -202,9 +202,8 @@ spin test.
 |---|---|
 | `src/honebot_remote_bridge/` | the ROS 2 package: `remote_bridge` node, `bridge_launch.py`, `config/remote.yaml`, unit tests |
 | `src/honebot_hardware/.../esp32_bridge.py` | publishes `/esp32/outputs` from the robot ESP32's `S` line |
-| `firmware/tests/sim_remote.py` | fake remote on a pseudo-terminal (no ESP32 needed) |
+| `tests/sim_remote.py` | fake remote on a pseudo-terminal (no ESP32 needed) |
 | `tests/test_remote_turtlesim.py` | end-to-end check: fake remote -> bridge -> turtle, PASS/FAIL |
 | `tests/test_esp32_remote.sh` | Pi: checks the setup, then launches `fake` (+ the check), `serial` or `esp32` mode |
 | `tests/test_remote_basic.py` | no ROS: guided stick/button check of a remote on USB (`--watch`, `--sim`) |
-| `firmware/tests/test_remote_turtle.sh` | flash the remote (and robot) from the Mac, then print the checks |
-| `firmware/tests/quick_remote_test.md` | one-page checklist of this guide |
+| `scripts/flash_remote.sh` | flash the remote (and robot) from the Mac, then print the checks |

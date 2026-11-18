@@ -105,8 +105,11 @@ device (Pi gets 172.2X.1YZ.50, camera .51) and needs the netplan file in `honebo
 ```
 honebot_ws/
 ├── CLAUDE.md                         this file (handoff); README.md = architecture + run card; each src/honebot_*/ and firmware/esp32_ultrasonic/ has its own README
-├── .github/workflows/ci.yml          GitHub Actions: pytest per package, firmware host tests, CAD stub test (green 2026-11-17)
+├── .github/workflows/ci.yml          GitHub Actions: pytest per package, firmware host tests, CAD stub test, remote tools --sim
 ├── scripts/pi_setup.sh               Pi housekeeping (setserial, udev rule, honebot.service); owner runs it, it asks for sudo
+├── scripts/flash_remote.sh           Mac: flash the handheld remote (and robot ESP32), then print the bench checks
+├── tests/                            hand-run ROS checks (README): test_esp32_remote.sh fake|serial|esp32 [follow] launcher,
+│                                     test_remote_turtlesim.py (end-to-end, --follow), test_remote_basic.py (no ROS), sim_remote.py (fake remote)
 ├── firmware/
 │   ├── esp32_ultrasonic/             robot ESP32 firmware v2.2.1: .ino + drive_logic.h (pure decisions) + honebot_link.h
 │   ├── esp32_remote/                 handheld remote v1.0.0: .ino + remote_logic.h + honebot_link.h (identical copy)
@@ -146,9 +149,9 @@ honebot_ws/
     │   ├── netplan/99-gopro-usb.yaml     DHCP on usb0/enx* without taking the GoPro's default route (owner installs)
     │   └── test/                          42 pytest tests
     ├── honebot_remote_bridge/        ament_python — handheld remote -> Twist for turtlesim (2026-11-18, not yet run on the Pi)
-    │   ├── honebot_remote_bridge/remote_logic.py   pure: remote line parser, firmware stick rules, wheels -> Twist (12 tests)
+    │   ├── honebot_remote_bridge/remote_logic.py   pure: remote line parser, firmware stick rules + Arbiter (port of drive::decide), wheels -> Twist (20 tests)
     │   ├── honebot_remote_bridge/remote_bridge.py  source:=serial (remote board on USB) | esp32 (/esp32/outputs from esp32_bridge)
-    │   └── launch/bridge_launch.py   turtlesim + bridge [+ follow:=true follower]; guide: firmware/tests/ESP32_REMOTE_TESTING.md
+    │   └── launch/bridge_launch.py   turtlesim + bridge [+ follow:=true follower]; guide: docs/remote_turtlesim.md
     └── honebot_bringup/              ament_python — top-level launch + systemd
         ├── config/robot.yaml             ALL real-robot parameters (bridge, gate, uwb, follower); test/test_config.py checks the keys
         ├── launch/robot.launch.py        real robot's safety layer: bridge + gate + foxglove with robot.yaml (the boot service)

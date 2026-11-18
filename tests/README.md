@@ -2,7 +2,7 @@
 
 These are not part of CI (CI runs the unit tests in each `src/honebot_*/test/` folder and
 `firmware/tests/run_tests.sh`, which need no ROS and no hardware). Full guide:
-`firmware/tests/ESP32_REMOTE_TESTING.md`.
+`docs/remote_turtlesim.md`.
 
 | Script | Where | Needs |
 |---|---|---|
@@ -44,7 +44,7 @@ tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
 
 ## test_remote_turtlesim.py: end-to-end PASS/FAIL (Pi)
 
-A fake remote (`firmware/tests/sim_remote.py`) writes the remote board's lines into a pseudo-terminal,
+A fake remote (`tests/sim_remote.py`) writes the remote board's lines into a pseudo-terminal,
 `honebot_remote_bridge` reads them, and the script watches `/turtle1/pose`. By hand:
 
 Terminal 1:

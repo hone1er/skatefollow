@@ -23,6 +23,17 @@ jobs:
             (cd "$pkg" && python -m pytest -q test)
           done
 
+  remote-tools:
+    name: Remote test tools against the fake remote (no ROS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyserial
+      - run: python tests/test_remote_basic.py --sim
+
   firmware:
     name: Firmware logic (host g++)
     runs-on: ubuntu-latest

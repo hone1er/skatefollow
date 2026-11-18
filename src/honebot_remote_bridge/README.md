@@ -1,7 +1,7 @@
 # honebot_remote_bridge
 
 Handheld ESP32 remote -> ROS 2 `Twist`, so the remote can drive a turtle in turtlesim the way it will drive
-the robot. Full guide: `firmware/tests/ESP32_REMOTE_TESTING.md`.
+the robot. Full guide: `docs/remote_turtlesim.md`.
 
 On the real robot this package is not in the driving path: the remote talks to the robot ESP32 by radio and
 the firmware chooses between the stick and the Pi (the follow-bot code). This package only mirrors that.
