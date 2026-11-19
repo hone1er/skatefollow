@@ -8,9 +8,10 @@
 | [`chassis_cad.md`](chassis_cad.md) | The chassis being printed: 4-wheel skid steer. Checks, print settings, parts list, assembly |
 | [`hardware_plan.md`](hardware_plan.md) | UWB, power and radio choices with prices |
 | [`camera_plan.md`](camera_plan.md) | GoPro modes, pan servo wiring, detector model |
+| [`../sim/README.md`](../sim/README.md) | Physics simulator (MuJoCo, runs on the Mac): try settings before the robot exists, and what it found |
 
 **The printed parts come from one script: `cad/fusion/HonebotChassis/HonebotChassis.py`** (message box:
-"built 83 of 83 parts"). The other Fusion scripts in this repo build different robots.
+"built 86 of 86 parts"). The other Fusion scripts in this repo build different robots.
 
 ## Other designs kept in the repo
 

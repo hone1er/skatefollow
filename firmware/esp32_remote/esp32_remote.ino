@@ -56,7 +56,7 @@ const float CENTRE_BAND = 0.15f;            // |stick| below this counts as cent
 const unsigned long HOLD_TO_RUN_MS = 1500;
 const unsigned long DEBOUNCE_MS = 30;
 const unsigned long SEND_PERIOD_MS = 20;    // 50 Hz
-const unsigned long PRINT_PERIOD_MS = 200;
+const unsigned long PRINT_PERIOD_MS = 50;     // USB status line at 20 Hz (the simulator reads it: sim/README.md)
 const unsigned long ROBOT_TIMEOUT_MS = 500;
 
 const uint8_t BROADCAST_ADDR[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};

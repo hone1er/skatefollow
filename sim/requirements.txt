@@ -1,0 +1,7 @@
+# honebot simulator (Mac with Apple Silicon, Linux, the Pi 5). Python 3.10 or newer.
+mujoco==3.17.0
+numpy
+pyyaml
+matplotlib      # only for --plot
+pytest          # only for the tests
+pyserial        # only for --remote (the handheld remote over USB)

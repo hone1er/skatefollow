@@ -153,6 +153,7 @@ honebot_ws/
         ├── launch/teleop_joy.launch.py   joy + teleop_twist_joy → /cmd_vel_raw
         ├── launch/record.launch.py       ros2 bag record -a → ~/bags/
         └── systemd/honebot.service       auto-start unit (owner installs with sudo)
+sim/                                  MuJoCo simulator (repo root, plain Python, no ROS; runs on the Mac): see sim/README.md
 cad/                                  (repo root, not in honebot_ws/src)
 ├── fusion/HonebotChassis/HonebotChassis.py   Fusion 360 script = single geometry source (PARAMS at the top)
 ├── check_design.py                   offline checks (clearance, holes, assembly, GoPro view, CG/braking, loads) → cad/report/
@@ -516,6 +517,28 @@ valid only for the tricycle variant or an RC car.
   add speed-dependent follow distance, and log everything with `ros2 bag`.
 - A single HC-SR04 (~4 m, 16 Hz, narrow) is only a low-speed safety layer; consider additional/longer-range
   sensors for higher speed.
+
+### Simulator (2026-11-19) — `sim/`, MuJoCo 3.17, replaces turtlesim for follow testing
+- Runs on the owner's Mac (Apple Silicon; needs Homebrew python3.12 + venv `~/honebot-sim`, viewer via `mjpython`),
+  Linux and the Pi. No ROS: the Pi software's pure modules run in-process on one sim clock, nodes' rates/timeouts
+  mirrored (`honebot_sim/stack.py`). The ESP32 is the **real `drive_logic.h` compiled via ctypes** + the sketch's
+  loop glue mirrored in `firmware.py` (test hashes `updateOutputs`/`handleLine`/`applyOutputs`/parse* and fails
+  when they change). Numbers come from the CAD `build_model()`, `cad/report/check_report.md` (mass/CG),
+  `robot.yaml`, the `.ino` constants. Motor = voltage-mode AM32 + 370 KV/0.15 Ω/30 A, 2:1, rear tied 1:1 by a joint
+  equality. Guesses: friction 0.8, sensor noise.
+- `python -m honebot_sim.run --all` (11 scenarios), `--view` (mjpython on macOS), `--plot`, `--csv`,
+  `--spin-test`, `--profile target`, `--yaw-loop` (prototype), `--set node.param=v`, `--fw CONST=v`.
+  `--remote /dev/cu.usbserial-X --view` drives the sim with the REAL handheld remote over USB (its 20 Hz status line
+  `state=RUN x= y=` stands in for ESP-NOW; remote `PRINT_PERIOD_MS` 200 → 50 for this), `--keys --view` = arrow keys;
+  scenario `playground`. 29 tests in `sim/tests`, CI job `sim`. Viewer and offscreen rendering untested here (no OpenGL in the cloud
+  container); everything headless was run.
+- **Findings:** today's config passes straight-line/stop/obstacle scenarios safely (never touches the skater) but
+  **cannot turn on small commands**: voltage-mode ESCs give current ∝ voltage difference, scrub needs ~10 A per
+  motor, the follower's 0.5–3 rad/s requests give 1–5 A → no yaw; slalom/U-turn/circle lose the skater. A gyro
+  yaw-rate PI loop on the ESP32 (`--yaw-loop`, NOT in the firmware) makes 11/11 pass; effective track 2–2.7×
+  geometric (robot.yaml guesses 1.4×). `--profile target` (12 m lidar tilted up 1°, max_linear 7.5,
+  THROTTLE_LIMIT 1.0) + yaw loop reaches 15 mph and stops ~1 m short of a dead-stopped skater. A level TFmini at
+  10 cm sees the road at 5.9 m and caps speed.
 
 ### CAD (2026-11-16)
 - Edit `PARAMS` in `cad/fusion/HonebotChassis/HonebotChassis.py`, then on any machine with numpy + matplotlib:
