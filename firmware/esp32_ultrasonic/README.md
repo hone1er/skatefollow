@@ -1,4 +1,4 @@
-# ESP32 robot firmware (`esp32_ultrasonic.ino`, v2.2.1)
+# ESP32 robot firmware (`esp32_ultrasonic.ino`, v2.3.0)
 
 The microcontroller side of the robot. It measures the ultrasonic range, outputs three 50 Hz
 servo-style pulse channels, listens to the handheld remote (`../esp32_remote`), and brings the drive channels
@@ -20,6 +20,7 @@ Build and flash from the Mac (commands in the top-level README).
 | 25 | channel A (left ESC in diff mode / throttle in ackermann) |
 | 26 | channel B (right ESC / steering) |
 | 27 | camera pan servo |
+| 21 / 22 | I2C SDA / SCL to an MPU6050 gyro (GY-521 breakout, VCC to 3V3), only for the yaw-rate loop |
 
 ## Structure of the sketch
 
@@ -66,6 +67,25 @@ every start. A remote that is switched on is obeyed in both modes.
 per side. Measure the smallest command that turns the wheels (`docs/first_drive.md`, Stage 1) and set this just
 below it; every non-zero command is then lifted above the dead zone.
 
+**Yaw-rate loop** (2.3.0; `YAW_LOOP_ENABLED`, default `false`). A skid-steer robot only turns once the tyres
+slide sideways, which takes a large left/right difference (~10 A per motor in the simulator). With the ESCs
+setting voltage, small turn requests from the Pi or the stick do nothing, and big ones spin it fast. With a
+gyro, `drive::yawLoop` compares the yaw rate the two wheel commands ask for with the measured one and adds the
+missing difference: forward speed is untouched, and the extra is capped at `YAW_MAX_CORR`. The stick then asks for a yaw
+rate (full side stick = `MANUAL_MAX_YAW`, 3 rad/s, with expo for gentle turns). Safety:
+- **Off = 2.2.1.** Loop disabled, no MPU6050 answering, a failed or clipped read, or no reading for 50 ms: the outputs
+  pass through unchanged.
+- **I2C cannot stall the loop.** Each I2C transaction gives up after 2 ms (`Wire.setTimeOut`).
+- **Bias calibration.** The gyro bias is averaged during the 2 s arming window, so keep the robot still at power-up.
+- **Bad-gyro trips.** The loop switches itself off until the next fail-safe (STOP/RUN clears it) if:
+  - the gyro reads a hard turn the opposite way for 150 ms (mounted upside down: set `GYRO_SIGN` to −1);
+  - the correction stays pinned at its cap for 1 s (gyro stuck, wheel stuck).
+- **Matching track width.** `YAW_TRACK_WIDTH` must equal `track_width` in `robot.yaml` (a test checks).
+
+With the loop enabled the sketch also prints `G,<yaw rad/s>,<usable 0/1>` at 10 Hz (the bridge ignores it) for the
+sign check. Tuned in the simulator only (`sim/README.md`). Enable it after the sign check in
+`docs/first_drive.md` Stage 1.
+
 **Motor direction** is set here (`THROTTLE_REVERSED` = left wheel, `STEER_REVERSED` = right wheel), not with
 the bridge's `left_reversed` / `right_reversed`, so the Pi and the stick agree.
 
@@ -86,7 +106,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```bash
 arduino-cli upload -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```
-On the Pi the bridge log should then show `ESP32 firmware version 2.2.1` and `Remote (kill switch): never`.
+On the Pi the bridge log should then show `ESP32 firmware version 2.3.0` and `Remote (kill switch): never`.
 
 ## Why it is built this way
 

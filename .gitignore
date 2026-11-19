@@ -16,3 +16,4 @@ __pycache__/
 
 # generated meshes (cad/check_mesh.py)
 cad/stl/
+sim/.cache/

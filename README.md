@@ -432,7 +432,12 @@ Watch it live **(Mac)**: Foxglove desktop → Open connection → `ws://honebot.
 Useful topics: `/ultrasonic/range`, `/esp32/link_ok`, `/safety/state`, `/cmd_vel_raw`, `/cmd_vel`,
 `/esp32/actuators`, `/esp32/failsafe`.
 
-### Turtlesim demo (sim window on the HDMI screen, teleop over SSH)
+### Physics simulator (Mac, Linux or Pi; no ROS needed)
+`sim/` is a MuJoCo simulation of the real robot. It uses the CAD mass and geometry, the compiled firmware logic,
+the follower, gate and bridge code and `robot.yaml`, with simulated HC-SR04, UWB, camera and a scripted skater.
+It has a 3-D viewer on the Mac and pass/fail runs of 11 scenarios. Setup and findings: [`sim/README.md`](sim/README.md).
+
+### Turtlesim demo (sim window on the HDMI screen, teleop over SSH) (older, simpler: an ideal point chasing another)
 From an SSH session (you are in the `video` group), this draws straight on the HDMI framebuffer:
 ```bash
 sg video -c "exec bash -c 'source /opt/ros/jazzy/setup.bash && source ~/honebot_ws/install/setup.bash && QT_QPA_PLATFORM=linuxfb ros2 launch honebot_follow turtle_follow.launch.py'"
@@ -504,6 +509,7 @@ honebot_ws/
 ├── CLAUDE.md                      project handoff: hardware, history, gotchas, phase plan
 ├── docs/                          start at docs/README.md (index) and docs/first_drive.md (test plan)
 ├── cad/                           chassis: Fusion script + offline checks (docs/chassis_cad.md)
+├── sim/                           MuJoCo physics simulator of the whole robot (+ README)
 ├── scripts/pi_setup.sh            Pi housekeeping (udev rule, auto-start service)
 ├── scripts/flash_remote.sh        Mac: flash the handheld remote (and robot ESP32), then print the checks
 ├── firmware/esp32_ultrasonic/     robot ESP32 sketch (+ README)

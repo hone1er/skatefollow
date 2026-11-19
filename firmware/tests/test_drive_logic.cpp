@@ -173,6 +173,85 @@ static void test_remote_button() {
   assert(toWire(1.0f) == 100 && toWire(-2.0f) == -100 && toWire(0.004f) == 0);
 }
 
+static const YawConfig YAW = {0.12f, 0.8f, 0.2f, 9.6f, 0.39f, 1000, 150};
+
+static void test_yaw_loop_inactive_is_passthrough() {
+  // Off, fail-safe or no gyro: outputs untouched and the integrator cleared (behaviour of 2.2.1).
+  YawState st;
+  st.integ = 0.1f;
+  float a = 0.20f, b = 0.25f;
+  yawLoop(YAW, &st, false, 3.0f, 1000, 0.005f, &a, &b);
+  assert(a == 0.20f && b == 0.25f && st.integ == 0.0f);
+  // standing still: no correction, no wind-up
+  a = 0.0f; b = 0.0f;
+  yawLoop(YAW, &st, true, 0.5f, 1000, 0.005f, &a, &b);
+  assert(a == 0.0f && b == 0.0f && st.integ == 0.0f);
+}
+
+static void test_yaw_loop_adds_difference_only() {
+  // A gentle left turn the tyres ignore (gyro reads 0): the loop widens the difference, keeps the mean, caps it.
+  YawState st;
+  float a0 = 0.20f, b0 = 0.25f;               // asks for (0.05 * 9.6 / 0.39) = 1.23 rad/s
+  float a = a0, b = b0;
+  for (int i = 0; i < 100; i++) {
+    a = a0; b = b0;
+    yawLoop(YAW, &st, true, 0.0f, 1000 + 5 * i, 0.005f, &a, &b);
+    assert(near(0.5f * (a + b), 0.5f * (a0 + b0)));          // forward speed command unchanged
+    assert(0.5f * (b - a) - 0.5f * (b0 - a0) <= YAW.maxCorr + 1e-5f);
+  }
+  assert(b - a > b0 - a0 + 0.1f);                             // grew toward the cap
+  // when the robot really turns at the asked rate, the proportional part vanishes
+  YawState st2;
+  a = a0; b = b0;
+  yawLoop(YAW, &st2, true, 1.2308f, 1000, 0.005f, &a, &b);
+  assert(near(a, a0, 1e-3f) && near(b, b0, 1e-3f));
+}
+
+static void test_yaw_loop_trips_on_wrong_sign() {
+  // Gyro mounted upside down: it reports a fast turn opposite to the one asked for. After wrongWayMs the loop
+  // gives up (open loop) until reset() at the next fail-safe.
+  YawState st;
+  float a = 0.20f, b = 0.25f;
+  uint32_t t = 1000;
+  for (; t < 1000 + 140; t += 5) {
+    a = 0.20f; b = 0.25f;
+    yawLoop(YAW, &st, true, -1.2f, t, 0.005f, &a, &b);
+  }
+  assert(!st.tripped);
+  for (; t < 1000 + 200; t += 5) {
+    a = 0.20f; b = 0.25f;
+    yawLoop(YAW, &st, true, -1.2f, t, 0.005f, &a, &b);
+  }
+  assert(st.tripped);
+  a = 0.20f; b = 0.25f;
+  yawLoop(YAW, &st, true, -1.2f, t, 0.005f, &a, &b);
+  assert(a == 0.20f && b == 0.25f);
+  st.reset();
+  assert(!st.tripped && st.integ == 0.0f);
+}
+
+static void test_yaw_loop_trips_on_stuck_gyro() {
+  // Gyro stuck at zero: the correction pins at the cap; after satTimeoutMs the loop gives up.
+  YawState st;
+  uint32_t t = 1000;
+  for (; t < 1000 + 1100; t += 5) {
+    float a = 0.20f, b = 0.25f;
+    yawLoop(YAW, &st, true, 0.0f, t, 0.005f, &a, &b);
+  }
+  assert(st.tripped);
+}
+
+static void test_yaw_loop_keeps_within_full_scale() {
+  YawState st;
+  for (int i = 0; i < 400; i++) {
+    float a = 0.9f, b = 1.0f;                 // near full speed, asking to turn
+    yawLoop(YAW, &st, true, 0.0f, 1000 + 5 * i, 0.005f, &a, &b);
+    assert(std::fabs(a) <= 1.0f + 1e-6f && std::fabs(b) <= 1.0f + 1e-6f);
+    assert(near(0.5f * (a + b), 0.95f));
+  }
+  assert(near(expo(0.5f, 0.5f), 0.3125f) && near(expo(1.0f, 0.5f), 1.0f) && near(expo(-1.0f, 0.5f), -1.0f));
+}
+
 int main() {
   test_ramps();
   test_failsafe_ramp_time();
@@ -180,6 +259,11 @@ int main() {
   test_decide_basic();
   test_decide_manual();
   test_remote_button();
+  test_yaw_loop_inactive_is_passthrough();
+  test_yaw_loop_adds_difference_only();
+  test_yaw_loop_trips_on_wrong_sign();
+  test_yaw_loop_trips_on_stuck_gyro();
+  test_yaw_loop_keeps_within_full_scale();
   std::printf("ok: firmware logic tests passed\n");
   return 0;
 }

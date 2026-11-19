@@ -161,6 +161,90 @@ inline float deadbandComp(float v, float minCommand) {
   return v < 0.0f ? -out : out;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Yaw-rate loop (firmware >= 2.3.0, OFF unless YAW_LOOP_ENABLED and a gyro answers).
+//
+// Why: the ESCs set motor VOLTAGE, and a skid-steer robot's tyres only start sliding sideways (turning) once the
+// left/right difference is big enough (~10 A per motor in the simulator). Small turn requests therefore do nothing
+// and big ones spin it fast. The two wheel commands already encode the yaw rate the Pi or the stick asked for:
+//     w_cmd = (b - a) * fullScaleMps / trackWidth          (the inverse of the Pi's diffdrive conversion)
+// A gyro measures the real yaw rate and a PI term adds the missing difference. Only the DIFFERENCE is changed:
+// the mean of the two channels (forward speed) is kept, and the correction is capped at maxCorr.
+struct YawConfig {
+  float kp;              // throttle per rad/s of yaw-rate error
+  float ki;              // throttle per rad of accumulated error (per second)
+  float maxCorr;         // cap on the half-difference added to each side (just above the scrub breakaway)
+  float fullScaleMps;    // FULL_SCALE_MPS: m/s per unit command
+  float trackWidth;      // must equal the bridge's track_width (robot.yaml)
+  uint32_t satTimeoutMs; // correction pinned at maxCorr this long -> give up (stuck gyro, stuck wheel)
+  uint32_t wrongWayMs;   // gyro says "turning hard the OTHER way" this long -> give up (gyro mounted upside down)
+};
+
+struct YawState {
+  float integ = 0.0f;
+  bool saturated = false;
+  uint32_t satSinceMs = 0;
+  bool wrongWay = false;
+  uint32_t wrongSinceMs = 0;
+  bool tripped = false;  // latched after a fault; cleared by reset() (next fail-safe)
+  void reset() {
+    integ = 0.0f;
+    saturated = false;
+    wrongWay = false;
+    tripped = false;
+  }
+};
+
+// active: someone may drive and the gyro reading is valid. When inactive the outputs pass through unchanged and
+// the integrator is cleared, so with the loop off or the gyro missing the behaviour is exactly that of 2.2.1.
+inline void yawLoop(const YawConfig &c, YawState *s, bool active, float gyroZ, uint32_t nowMs, float dt,
+                    float *a, float *b) {
+  if (!active || s->tripped || c.trackWidth <= 0.0f) {
+    s->integ = 0.0f;
+    s->saturated = false;
+    return;
+  }
+  if (fabsf(*a) < 1e-3f && fabsf(*b) < 1e-3f) {       // standing still: nothing to correct, don't wind up
+    s->integ = 0.0f;
+    s->saturated = false;
+    return;
+  }
+  float wCmd = (*b - *a) * c.fullScaleMps / c.trackWidth;
+  // A gyro with the wrong sign turns the loop into positive feedback: the robot spins up within a second. It shows
+  // as the gyro reporting a fast turn opposite to the one asked for; real skids do not do that for long.
+  bool wrong = wCmd * gyroZ < 0.0f && fabsf(gyroZ) > 1.0f && fabsf(gyroZ) > 0.5f * fabsf(wCmd);
+  if (wrong && !s->wrongWay) s->wrongSinceMs = nowMs;
+  s->wrongWay = wrong;
+  if (wrong && (uint32_t)(nowMs - s->wrongSinceMs) >= c.wrongWayMs) {
+    s->tripped = true;
+    s->integ = 0.0f;
+    return;
+  }
+  float e = wCmd - gyroZ;
+  s->integ = clampf(s->integ + c.ki * e * dt, -c.maxCorr, c.maxCorr);
+  float corr = clampf(c.kp * e + s->integ, -c.maxCorr, c.maxCorr);
+  bool pinned = fabsf(corr) >= c.maxCorr * 0.999f;
+  if (pinned && !s->saturated) s->satSinceMs = nowMs;
+  s->saturated = pinned;
+  if (pinned && (uint32_t)(nowMs - s->satSinceMs) >= c.satTimeoutMs) {
+    s->tripped = true;                                   // back to open loop until the next fail-safe
+    s->integ = 0.0f;
+    return;
+  }
+  float m = 0.5f * (*a + *b);
+  float h = 0.5f * (*b - *a) + corr;
+  float big = fabsf(m) + fabsf(h);
+  if (big > 1.0f) h = (h > 0.0f ? 1.0f : -1.0f) * fmaxf(0.0f, 1.0f - fabsf(m));   // keep the mean, shrink the turn
+  *a = m - h;
+  *b = m + h;
+}
+
+// Stick expo: fine control near the centre, full value at the end. e = 0 linear, e = 1 cubic.
+inline float expo(float v, float e) {
+  v = clampf(v, -1.0f, 1.0f);
+  return (1.0f - e) * v + e * v * v * v;
+}
+
 // Remove the deadband and rescale so the output starts from 0 at its edge.
 inline float shapeStick(float v, float deadband) {
   float a = fabsf(v);

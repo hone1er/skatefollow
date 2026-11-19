@@ -10,6 +10,7 @@
 //                  S,<failsafe>,<a>,<b>         every STATUS_PERIOD_MS
 //                     failsafe = 1 while nobody is allowed to drive (outputs ramping to / held at neutral)
 //                     a/b = what is actually being output (-1..1)
+//                  G,<yaw_rad_s>,<usable>       every STATUS_PERIOD_MS when YAW_LOOP_ENABLED (2.3.0): gyro check
 //                  K,<required>,<remote>,<source>   every STATUS_PERIOD_MS (firmware >= 2.2.0)
 //                     required = 1 if REMOTE_REQUIRED is compiled in
 //                     remote   = 0 never heard, 1 lost, 2 STOP, 3 RUN
@@ -38,6 +39,8 @@
 //   Channel A (left ESC / throttle)  -> GPIO 25; ESC GND -> ESP32 GND
 //   Channel B (right ESC / steering) -> GPIO 26
 //   Camera pan servo signal          -> GPIO 27; servo + from a 5-6 V supply, GND common
+//   Optional gyro for the yaw-rate loop (firmware >= 2.3.0, YAW_LOOP_ENABLED): MPU6050 breakout (GY-521) on
+//     VCC -> 3V3, GND -> GND, SDA -> GPIO 21, SCL -> GPIO 22, mounted flat (chip side up) anywhere on the deck.
 //   Onboard LED (GPIO 2): ON = someone may drive; slow blink = fail-safe with the Pi link up;
 //                         fast blink = remote STOP / lost; OFF = no Pi link and no remote.
 //
@@ -51,8 +54,9 @@
 
 #include "drive_logic.h"
 #include "honebot_link.h"
+#include <Wire.h>
 
-const char *FW_VERSION = "2.2.1";
+const char *FW_VERSION = "2.3.0";
 
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 18;
@@ -114,6 +118,31 @@ const float STICK_DEADBAND = 0.15f;
 const float MANUAL_LIMIT = 0.25f;            // stick full forward = this command (0.25 ~ 2.4 m/s)
 const float MANUAL_TURN_SCALE = 0.6f;
 
+// --- Yaw-rate loop (2.3.0). OFF by default: with it off, or with no gyro answering, the robot behaves exactly
+// like 2.2.1. Turn it on once an MPU6050 is wired (see the wiring list) and its sign is checked on the stand
+// (docs/first_drive.md). Values tuned in the simulator (sim/README.md); confirm on the robot.
+const bool YAW_LOOP_ENABLED = false;
+const int GYRO_SDA = 21;
+const int GYRO_SCL = 22;
+const uint8_t GYRO_ADDR = 0x68;            // MPU6050 with AD0 low
+const float GYRO_SIGN = 1.0f;              // +1: chip side up (turning left reads positive). -1 if mounted upside down
+const uint16_t GYRO_I2C_TIMEOUT_MS = 2;    // a hung bus must never stall the loop: a failed read = no gyro
+const unsigned long GYRO_PERIOD_MS = 5;    // 200 Hz
+const unsigned long GYRO_STALE_MS = 50;    // no good reading for this long -> open loop
+const float YAW_TRACK_WIDTH = 0.39f;       // m, MUST equal track_width in robot.yaml (the Pi converts with it)
+const float YAW_KP = 0.12f;                // throttle per rad/s of error
+const float YAW_KI = 0.8f;                 // throttle per rad of error
+const float YAW_MAX_CORR = 0.2f;           // cap on the half-difference added (scrub breakaway is ~0.13)
+const unsigned long YAW_SAT_MS = 1000;     // correction pinned this long -> loop off until the next fail-safe
+const unsigned long YAW_WRONG_WAY_MS = 150; // gyro reads a hard turn the other way this long -> loop off (wrong sign)
+const float MANUAL_MAX_YAW = 3.0f;         // rad/s at full side stick when the loop is on
+const float MANUAL_TURN_EXPO = 0.5f;       // gentle turns near the stick centre when the loop is on
+
+const drive::YawConfig YAW_CFG = {YAW_KP,          YAW_KI,     YAW_MAX_CORR,    FULL_SCALE_MPS,
+                                  YAW_TRACK_WIDTH, YAW_SAT_MS, YAW_WRONG_WAY_MS};
+// with the loop on, the stick asks for a yaw rate: full side stick = MANUAL_MAX_YAW
+const float MANUAL_TURN_SCALE_GYRO = MANUAL_MAX_YAW * YAW_TRACK_WIDTH / (2.0f * MANUAL_LIMIT * FULL_SCALE_MPS);
+
 const drive::Config DRIVE_CFG = {REMOTE_REQUIRED, ARM_MS, WATCHDOG_MS, CMD_TIMEOUT_MS,
                                  REMOTE_TIMEOUT_MS, MANUAL_HOLD_MS, STICK_DEADBAND};
 
@@ -136,6 +165,19 @@ float outThrottle = 0.0f;                  // what is actually being output
 float outSteer = 0.0f;
 float cmdPan = 0.0f;                       // camera pan: last command and what is output
 float outPan = 0.0f;
+float driveA = 0.0f;                       // wheel commands after the yaw loop (= outThrottle/outSteer when it is off)
+float driveB = 0.0f;
+
+// Gyro (yaw-rate loop)
+bool gyroPresent = false;
+bool gyroBiasDone = false;
+float gyroBias = 0.0f;
+double gyroBiasSum = 0.0;
+uint32_t gyroBiasN = 0;
+float gyroZ = 0.0f;                        // rad/s, + = turning left, bias removed
+unsigned long gyroLastOkMs = 0;
+unsigned long lastGyroMs = 0;
+drive::YawState yawState;
 
 // Written by the radio callback (WiFi task), read by loop(): guarded by remoteMux.
 portMUX_TYPE remoteMux = portMUX_INITIALIZER_UNLOCKED;
@@ -166,8 +208,8 @@ int normToUs(float norm, int trimUs, bool reversed) {
 }
 
 void applyOutputs() {
-  writePulseUs(THROTTLE_PIN, normToUs(drive::deadbandComp(outThrottle, ESC_DEADBAND), 0, THROTTLE_REVERSED));
-  writePulseUs(STEER_PIN, normToUs(DIFF_DRIVE ? drive::deadbandComp(outSteer, ESC_DEADBAND) : outSteer,
+  writePulseUs(THROTTLE_PIN, normToUs(drive::deadbandComp(driveA, ESC_DEADBAND), 0, THROTTLE_REVERSED));
+  writePulseUs(STEER_PIN, normToUs(DIFF_DRIVE ? drive::deadbandComp(driveB, ESC_DEADBAND) : driveB,
                                    STEER_TRIM_US, STEER_REVERSED));
   writePulseUs(PAN_PIN, normToUs(outPan, PAN_TRIM_US, PAN_REVERSED));
 }
@@ -290,6 +332,60 @@ void sendRadioStatus() {
 }
 
 // --- control --------------------------------------------------------------
+// --- gyro (MPU6050) ---------------------------------------------------------
+bool mpuWrite(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(GYRO_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  return Wire.endTransmission() == 0;
+}
+
+bool mpuReadGyroZ(int16_t *raw) {
+  Wire.beginTransmission(GYRO_ADDR);
+  Wire.write(0x47);                        // GYRO_ZOUT_H
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(GYRO_ADDR, (size_t)2) != 2) return false;
+  int hi = Wire.read();
+  int lo = Wire.read();
+  if (hi < 0 || lo < 0) return false;
+  *raw = (int16_t)((hi << 8) | lo);
+  return true;
+}
+
+void setupGyro() {
+  if (!YAW_LOOP_ENABLED) return;
+  Wire.begin(GYRO_SDA, GYRO_SCL, 400000);
+  Wire.setTimeOut(GYRO_I2C_TIMEOUT_MS);
+  // wake up, 44 Hz low-pass, +/-1000 deg/s (32.8 LSB per deg/s)
+  gyroPresent = mpuWrite(0x6B, 0x00) && mpuWrite(0x1A, 0x03) && mpuWrite(0x1B, 0x10);
+  Serial.println(gyroPresent ? "gyro: MPU6050 found; calibrating during the arming window, keep the robot still"
+                             : "gyro: no MPU6050 at 0x68; yaw loop off (open loop, as 2.2.1)");
+}
+
+// Reads the gyro every GYRO_PERIOD_MS. The bias is the average over the ARM_MS boot window (robot standing still).
+void updateGyro(unsigned long now) {
+  if (!gyroPresent || now - lastGyroMs < GYRO_PERIOD_MS) return;
+  lastGyroMs = now;
+  int16_t raw;
+  if (!mpuReadGyroZ(&raw) || raw >= 32700 || raw <= -32700) return;     // failed or clipped: no fresh reading
+  float w = GYRO_SIGN * (float)raw / 32.8f * 0.01745329f;
+  if (now < ARM_MS) {
+    gyroBiasSum += w;
+    gyroBiasN++;
+    return;
+  }
+  if (!gyroBiasDone) {
+    gyroBias = gyroBiasN ? (float)(gyroBiasSum / gyroBiasN) : 0.0f;
+    gyroBiasDone = true;
+  }
+  gyroZ = w - gyroBias;
+  gyroLastOkMs = now;
+}
+
+bool yawLoopUsable(unsigned long now) {
+  return YAW_LOOP_ENABLED && gyroPresent && gyroBiasDone && (now - gyroLastOkMs) < GYRO_STALE_MS && !yawState.tripped;
+}
+
 void updateOutputs(unsigned long now) {
   float dt = (now - lastLoopMs) * 0.001f;
   lastLoopMs = now;
@@ -326,8 +422,13 @@ void updateOutputs(unsigned long now) {
   } else {
     float tgtA, tgtB;
     if (decision.source == drive::SRC_MANUAL) {
-      drive::arcadeMix(drive::shapeStick(in.stickX, STICK_DEADBAND), drive::shapeStick(in.stickY, STICK_DEADBAND),
-                       MANUAL_LIMIT, MANUAL_TURN_SCALE, &tgtA, &tgtB);
+      float turn = drive::shapeStick(in.stickY, STICK_DEADBAND);
+      float scale = MANUAL_TURN_SCALE;
+      if (yawLoopUsable(now)) {              // the stick asks for a yaw rate, with expo for gentle turns
+        turn = drive::expo(turn, MANUAL_TURN_EXPO);
+        scale = MANUAL_TURN_SCALE_GYRO;
+      }
+      drive::arcadeMix(drive::shapeStick(in.stickX, STICK_DEADBAND), turn, MANUAL_LIMIT, scale, &tgtA, &tgtB);
     } else {
       tgtA = cmdThrottle;
       tgtB = cmdSteer;
@@ -342,6 +443,11 @@ void updateOutputs(unsigned long now) {
   }
   // Camera pan is independent of the drive fail-safe: it just follows the last command, slew-limited.
   outPan = drive::rampToward(outPan, cmdPan, PAN_RATE_PER_S * dt);
+  // Yaw-rate loop: corrects only the left/right difference; passes through when off, in fail-safe or without gyro.
+  if (failsafe) yawState.reset();
+  driveA = outThrottle;
+  driveB = outSteer;
+  drive::yawLoop(YAW_CFG, &yawState, DIFF_DRIVE && !failsafe && yawLoopUsable(now), gyroZ, now, dt, &driveA, &driveB);
   applyOutputs();
 }
 
@@ -370,6 +476,7 @@ void setup() {
   outPan = 0.0f;                           // camera straight ahead at boot
   applyOutputs();                          // neutral from the first moment
 
+  setupGyro();
   radioOk = setupRadio();                  // if the radio fails and REMOTE_REQUIRED is set, the robot stays stopped
   lastLoopMs = millis();
   Serial.printf("V,%s\n", FW_VERSION);
@@ -379,6 +486,7 @@ void loop() {
   readSerial();
 
   unsigned long now = millis();
+  updateGyro(now);
   updateOutputs(now);
   updateLed(now);
 
@@ -389,8 +497,11 @@ void loop() {
   }
   if (now - lastStatusMs >= STATUS_PERIOD_MS) {
     lastStatusMs = now;
-    Serial.printf("S,%d,%.3f,%.3f\n", failsafe ? 1 : 0, outThrottle, outSteer);
+    Serial.printf("S,%d,%.3f,%.3f\n", failsafe ? 1 : 0, driveA, driveB);
     Serial.printf("K,%d,%d,%d\n", REMOTE_REQUIRED ? 1 : 0, (int)decision.remote, (int)decision.source);
+    if (YAW_LOOP_ENABLED) {                // gyro check line (the Pi bridge ignores it): yaw rate, + = left; loop usable
+      Serial.printf("G,%.2f,%d\n", gyroZ, yawLoopUsable(now) ? 1 : 0);
+    }
     sendRadioStatus();
   }
 }

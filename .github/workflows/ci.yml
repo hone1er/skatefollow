@@ -1,5 +1,6 @@
 # Runs on every push and pull request: the tests that need no robot, no ROS and no ESP32.
 # (The ROS nodes themselves, the arduino-cli compile and the Fusion script are checked by hand: docs/first_drive.md.)
+# The sim job runs the MuJoCo simulator's tests: the follow software + the compiled firmware logic in closed loop.
 name: tests
 
 on:
@@ -52,3 +53,14 @@ jobs:
       - run: python cad/tests/test_fusion_script.py
       - run: python cad/remote_case/tests/test_remote_script.py
       - run: pip install numpy && python cad/remote_case/check_remote.py --quick
+
+  sim:
+    name: Simulator (MuJoCo physics + real firmware logic + robot software)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install mujoco==3.17.0 numpy pyyaml pytest pyserial
+      - run: cd sim && python -m pytest -q tests

@@ -70,6 +70,13 @@ raised deliberately, not all at once.
    - put a hand 20 cm in front of the sensor (forward command only);
    - unplug the ESP32's USB cable from the Pi.
 6. Belts: no skipping, no rubbing on flanges, pulleys do not wobble.
+7. **Gyro (for the yaw-rate loop; skip if no MPU6050 is fitted).** Wire it (firmware README, pins 21/22), set
+   `YAW_LOOP_ENABLED = true`, flash, and **keep the robot still for the first 2 s after power-up** (the bias is
+   measured then). **Mac**, Arduino serial monitor at 115200: `gyro: MPU6050 found`, then `G,0.00,1` lines
+   10 times a second. **Sign check:** turn the robot by hand to the **left** (counter-clockwise seen from above):
+   the first number must go **positive** (about 1–3 while you turn). If it goes negative, set
+   `GYRO_SIGN = -1.0` and flash again. (A wrong sign would also switch the loop off by itself after 150 ms of
+   driving, but check it here.) The second number is 0 until the 2 s calibration is done.
 
 ## Stage 2 — first ground drive, by stick
 
@@ -80,7 +87,12 @@ raised deliberately, not all at once.
    ```bash
    ros2 topic pub -r 20 /cmd_vel_raw geometry_msgs/Twist "{angular: {z: 1.0}}"
    ```
-   (If nothing moves, `ESC_DEADBAND` is not set yet: Stage 1, step 2.) Time one full turn. It should take 6.3 s. If it takes longer, raise `track_width` in `config/robot.yaml` in
+   (If nothing moves, `ESC_DEADBAND` is not set yet: Stage 1, step 2. **The simulator predicts the robot will
+   barely pivot at 1 rad/s even then**: the tyres need ~10 A per motor to scrub and this command gives ~1 A.
+   `sim/README.md` "What it found" explains it, and the fix is the gyro yaw-rate loop (Stage 1, step 7). Note
+   what really happens here: it decides whether that loop is needed. **With the loop on**, the robot turns
+   at the commanded rate whatever the tyres do, so leave `track_width` at 0.39 (it must match
+   `YAW_TRACK_WIDTH` in the firmware); the steps below are for the loop off.) Time one full turn. It should take 6.3 s. If it takes longer, raise `track_width` in `config/robot.yaml` in
    proportion (9 s → 0.39 × 9 / 6.3 = 0.56) and restart the service.
 4. **Speed calibration:** drive a measured 10 m at `linear.x: 1.0` and time it. If it takes 12 s the robot does
    0.83 m/s per commanded 1.0: multiply `max_wheel_speed` by 0.83.
