@@ -78,6 +78,23 @@ def test_follow_gains_defaults_match_the_follower_node():
     _dataclass_vs_node(FollowGains, "follower")
 
 
+def test_side_shot_defaults_match_the_follower_node():
+    from honebot_follow.control import SideShotParams
+    _dataclass_vs_node(SideShotParams, "follower")
+
+
+def test_cad_pan_range_matches_camera_aim():
+    """The CAD's GoPro-view check and pan sweep use the same travel the camera_aim node assumes."""
+    P = load_cad_model().info["P"]
+    assert P["pan_half_range_deg"] == pytest.approx(load_node_defaults("camera_aim")["half_range_deg"])
+
+
+def test_camera_launch_pan_default_matches_camera_aim():
+    text = (REPO / "src" / "honebot_camera" / "launch" / "camera.launch.py").read_text()
+    m = re.search(r"DeclareLaunchArgument\('half_range_deg', default_value='([\d.]+)'", text)
+    assert m and float(m.group(1)) == pytest.approx(load_node_defaults("camera_aim")["half_range_deg"])
+
+
 def test_gate_params_defaults_match_the_safety_gate_node():
     from honebot_safety.gate import GateParams
     _dataclass_vs_node(GateParams, "safety_gate")
@@ -102,7 +119,10 @@ def test_aim_gains_defaults_match_the_camera_aim_node():
 # then put the new hash here.
 MIRRORED_NODE_CODE = {
     ("follower", "_on_target"): "953d5b711012",
-    ("follower", "_tick"): "31f86476248e",
+    ("follower", "_tick"): "1a9aa71bc962",
+    ("follower", "_on_speed"): "2aca794eae9e",
+    ("follower", "_on_yaw"): "f743ee60ac91",
+    ("follower", "_fresh"): "8dca3adbe831",
     ("safety_gate", "_on_cmd"): "47994b036247",
     ("safety_gate", "_on_range"): "f9df425a6044",
     ("safety_gate", "_on_link"): "3116ad3352ce",
@@ -113,7 +133,7 @@ MIRRORED_NODE_CODE = {
     ("esp32_bridge", "_send_cmd"): "eba39aa0ad05",
     ("esp32_bridge", "_send_pan"): "824f91bee311",
     ("esp32_bridge", "_on_pan"): "9d596d8520c6",
-    ("esp32_bridge", "_handle"): "cd519fad2c87",
+    ("esp32_bridge", "_handle"): "19e02d36c35a",
     ("esp32_bridge", "_publish_range"): "8a01f16cd88b",
     ("camera_aim", "_on_target"): "d4d5fad5c672",
     ("camera_aim", "_on_uwb"): "5e6825906f69",

@@ -11,6 +11,8 @@ Two input modes, same control law (control.py):
     sub  <target_topic>   geometry_msgs/PointStamped  target in the robot frame
                           (x forward, y left, metres) - what UWB will provide
     pub  cmd_vel_topic    geometry_msgs/Twist          (default 'cmd_vel_raw' -> safety gate)
+    sub  esp32/speed, esp32/yaw_rate   std_msgs/Float32  own speed (S line) and gyro yaw rate (G line),
+                          from esp32_bridge; used only by the side-shot mode (side_distance > 0)
 
 Either way: if the target is older than target_timeout the robot is commanded to
 stop. Set ackermann:=true for the car (no turning in place; creeps instead).
@@ -20,13 +22,15 @@ import math
 
 import rclpy
 from geometry_msgs.msg import PointStamped, Twist
+from std_msgs.msg import Float32
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from turtlesim.msg import Pose
 from turtlesim.srv import Spawn
 
-from honebot_follow.control import FollowGains, follow_command_relative, relative_target
+from honebot_follow.control import (FollowGains, SideShot, SideShotParams, follow_command_relative,
+                                    relative_target)
 
 
 class Follower(Node):
@@ -64,6 +68,27 @@ class Follower(Node):
             follow_bearing=self.declare_parameter('follow_bearing', 0.0).value,
             stopped_turn_deadband=self.declare_parameter('stopped_turn_deadband', 0.0).value,
         )
+        # Side-view filming (control.SideShot). Off while side_distance is 0. Preset: config/side_shot.yaml.
+        # (Defaults equal SideShotParams'; sim/tests/test_sources.py checks. One literal per line so that
+        # test_config.py and the simulator can read them.)
+        self.side_params = SideShotParams(
+            side_distance=self.declare_parameter('side_distance', 0.0).value,
+            side_angle=self.declare_parameter('side_angle', 0.785).value,
+            side_kp=self.declare_parameter('side_kp', 1.0).value,
+            side_max_correction=self.declare_parameter('side_max_correction', 1.5).value,
+            side_max_steer=self.declare_parameter('side_max_steer', 0.7).value,
+            side_kp_angular=self.declare_parameter('side_kp_angular', 1.5).value,
+            side_enter_speed=self.declare_parameter('side_enter_speed', 0.8).value,
+            side_exit_speed=self.declare_parameter('side_exit_speed', 0.4).value,
+            side_engage_range=self.declare_parameter('side_engage_range', 12.0).value,
+            side_min_range=self.declare_parameter('side_min_range', 1.5).value,
+            side_lane=self.declare_parameter('side_lane', 0.6).value,
+            side_speed_tau=self.declare_parameter('side_speed_tau', 0.3).value,
+            side_input_timeout=self.declare_parameter('side_input_timeout', 0.3).value,
+        )
+        self.side = SideShot(self.side_params)
+        self.own_speed = None         # (value, stamp) from esp32/speed
+        self.own_yaw = None           # (value, stamp) from esp32/yaw_rate
         self.add_on_set_parameters_callback(self._on_params)
 
         self.target = None          # (distance, bearing)
@@ -75,6 +100,8 @@ class Follower(Node):
         self.relative_mode = bool(self.target_topic)
         if self.relative_mode:
             self.create_subscription(PointStamped, self.target_topic, self._on_target, 10)
+            self.create_subscription(Float32, 'esp32/speed', self._on_speed, 10)
+            self.create_subscription(Float32, 'esp32/yaw_rate', self._on_yaw, 10)
             cmd_topic = cmd_vel_topic or 'cmd_vel_raw'
             source = self.target_topic
         else:
@@ -110,7 +137,10 @@ class Follower(Node):
 
     def _on_params(self, params):
         for p in params:
-            if hasattr(self.gains, p.name):
+            if hasattr(self.side_params, p.name):
+                setattr(self.side_params, p.name, float(p.value))
+                self.get_logger().info(f'{p.name} = {p.value}')
+            elif hasattr(self.gains, p.name):
                 cur = getattr(self.gains, p.name)
                 setattr(self.gains, p.name, bool(p.value) if isinstance(cur, bool) else float(p.value))
                 self.get_logger().info(f'{p.name} = {p.value}')
@@ -121,6 +151,17 @@ class Follower(Node):
         x, y = msg.point.x, msg.point.y
         self.target = (math.hypot(x, y), math.atan2(y, x))
         self.target_stamp = self.get_clock().now()
+
+    def _on_speed(self, msg: Float32):
+        self.own_speed = (float(msg.data), self.get_clock().now())
+
+    def _on_yaw(self, msg: Float32):
+        self.own_yaw = (float(msg.data), self.get_clock().now())
+
+    def _fresh(self, sample, now):
+        if sample is None or (now - sample[1]).nanoseconds * 1e-9 > self.side_params.side_input_timeout:
+            return None
+        return sample[0]
 
     def _on_leader(self, msg: Pose):
         self.leader_pose = msg
@@ -139,11 +180,13 @@ class Follower(Node):
             self.cmd_pub.publish(cmd)
             return
 
-        age = (self.get_clock().now() - self.target_stamp).nanoseconds * 1e-9
+        now = self.get_clock().now()
+        age = (now - self.target_stamp).nanoseconds * 1e-9
         if age > self.target_timeout:
             if not self._warned_stale:
                 self.get_logger().warn(f'Target is {age:.1f}s old; stopping')
                 self._warned_stale = True
+            self.side.reset()
             self.cmd_pub.publish(cmd)
             return
         if self._warned_stale:
@@ -151,7 +194,16 @@ class Follower(Node):
             self._warned_stale = False
 
         distance, bearing = self.target
-        linear, angular, _ = follow_command_relative(distance, bearing, self.gains)
+        was_side = self.side.active
+        side = self.side.step(now.nanoseconds * 1e-9, self.target, self.target_stamp.nanoseconds * 1e-9,
+                              self._fresh(self.own_speed, now), self._fresh(self.own_yaw, now), self.gains)
+        if side is not None:
+            linear, angular = side
+        else:
+            linear, angular, _ = follow_command_relative(distance, bearing, self.gains)
+        if self.side.active != was_side:
+            self.get_logger().info('Side shot: holding the side position' if self.side.active else
+                                   'Side shot off (skater slow or far, or no speed/gyro data): normal follow')
         cmd.linear.x = linear
         cmd.angular.z = angular
         self.cmd_pub.publish(cmd)

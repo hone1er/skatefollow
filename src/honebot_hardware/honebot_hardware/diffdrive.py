@@ -43,3 +43,16 @@ def twist_to_diffdrive(linear: float, angular: float, p: DiffDriveParams) -> Tup
     if p.right_reversed:
         right = -right
     return left, right
+
+
+def wheels_to_speed(left: float, right: float, p: DiffDriveParams) -> float:
+    """Forward speed (m/s) from the wheel outputs the ESP32 reports in its S line: the inverse of
+    twist_to_diffdrive's linear part, on the same scale, so it reads the speed the Pi asked for once the
+    ESP32's ramps and limits have been applied. NaN/inf -> 0."""
+    if not (math.isfinite(left) and math.isfinite(right)):
+        return 0.0
+    if p.left_reversed:
+        left = -left
+    if p.right_reversed:
+        right = -right
+    return (left + right) / 2.0 * p.max_wheel_speed

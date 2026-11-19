@@ -186,11 +186,15 @@ struct YawState {
   uint32_t satSinceMs = 0;
   bool wrongWay = false;
   uint32_t wrongSinceMs = 0;
+  bool runaway = false;  // 2.4.0: correction and gyro disagree while the turn grows (see yawLoop)
+  uint32_t runawaySinceMs = 0;
+  float runawayStartW = 0.0f;
   bool tripped = false;  // latched after a fault; cleared by reset() (next fail-safe)
   void reset() {
     integ = 0.0f;
     saturated = false;
     wrongWay = false;
+    runaway = false;
     tripped = false;
   }
 };
@@ -223,6 +227,22 @@ inline void yawLoop(const YawConfig &c, YawState *s, bool active, float gyroZ, u
   float e = wCmd - gyroZ;
   s->integ = clampf(s->integ + c.ki * e * dt, -c.maxCorr, c.maxCorr);
   float corr = clampf(c.kp * e + s->integ, -c.maxCorr, c.maxCorr);
+  // Runaway (2.4.0): the check above needs the gyro to disagree with the turn ASKED for. When the Pi steers by the
+  // same wrong gyro (the side-view follower dead-reckons with it), the request follows the gyro's sign and that
+  // check never fires. Independent of the request: a correction pushing one way while the gyro reports a hard turn
+  // the other way, and that turn not easing for wrongWayMs, means the correction feeds the spin (positive
+  // feedback). With a correct gyro a correction against an overshoot makes the turn ease, so it does not trip.
+  bool against = corr * gyroZ < 0.0f && fabsf(gyroZ) > 1.0f && fabsf(corr) > 0.5f * c.maxCorr;
+  if (against && !s->runaway) {
+    s->runawaySinceMs = nowMs;
+    s->runawayStartW = fabsf(gyroZ);
+  }
+  s->runaway = against;
+  if (against && (uint32_t)(nowMs - s->runawaySinceMs) >= c.wrongWayMs && fabsf(gyroZ) >= s->runawayStartW) {
+    s->tripped = true;
+    s->integ = 0.0f;
+    return;
+  }
   bool pinned = fabsf(corr) >= c.maxCorr * 0.999f;
   if (pinned && !s->saturated) s->satSinceMs = nowMs;
   s->saturated = pinned;
@@ -237,6 +257,28 @@ inline void yawLoop(const YawConfig &c, YawState *s, bool active, float gyroZ, u
   if (big > 1.0f) h = (h > 0.0f ? 1.0f : -1.0f) * fmaxf(0.0f, 1.0f - fabsf(m));   // keep the mean, shrink the turn
   *a = m - h;
   *b = m + h;
+}
+
+// Stuck gyro (2.4.0). A working MPU6050 always shows a little noise: its raw reading changes by a count or so
+// from sample to sample. One that hangs and keeps returning the same value reads "not turning" while the loop keeps
+// adding difference just under maxCorr (so the saturation trip never fires): in the simulator the tyres then break
+// loose and the robot spins over, at 12 mph and even at 6 mph. `limit` identical raw readings in a row -> stuck,
+// latched until restart; the sketch then treats the gyro as absent (loop off, G line not usable).
+struct StuckWatch {
+  int16_t last = 0;
+  uint16_t same = 0;
+  bool stuck = false;
+};
+
+inline bool stuckReading(StuckWatch *w, int16_t raw, uint16_t limit) {
+  if (raw == w->last) {
+    if (w->same < 65535) w->same++;
+  } else {
+    w->same = 0;
+    w->last = raw;
+  }
+  if (limit > 0 && w->same >= limit) w->stuck = true;
+  return w->stuck;
 }
 
 // Stick expo: fine control near the centre, full value at the end. e = 0 linear, e = 1 cubic.

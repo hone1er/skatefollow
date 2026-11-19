@@ -81,8 +81,11 @@ raised deliberately, not all at once.
    measured then). **Mac**, Arduino serial monitor at 115200: `gyro: MPU6050 found`, then `G,0.00,1` lines
    10 times a second. **Sign check:** turn the robot by hand to the **left** (counter-clockwise seen from above):
    the first number must go **positive** (about 1–3 while you turn). If it goes negative, set
-   `GYRO_SIGN = -1.0` and flash again. (A wrong sign would also switch the loop off by itself after 150 ms of
-   driving, but check it here.) The second number is 0 until the 2 s calibration is done.
+   `GYRO_SIGN = -1.0` and flash again. **Do not skip this**: the firmware switches the loop off by itself 75 ms
+   after it sees a wrong sign, but in the simulator a wrong sign at 12 mph can still roll the robot over before
+   that. The second number is 0 until the 2 s calibration is done. **Stuck check:** with the robot still, the first
+   number must flicker (e.g. 0.00 / 0.01 / −0.01). A value that never changes for half a second makes the
+   firmware treat the gyro as absent (2.4.0).
 
 ## Stage 2 — first ground drive, by stick
 
@@ -144,6 +147,28 @@ raised deliberately, not all at once.
 2. In Foxglove, `/camera/image/compressed` shows you with a box; the pan follows you. If it pans the wrong way,
    add `pan_sign:=-1.0` to the `film.launch.py` command.
 3. No part of the robot may appear in frame at either pan limit.
+4. **Pan travel.** With the remote in STOP (the pan works regardless), send each limit and measure the angle:
+   ```bash
+   ros2 topic pub -1 /camera/pan_cmd std_msgs/msg/Float32 "{data: 1.0}"
+   ```
+   then `"{data: -1.0}"`. Set camera_aim `half_range_deg` to the measured angle (about 70; firmware 2.4.0).
+
+## Stage 5b — side view (needs the gyro, Stage 1 step 7)
+
+The robot rides 2 m from you, 45° behind on your right (`config/side_shot.yaml`). Close: if you stop dead it
+coasts past alongside about 1.4 m to your side, it does not stop behind you. The HC-SR04 does not see you at
+45°; the follower's own rules are the protection there (never forward closer than 1.5 m, never steering toward
+you there).
+1. Walking first, remote in RUN. **Pi:**
+   ```bash
+   ros2 launch honebot_bringup film.launch.py side_shot:=true max_linear:=1.5
+   ```
+   The log says `Side shot: holding the side position` once you walk faster than ~0.8 m/s. Stop: it says
+   `Side shot off` and the normal follow takes over. `ros2 topic hz /esp32/yaw_rate` must show ~10 Hz (no gyro
+   line = no side view).
+2. Stop dead while it rides beside you, a few times: it must stop beside or behind you, never turn into you.
+3. Turn right (toward it) and left. Then jog. Today's HC-SR04 caps the robot at ~2.7 m/s: faster than that, it
+   cannot keep the side position and falls back.
 
 ## Stage 6 — on the board
 

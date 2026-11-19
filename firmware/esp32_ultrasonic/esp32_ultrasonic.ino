@@ -56,7 +56,7 @@
 #include "honebot_link.h"
 #include <Wire.h>
 
-const char *FW_VERSION = "2.3.0";
+const char *FW_VERSION = "2.4.0";
 
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 18;
@@ -86,6 +86,13 @@ const bool STEER_REVERSED = false;         // channel B (right wheel)
 const int PAN_TRIM_US = 0;                 // adjust so the camera looks straight ahead at pan = 0
 const bool PAN_REVERSED = false;           // or set pan_sign:=-1 on the Pi side
 const float PAN_RATE_PER_S = 3.0f;         // slew limit on the pan command (full travel in ~0.7 s)
+// Pan pulse (2.4.0): pan = +-1 -> neutral +- PAN_SPAN_US. Its own range, wider than the ESCs' 1000-2000 us, so the
+// camera can reach a skater 45 deg off the nose (side shot). A standard servo (MG996R / DS3218) turns roughly
+// 0.09 deg/us, so 778 us is about 70 deg, but servos differ: MEASURE the angle at pan = +-1 and set camera_aim's
+// half_range_deg to it. PAN_MIN/MAX_US keep the pulse inside what such servos accept.
+const int PAN_SPAN_US = 778;
+const int PAN_MIN_US = 500;
+const int PAN_MAX_US = 2500;
 
 // Bench safety, independent of the Pi: cap and rate-limit the drive channels.
 // Differential drive: BOTH channels are wheel throttles -> both capped/ramped.
@@ -129,12 +136,16 @@ const float GYRO_SIGN = 1.0f;              // +1: chip side up (turning left rea
 const uint16_t GYRO_I2C_TIMEOUT_MS = 2;    // a hung bus must never stall the loop: a failed read = no gyro
 const unsigned long GYRO_PERIOD_MS = 5;    // 200 Hz
 const unsigned long GYRO_STALE_MS = 50;    // no good reading for this long -> open loop
+const uint16_t GYRO_STUCK_SAMPLES = 100;   // 2.4.0: this many identical raw readings in a row (0.5 s) -> gyro stuck,
+                                           // treated as absent until restart (a working chip always shows noise)
 const float YAW_TRACK_WIDTH = 0.39f;       // m, MUST equal track_width in robot.yaml (the Pi converts with it)
 const float YAW_KP = 0.12f;                // throttle per rad/s of error
 const float YAW_KI = 0.8f;                 // throttle per rad of error
 const float YAW_MAX_CORR = 0.2f;           // cap on the half-difference added (scrub breakaway is ~0.13)
 const unsigned long YAW_SAT_MS = 1000;     // correction pinned this long -> loop off until the next fail-safe
-const unsigned long YAW_WRONG_WAY_MS = 150; // gyro reads a hard turn the other way this long -> loop off (wrong sign)
+const unsigned long YAW_WRONG_WAY_MS = 75;  // gyro reads a hard turn the other way (or the turn runs away against the
+                                           // correction) this long -> loop off. 75 ms (2.4.0, was 150): once the
+                                           // tyres break loose 150 ms is enough to roll over at speed (simulated)
 const float MANUAL_MAX_YAW = 3.0f;         // rad/s at full side stick when the loop is on
 const float MANUAL_TURN_EXPO = 0.5f;       // gentle turns near the stick centre when the loop is on
 
@@ -178,6 +189,7 @@ float gyroZ = 0.0f;                        // rad/s, + = turning left, bias remo
 unsigned long gyroLastOkMs = 0;
 unsigned long lastGyroMs = 0;
 drive::YawState yawState;
+drive::StuckWatch gyroWatch;                // 2.4.0 stuck-gyro check
 
 // Written by the radio callback (WiFi task), read by loop(): guarded by remoteMux.
 portMUX_TYPE remoteMux = portMUX_INITIALIZER_UNLOCKED;
@@ -193,25 +205,28 @@ char rxBuf[48];
 size_t rxLen = 0;
 
 // --- servo output ---------------------------------------------------------
-void writePulseUs(int pin, int us) {
-  us = constrain(us, PULSE_MIN_US, PULSE_MAX_US);
+void writePulseUs(int pin, int us, int minUs, int maxUs) {
+  us = constrain(us, minUs, maxUs);
   const uint32_t periodUs = 1000000UL / SERVO_FREQ_HZ;                 // 20000
   const uint32_t maxDuty = (1UL << SERVO_RES_BITS) - 1;
   uint32_t duty = (uint32_t)(((uint64_t)us * maxDuty) / periodUs);
   ledcWrite(pin, duty);
 }
 
-int normToUs(float norm, int trimUs, bool reversed) {
+int normToUs(float norm, int trimUs, bool reversed, int spanUs) {
   norm = constrain(norm, -1.0f, 1.0f);
   if (reversed) norm = -norm;
-  return PULSE_NEUTRAL_US + trimUs + (int)(norm * (PULSE_MAX_US - PULSE_NEUTRAL_US));
+  return PULSE_NEUTRAL_US + trimUs + (int)(norm * spanUs);
 }
 
 void applyOutputs() {
-  writePulseUs(THROTTLE_PIN, normToUs(drive::deadbandComp(driveA, ESC_DEADBAND), 0, THROTTLE_REVERSED));
+  const int escSpan = PULSE_MAX_US - PULSE_NEUTRAL_US;     // ESCs: 1000-2000 us, unchanged
+  writePulseUs(THROTTLE_PIN, normToUs(drive::deadbandComp(driveA, ESC_DEADBAND), 0, THROTTLE_REVERSED, escSpan),
+               PULSE_MIN_US, PULSE_MAX_US);
   writePulseUs(STEER_PIN, normToUs(DIFF_DRIVE ? drive::deadbandComp(driveB, ESC_DEADBAND) : driveB,
-                                   STEER_TRIM_US, STEER_REVERSED));
-  writePulseUs(PAN_PIN, normToUs(outPan, PAN_TRIM_US, PAN_REVERSED));
+                                   STEER_TRIM_US, STEER_REVERSED, escSpan),
+               PULSE_MIN_US, PULSE_MAX_US);
+  writePulseUs(PAN_PIN, normToUs(outPan, PAN_TRIM_US, PAN_REVERSED, PAN_SPAN_US), PAN_MIN_US, PAN_MAX_US);
 }
 
 // --- sensor -----------------------------------------------------------------
@@ -368,6 +383,7 @@ void updateGyro(unsigned long now) {
   lastGyroMs = now;
   int16_t raw;
   if (!mpuReadGyroZ(&raw) || raw >= 32700 || raw <= -32700) return;     // failed or clipped: no fresh reading
+  if (drive::stuckReading(&gyroWatch, raw, GYRO_STUCK_SAMPLES)) return;  // frozen chip: never fresh again
   float w = GYRO_SIGN * (float)raw / 32.8f * 0.01745329f;
   if (now < ARM_MS) {
     gyroBiasSum += w;
@@ -499,7 +515,7 @@ void loop() {
     lastStatusMs = now;
     Serial.printf("S,%d,%.3f,%.3f\n", failsafe ? 1 : 0, driveA, driveB);
     Serial.printf("K,%d,%d,%d\n", REMOTE_REQUIRED ? 1 : 0, (int)decision.remote, (int)decision.source);
-    if (YAW_LOOP_ENABLED) {                // gyro check line (the Pi bridge ignores it): yaw rate, + = left; loop usable
+    if (YAW_LOOP_ENABLED) {                // gyro check line (bridge -> esp32/yaw_rate, side view): yaw rate, + = left; loop usable
       Serial.printf("G,%.2f,%d\n", gyroZ, yawLoopUsable(now) ? 1 : 0);
     }
     sendRadioStatus();

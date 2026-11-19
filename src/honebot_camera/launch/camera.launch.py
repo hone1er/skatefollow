@@ -40,7 +40,8 @@ def generate_launch_description():
         DeclareLaunchArgument('preview_hz', default_value='5.0', description='JPEG preview rate, 0 = off'),
         DeclareLaunchArgument('aim', default_value='true', description='start camera_aim (pan servo control)'),
         DeclareLaunchArgument('pan_sign', default_value='1.0', description='-1.0 if the servo pans the wrong way'),
-        DeclareLaunchArgument('half_range_deg', default_value='45.0', description='servo travel either side'),
+        DeclareLaunchArgument('half_range_deg', default_value='70.0',
+                              description='measured pan angle at pan +-1 (firmware PAN_SPAN_US)'),
 
         Node(
             package='honebot_camera', executable='camera_node', name='camera_node', output='screen',

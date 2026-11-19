@@ -7,6 +7,9 @@ ESP32 -> Pi (published):
                      esp32/outputs      geometry_msgs/Vector3 what the ESP32 really outputs, from the stick or
                                         the Pi: x = a (left wheel / throttle), y = b (right wheel / steer),
                                         z = 1.0 in failsafe. 10 Hz.
+                     esp32/speed        std_msgs/Float32     own forward speed (m/s) from a, b (diff mode)
+  G,<yaw>,<ok>   ->  esp32/yaw_rate     std_msgs/Float32     gyro yaw rate (rad/s, + = left), only while ok = 1
+                                        (firmware >= 2.3.0 with YAW_LOOP_ENABLED). Both feed the side shot.
   V,<version>    ->  logged             (firmware version banner at boot)
   K,<req>,<remote>,<source> (firmware >= 2.2.0, handheld remote / kill switch)
                  ->  esp32/remote       std_msgs/String      never | lost | stop | run
@@ -43,7 +46,7 @@ from sensor_msgs.msg import Range
 from std_msgs.msg import Bool, Float32, String
 
 from honebot_hardware.ackermann import AckermannParams, twist_to_ackermann
-from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive
+from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive, wheels_to_speed
 
 
 class Esp32Bridge(Node):
@@ -81,6 +84,8 @@ class Esp32Bridge(Node):
         self.failsafe_pub = self.create_publisher(Bool, 'esp32/failsafe', 10)
         self.act_pub = self.create_publisher(Vector3, 'esp32/actuators', 10)
         self.outputs_pub = self.create_publisher(Vector3, 'esp32/outputs', 10)
+        self.speed_pub = self.create_publisher(Float32, 'esp32/speed', 10)
+        self.yaw_pub = self.create_publisher(Float32, 'esp32/yaw_rate', 10)
         self.remote_pub = self.create_publisher(String, 'esp32/remote', 10)
         self.manual_pub = self.create_publisher(Bool, 'esp32/manual', 10)
         self.create_subscription(Twist, 'cmd_vel', self._on_cmd, 10)
@@ -227,6 +232,18 @@ class Esp32Bridge(Node):
                     return
                 # What the ESP32 is really outputting (stick or Pi, after kill switch, ramps and limits).
                 self.outputs_pub.publish(Vector3(x=a, y=b, z=1.0 if parts[1] == '1' else 0.0))
+                if self.drive_mode == 'diff':     # own speed for the follower's side shot, same scale as C lines
+                    self.speed_pub.publish(Float32(data=wheels_to_speed(a, b, self.diff)))
+        elif parts[0] == 'G' and len(parts) == 3:
+            # gyro yaw rate (rad/s, + = left), printed by firmware >= 2.3.0 when the yaw loop is enabled;
+            # published only while the firmware calls it usable (bias measured, loop not tripped)
+            try:
+                yaw = float(parts[1])
+            except ValueError:
+                self._bad(line)
+                return
+            if parts[2] == '1' and math.isfinite(yaw):
+                self.yaw_pub.publish(Float32(data=yaw))
         elif parts[0] == 'K' and len(parts) == 4:
             self._publish_remote(parts[1] == '1', parts[2], parts[3])
         elif parts[0] == 'V' and len(parts) == 2:

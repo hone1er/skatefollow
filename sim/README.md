@@ -8,7 +8,7 @@ an ideal point; this moves the robot.
 
 | Part | Model | Source of the numbers |
 |---|---|---|
-| Body | 4.02 kg rigid body at the CAD centre of gravity, 4 wheels on hinges, contact with the ground; scrub, sliding and tipping come out of the physics | CAD script `build_model()` + `cad/report/check_report.md` |
+| Body | 3.91 kg rigid body at the CAD centre of gravity, 4 wheels on hinges, contact with the ground; scrub, sliding and tipping come out of the physics | CAD script `build_model()` + `cad/report/check_report.md` |
 | Drivetrain | per side one 370 KV motor on an AM32 ESC in voltage mode: current = (throttle × 11.1 V − back-EMF) / 0.15 Ω, limited to 30 A; 2:1 belt; rear wheel tied 1:1 to the front; rolling resistance; air drag | `cad/check_design.py` drivetrain section (pinned by a test); belt ratio from the CAD pulley teeth |
 | ESP32 | the **real** `drive_logic.h`, compiled on first run and called directly (who may drive, slew, fail-safe ramp, deadband), plus the sketch's loop code; every constant parsed from the `.ino` | `firmware/esp32_ultrasonic/` |
 | Pi software | the **real** pure modules: `follow_command_relative`, `gate_command` with the sight limit, `twist_to_diffdrive`, uwb_node's `RangeFilter` + `aoa_position`, camera_aim's `PanController`; the nodes' timer and callback code is mirrored (hash-pinned) | every parameter and rate = the node's own `declare_parameter()` default with `robot.yaml` on top, read from the node source |
@@ -63,7 +63,8 @@ The first run compiles the firmware logic with Xcode's command-line tools (alrea
 cd sim && ~/honebot-sim/bin/python -m pytest -q tests
 ```
 
-You should see `90 passed`.
+You should see `133 passed, 1 xfailed` (the xfail: a gyro mounted upside down can still roll the robot over at
+speed; firmware/esp32_ultrasonic/README.md).
 
 ## Use it (from the `sim` folder)
 
@@ -148,7 +149,7 @@ Other options: `--list` (scenarios), `--spin-test` (turn-rate sweep), `--profile
 
 ## What it found (2026-11-19)
 
-With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of the 11 test scenarios pass
+With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of the 12 test scenarios pass
 (`--all` runs those 11; the 12th, `playground`, is for driving by hand).
 
 1. **Straight-line following and stopping are safe.** The robot stops 1.1–1.2 m from a skater who stops dead,
@@ -167,7 +168,7 @@ With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of
    or 0.13 it lifts *every* wheel command, so the robot drove faster than the follower asked, hit the box in
    `obstacle` and, at 0.13, the skater in `cruise_stop_8`. Keep it for the ESC's own dead zone only.
 4. **A yaw-rate loop fixes it.** With a gyro on the ESP32 and a PI loop that adds the missing wheel difference
-   (firmware 2.3.0, `YAW_LOOP_ENABLED`, off by default; `--yaw-loop` here), all 11 scenarios pass. The spin test then tracks the
+   (firmware 2.3.0, `YAW_LOOP_ENABLED`, off by default; `--yaw-loop` here), all 12 scenarios pass. The spin test then tracks the
    command to within 0.05 rad/s at about 10 A. The effective track width comes out at 2–2.7 × geometric,
    not the 1.4 × guessed in `robot.yaml`. A gyro is a few dollars: an MPU6050 breakout on the ESP32's I2C, or
    the one on the Crius board.
@@ -184,6 +185,42 @@ With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of
    checks. Every fail-safe layer (UWB lost, follower dead, gate dead, Pi dead, ESP32 data stale, sensor dead,
    remote STOP, remote lost) stops the robot from 6 mph within its timeout plus ~1.2 s. The `target` profile turns
    the check off: its lidar is tilted to never see the ground, so it would need its own health check.
+
+## Side view (`--side`)
+
+`film.launch.py side_shot:=true` makes the robot ride **2 m from the skater, 45° round from directly behind, on
+their right** (`src/honebot_bringup/config/side_shot.yaml`, which `--side` loads too; controller `SideShot` in
+`honebot_follow/control.py`). It needs the gyro (yaw loop, so add `--yaw-loop`) and today's HC-SR04 limits it
+to walking / slow rolling:
+
+```bash
+~/honebot-sim/bin/python -m honebot_sim.run --all --side --yaw-loop --profile target
+```
+
+```bash
+~/honebot-sim/bin/mjpython -m honebot_sim.run cruise_stop_12 --side --yaw-loop --profile target --view
+```
+
+The table adds `side <distance> m <angle> deg`: medians while the skater moves, from t = 8 s (the robot starts
+3 m directly behind). Pass marks (fixed in `run.py` before tuning): within 0.6 m and 12° of the preset, never
+driving within 0.5 m of the skater's centre. Results (2026-11-19):
+
+| | result |
+|---|---|
+| `target` profile, walking to 12 mph, bail, U-turns both ways, stop-and-go, box | 1.7–2.0 m at 40–48° |
+| 15 mph | marginal: 1.8–2.5 m at 25–42° depending on noise; once 0.49 m from the skater while moving |
+| `carve_6` slalom (heading swings ±43° every 2.5 s) | ~2.9 m at ~32°: the known weak spot |
+| bad gyro at speed | firmware 2.4.0: a **stuck** gyro no longer rolls it over (0 of 72; before, even at 6 mph). A gyro **upside down** still can, 10 runs each: side slalom 1, bail 3, 12 mph 1; normal 12 mph 4 (strict xfail). Do the bench sign check |
+| `today` (HC-SR04 sight limit ~2.7 m/s) | holds only at walking / ~5 mph rolling pace; at 6 mph it cannot catch up |
+| dead stop / bail at speed | coasts past alongside, 0.66–1.1 m from robot to the skater's centre (12 mph and below) |
+| no gyro, or S/G lines lost | side mode off, normal follow (stop-behind gap) takes over within 0.3 s |
+| `max_wheel_speed` 15 % off | still passes; in the ideal model the held point shifts ~0.3 m / ~13° |
+
+How it works: the follower dead-reckons the robot's own motion from the S line (speed) and the gyro's G line
+(yaw rate), puts each UWB fix in that frame to get the skater's velocity, and drives at that velocity plus a capped
+correction toward the aim point. Safety rules that do not depend on the estimate: closer than 1.5 m, no forward
+motion and no steering toward the skater; skater in the robot's path, the normal braking law caps speed. The
+wheel-output turn estimate was tried first and is 2–3× off (tyre scrub), which is why the gyro is required.
 
 ## Files
 

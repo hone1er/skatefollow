@@ -29,6 +29,8 @@ class Scenario:
     obstacles: list = field(default_factory=list)   # (x, y, size_x, size_y, height[, yaw])
     expect_keep_up: bool = True                # with the "today" settings, should the gap stay bounded?
     settle: float = 4.0                        # s at the end with the skater standing still
+    side_check: bool = True                    # --side: judge the held distance/angle here (not where a box
+    #                                            blocks the side position)
 
     @property
     def duration(self):
@@ -83,12 +85,15 @@ SCENARIOS = {s.name: s for s in [
     Scenario("u_turn_5", "5 mph, then a 180 deg turn of ~3.5 m radius and back",
              [Segment(8.0, 5 * MPH, 0.0), Segment(math.pi / 0.64, 5 * MPH, 0.64), Segment(8.0, 5 * MPH, 0.0),
               Segment(2.0, 0.0, 0.0, 1.0, 2.0)]),
+    Scenario("u_turn_right_5", "5 mph, then a 180 deg turn to the RIGHT (toward a side-view robot) and back",
+             [Segment(8.0, 5 * MPH, 0.0), Segment(math.pi / 0.64, 5 * MPH, -0.64), Segment(8.0, 5 * MPH, 0.0),
+              Segment(2.0, 0.0, 0.0, 1.0, 2.0)]),
     Scenario("stop_and_go", "4 mph push, coast, stop, again (x3)",
              [Segment(6.0, 4 * MPH), Segment(2.5, 0.0, 0, 1.0, 2.5)] * 3),
     Scenario("obstacle", "5 mph S-bend around a 0.5 m box on the straight line: the robot must not hit it",
              [Segment(3.0, 5 * MPH, 0.0), Segment(1.5, 5 * MPH, 0.5), Segment(3.0, 5 * MPH, -0.5),
               Segment(1.5, 5 * MPH, 0.5), Segment(6.0, 5 * MPH, 0.0), Segment(2.0, 0.0)],
-             obstacles=[(9.0, 0.0, 0.5, 0.5, 0.5)]),
+             obstacles=[(9.0, 0.0, 0.5, 0.5, 0.5)], side_check=False),
     Scenario("standing_turns", "skater walks a slow circle around the robot (pivot and camera pan)",
              [Segment(25.0, 1.0, 0.33, 0.5, 1.0)], robot_start=(-2.5, 0.0, 0.0)),
     Scenario("playground", "free driving with the remote or the keyboard: the skater stands 8 m ahead, boxes "

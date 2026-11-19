@@ -190,6 +190,7 @@ face-down orientations of each part.
 | shell (lid + pods) | 1 | PETG | **Lid on the bed** (flat top) | None |
 | deck (with ESP32 cradle) | 1 | PETG | Flat, cradle up | None |
 | esp_ext_plate (SunFounder extension adapter) | 1 | PETG | **Top face down** (tongue and bosses up) | None (the 1.2 mm flange lip and the 5.4 mm counterbore roofs print as short overhangs/bridges) |
+| gyro_mount (GY-521 plate) | 1 | PETG | Flat face down, posts up | None |
 | esp_ext_spacers (4 plain tubes, one file) | 1 set | PETG | Upright | None |
 | motor_plate_L/R | 2 | PAHT-CF | Motor face down, counterbores up | None |
 | wheel_pulley_FL/FR/RL/RR | 4 | PAHT-CF, 0.12 mm layers | Wheel-side disc down (axis vertical) | None. The upper 3 mm flange of each tooth section is a short overhang that prints |
@@ -290,6 +291,7 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
 | Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
 | SunFounder ESP32 camera extension board + 4 × M2 × 10–16 screws + 4 heat-set inserts (owned; same 3.6 mm hole as the Pi standoffs) | 1 | screws pass the board and the printed spacers into the inserts |
+| **GY-521 (MPU6050) gyro breakout**, 3.3 V-capable, ~21 × 16 mm with 2 mounting holes + 4 female–female Dupont jumpers (~10 cm) | 1 | needed for the firmware yaw-rate loop (turning) and the side view. Mounted on the printed `gyro_mount`: 2 × **M3 × 10 + 2 × M3 nyloc** through two existing deck grid holes (x −141, y ±10), board on 2 × M2 × 6–8 screws into 2 heat-set inserts (the owner's M2 ones, 3.6 mm hole). **Measure the board** (outline, hole spacing ~15.2 mm) and set `gy_board_*`, `gy_hole_*` in PARAMS before printing. Wires: VCC → 3V3, GND, SDA → GPIO 21, SCL → GPIO 22. Chip side up → `GYRO_SIGN` +1 |
 | 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
 
 ## 6b. Prototype kit: drive it before buying the metal

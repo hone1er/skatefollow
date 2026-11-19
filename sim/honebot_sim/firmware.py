@@ -73,6 +73,10 @@ def lib():
         L.hb_yaw_loop.argtypes = [ctypes.c_void_p, f, f, f, f, f, u, u, i, f, u, f, pf, pf]
         L.hb_expo.argtypes = [f, f]
         L.hb_expo.restype = f
+        L.hb_stuck_new.restype = ctypes.c_void_p
+        L.hb_stuck_free.argtypes = [ctypes.c_void_p]
+        L.hb_stuck_reading.argtypes = [ctypes.c_void_p, i, u]
+        L.hb_stuck_reading.restype = i
         _LIB = L
     return _LIB
 
@@ -111,6 +115,7 @@ class Esp32:
         self.stick = (0.0, 0.0)         # (forward, turn) -1..1 from the remote, as in its radio packet
         # yaw-rate loop (2.3.0): gyro state as the sketch keeps it; the sim feeds gyro_read() every GYRO_PERIOD_MS
         self.yaw_state = self.L.hb_yaw_state_new()
+        self.gyro_watch = self.L.hb_stuck_new()
         self.gyro_present = bool(fw["YAW_LOOP_ENABLED"])   # setupGyro(): the sim always has a gyro fitted
         self.gyro_bias_sum = 0.0
         self.gyro_bias_n = 0
@@ -126,6 +131,7 @@ class Esp32:
         try:
             self.L.hb_state_free(self.state)
             self.L.hb_yaw_state_free(self.yaw_state)
+            self.L.hb_stuck_free(self.gyro_watch)
         except Exception:
             pass
 
@@ -152,6 +158,12 @@ class Esp32:
     def gyro_read(self, w, now_ms):
         """One MPU6050 sample w (rad/s, + = left, already through GYRO_SIGN), or None for a failed read."""
         if not self.gyro_present or w is None:
+            return
+        # the sketch works on the raw count: raw / 32.8 deg/s (+-1000 dps), times GYRO_SIGN
+        raw = int(round(w / self.k["GYRO_SIGN"] / 0.01745329 * 32.8))
+        if raw >= 32700 or raw <= -32700:
+            return
+        if self.L.hb_stuck_reading(self.gyro_watch, raw, int(self.k["GYRO_STUCK_SAMPLES"])):
             return
         if now_ms < self.k["ARM_MS"]:
             self.gyro_bias_sum += w
@@ -234,6 +246,10 @@ class Esp32:
         q = lambda v: round(_clamp(v, -1, 1) * span) / span
         a, b = q(a), q(b)
         return (-a if k["THROTTLE_REVERSED"] else a), (-b if k["STEER_REVERSED"] else b)
+
+    def g_line(self, now_ms):
+        """The G line (printed with S and K when YAW_LOOP_ENABLED): gyro yaw rate and whether the loop is usable."""
+        return "G,%.2f,%d" % (self.gyro_z, 1 if self.yaw_loop_usable(now_ms) else 0)
 
     def status_lines(self, range_m):
         """The R / S / K lines the sketch prints (R every 60 ms, S and K every 100 ms; callers pick)."""

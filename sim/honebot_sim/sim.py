@@ -14,6 +14,7 @@ Faults for the safety tests (Sim.faults, a set; add or remove at any time during
   "uwb_dead"  the UWB board stops reporting                                -> follower target timeout
   "us_dead"   the HC-SR04 never echoes (unplugged / broken): R,-1 lines    -> the gate sees +inf = clear
   "rx_dead"   the ESP32's R lines stop reaching the Pi (Pi still sends)    -> gate RANGE_STALE / LINK_DOWN
+  "status_dead"  the ESP32's S and G lines stop reaching the Pi           -> side shot falls back to normal law
   "follower_dead"  the follower node stops publishing                     -> gate CMD_STALE
   "gate_dead"      the safety gate stops publishing                       -> bridge sends neutral after cmd_timeout
 The handheld remote is Sim.esp.remote: "run" | "stop" | "lost" (packets stopped) | "none" (never heard).
@@ -32,10 +33,15 @@ from .skater import SkaterPath
 from .stack import PiStack
 
 
+SIDE_SETTLE = 8.0       # s: side-view samples start here (skater's push to 12 mph is 5.4 s, then the approach)
+
+
 @dataclass
 class Metrics:
     duration: float = 0.0
     min_gap: float = math.inf            # robot body to skater centre, metres
+    min_gap_moving: float = math.inf     # same, only while the robot moves (> 0.1 m/s): what the robot did, not
+    #                                      the scripted skater walking past a robot that stands still
     skater_contact: bool = False
     obstacle_contact: bool = False
     tipped: bool = False
@@ -49,6 +55,29 @@ class Metrics:
     gate_time: dict = field(default_factory=dict)
     max_current: float = 0.0
     failsafe_time: float = 0.0
+    lost_moving: float = 0.0             # lost_time while the skater moves (> 0.3 m/s)
+    framed_moving: float = 0.0           # framed / visible_time, counted only while the skater moves
+    visible_moving: float = 0.0
+    # side view, sampled at 20 Hz while the skater moves (> 1 m/s), from t = SIDE_SETTLE on (the robot starts 3 m
+    # directly behind and needs the skater's push + a few seconds to reach the side): distance skater -> robot
+    # (UWB anchor) and the angle round from directly behind the skater (+ = robot on the skater's right), degrees
+    side_dist: list = field(default_factory=list)
+    side_angle: list = field(default_factory=list)
+
+    @staticmethod
+    def _pct(v, q):
+        if not v:
+            return math.nan
+        s = sorted(v)
+        return s[min(len(s) - 1, int(q * len(s)))]
+
+    def side(self, q=0.5):
+        """(distance m, angle deg) at quantile q of the side-view samples."""
+        return self._pct(self.side_dist, q), self._pct(self.side_angle, q)
+
+    @property
+    def framing_moving(self):
+        return self.framed_moving / self.visible_moving if self.visible_moving > 0 else 0.0
 
     @property
     def framing(self):
@@ -62,12 +91,12 @@ class Sim:
         self.path = SkaterPath(scenario)
         fw = dict(cfg.firmware)
         fw.update(firmware_overrides or {})
-        self.xml = build_mjcf(cfg, scenario.obstacles)
+        self.pi = PiStack(cfg, stack_overrides)
+        self.xml = build_mjcf(cfg, scenario.obstacles, params=self.pi.params)   # overrides reach the model too
         self.m = mujoco.MjModel.from_xml_string(self.xml)
         self.d = mujoco.MjData(self.m)
         self.rng = np.random.default_rng(seed)
         self.esp = Esp32(fw, remote=cfg.remote)
-        self.pi = PiStack(cfg, stack_overrides)
         self.motors = [Motor(cfg.motor), Motor(cfg.motor)]
         self.rs = RangeSensor(cfg, self.rng)
         self.uwb = Uwb(cfg, self.rng)
@@ -94,7 +123,7 @@ class Sim:
         mujoco.mj_forward(self.m, self.d)
         self.t = 0.0
         self.ms = 0
-        self.next = {k: 0.0 for k in ("us", "hb", "gate", "cmd", "fol", "aim", "pan", "uwb", "cam", "log")}
+        self.next = {k: 0.0 for k in ("us", "hb", "gate", "cmd", "fol", "aim", "pan", "uwb", "cam", "log", "status", "side")}
         self.faults = set()
         self.metrics = Metrics()
         self.log = [] if log else None
@@ -194,6 +223,15 @@ class Sim:
             w = {"sign": -w, "stuck": 0.0, "dead": None}.get(self.gyro_fault, w)
             esp.gyro_read(w if w is None else w * esp.k["GYRO_SIGN"], self.ms)
         esp.update(self.ms)
+        if t >= self.next["status"]:          # S (+ G when the yaw loop is compiled in) every STATUS_PERIOD_MS
+            self.next["status"] += esp.k["STATUS_PERIOD_MS"] / 1000.0
+            if pi_alive and not ({"rx_dead", "status_dead"} & self.faults):
+                _, s_line, _ = esp.status_lines(None)
+                p = s_line.split(",")
+                pi.on_s_line(t, float(p[2]), float(p[3]))
+                if esp.k["YAW_LOOP_ENABLED"]:
+                    g = esp.g_line(self.ms).split(",")
+                    pi.on_g_line(t, float(g[1]), g[2] == "1")
         if t >= self.next_pwm:
             self.next_pwm += 1.0 / esp.k["SERVO_FREQ_HZ"]
             self.pwm_hold = esp.wheel_outputs()
@@ -222,6 +260,8 @@ class Sim:
             mt.max_gap_moving = max(mt.max_gap_moving, gap)
         speed = math.hypot(d.qvel[0], d.qvel[1])
         mt.max_speed = max(mt.max_speed, speed)
+        if speed > 0.1:
+            mt.min_gap_moving = min(mt.min_gap_moving, gap)
         mt.max_current = max(mt.max_current, abs(self.motors[0].current), abs(self.motors[1].current))
         zaxis = d.xmat[self.chassis].reshape(3, 3)[:, 2]
         if zaxis[2] < math.cos(math.radians(45)):
@@ -233,8 +273,11 @@ class Sim:
                 mt.skater_contact = True
             if pair & self.robot_geoms and pair & self.obstacle_geoms:
                 mt.obstacle_contact = True
+        skater_moving = self.skater_state[3] > 0.3
         if self.pi.target_t is None or t - self.pi.target_t > self.pi.target_timeout:
             mt.lost_time += dt
+            if skater_moving:
+                mt.lost_moving += dt
         if self.esp.failsafe and t > 2.5:
             mt.failsafe_time += dt
         st = self.pi.gate_state or "none"
@@ -245,10 +288,21 @@ class Sim:
             v = d.xpos[self.skater] + np.array([0, 0, 1.0]) - d.cam_xpos[self.cam]
             err = math.atan2(float(v @ -cmat[:, 0]), float(v @ -cmat[:, 2]))
             mt.visible_time += dt
-            if abs(err) < math.radians(self.cfg.sensors.cam_hfov_deg) / 2 and float(v @ -cmat[:, 2]) > 0:
+            inside = abs(err) < math.radians(self.cfg.sensors.cam_hfov_deg) / 2 and float(v @ -cmat[:, 2]) > 0
+            if inside:
                 mt.framed += dt
+            if skater_moving:
+                mt.visible_moving += dt
+                mt.framed_moving += dt if inside else 0.0
         mt.final_gap = gap
         mt.final_speed = speed
+        if sv > 1.0 and t >= SIDE_SETTLE and t >= self.next["side"]:
+            self.next["side"] = t + 0.05
+            sx, sy, sth = self.skater_state[0], self.skater_state[1], self.skater_state[2]
+            ax, ay = d.site_xpos[self.anchor][0], d.site_xpos[self.anchor][1]
+            mt.side_dist.append(math.hypot(ax - sx, ay - sy))
+            a = math.atan2(ay - sy, ax - sx) - (sth + math.pi)
+            mt.side_angle.append(math.degrees(math.atan2(math.sin(a), math.cos(a))))
         if self.log is not None and t >= self.next["log"]:
             self.next["log"] += 0.05
             rx, ry, yaw = self.robot_pose()

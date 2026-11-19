@@ -252,6 +252,50 @@ static void test_yaw_loop_keeps_within_full_scale() {
   assert(near(expo(0.5f, 0.5f), 0.3125f) && near(expo(1.0f, 0.5f), 1.0f) && near(expo(-1.0f, 0.5f), -1.0f));
 }
 
+static void test_yaw_loop_trips_on_runaway_even_when_the_request_follows_the_gyro() {
+  // Upside-down gyro while the Pi steers by that same gyro: the request agrees with the gyro's (wrong) sign, so the
+  // wrong-way check stays quiet. The correction pushes one way, the gyro reports a growing turn the other way.
+  YawState st;
+  uint32_t t = 1000;
+  float g = 1.1f;
+  for (; t < 1000 + 70; t += 5) {
+    float a = 0.30f, b = 0.40f;                 // asks to turn left (+2.5 rad/s): gyro agrees in sign, so e < 0 ...
+    st.integ = -0.2f;                           // ... and the correction is pinned to the right (negative)
+    yawLoop(YAW, &st, true, g, t, 0.005f, &a, &b);
+    g += 0.2f;                                  // ... while the reported turn keeps growing: positive feedback
+  }
+  assert(!st.tripped);
+  for (; t < 1000 + 200; t += 5) {
+    float a = 0.30f, b = 0.40f;
+    st.integ = -0.2f;
+    yawLoop(YAW, &st, true, g, t, 0.005f, &a, &b);
+    g += 0.2f;
+  }
+  assert(st.tripped);
+  // A correct gyro braking an overshoot: correction against the turn, but the turn eases -> no trip.
+  YawState ok;
+  g = 3.0f;
+  for (t = 1000; t < 1000 + 400; t += 5) {
+    float a = 0.30f, b = 0.35f;                 // asks 1.2 rad/s, robot overshot to 3 rad/s and is slowing
+    yawLoop(YAW, &ok, true, g, t, 0.005f, &a, &b);
+    g = std::fmax(1.2f, g - 0.05f);
+  }
+  assert(!ok.tripped);
+}
+
+static void test_stuck_gyro_reading() {
+  // Noise (a count or so either way) never trips it; a frozen value does after `limit` repeats, and stays tripped.
+  StuckWatch w;
+  int16_t noisy[] = {3, 4, 3, 2, 3, 3, 4};
+  for (int i = 0; i < 1000; i++) assert(!stuckReading(&w, noisy[i % 7], 100));
+  StuckWatch f;
+  for (int i = 0; i < 100; i++) assert(!stuckReading(&f, 17, 100));
+  assert(stuckReading(&f, 17, 100));                 // 100 repeats after the first reading
+  assert(stuckReading(&f, 18, 100));                 // latched: a later change does not clear it
+  StuckWatch off;
+  for (int i = 0; i < 500; i++) assert(!stuckReading(&off, 5, 0));   // limit 0 = check off
+}
+
 int main() {
   test_ramps();
   test_failsafe_ramp_time();
@@ -264,6 +308,8 @@ int main() {
   test_yaw_loop_trips_on_wrong_sign();
   test_yaw_loop_trips_on_stuck_gyro();
   test_yaw_loop_keeps_within_full_scale();
+  test_yaw_loop_trips_on_runaway_even_when_the_request_follows_the_gyro();
+  test_stuck_gyro_reading();
   std::printf("ok: firmware logic tests passed\n");
   return 0;
 }

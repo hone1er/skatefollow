@@ -1,4 +1,4 @@
-# ESP32 robot firmware (`esp32_ultrasonic.ino`, v2.3.0)
+# ESP32 robot firmware (`esp32_ultrasonic.ino`, v2.4.0)
 
 The microcontroller side of the robot. It measures the ultrasonic range, outputs three 50 Hz
 servo-style pulse channels, listens to the handheld remote (`../esp32_remote`), and brings the drive channels
@@ -78,11 +78,25 @@ rate (full side stick = `MANUAL_MAX_YAW`, 3 rad/s, with expo for gentle turns). 
 - **I2C cannot stall the loop.** Each I2C transaction gives up after 2 ms (`Wire.setTimeOut`).
 - **Bias calibration.** The gyro bias is averaged during the 2 s arming window, so keep the robot still at power-up.
 - **Bad-gyro trips.** The loop switches itself off until the next fail-safe (STOP/RUN clears it) if:
-  - the gyro reads a hard turn the opposite way for 150 ms (mounted upside down: set `GYRO_SIGN` to −1);
-  - the correction stays pinned at its cap for 1 s (gyro stuck, wheel stuck).
+  - the gyro reads a hard turn the opposite way to the one asked for, for 75 ms (`YAW_WRONG_WAY_MS`; mounted
+    upside down: set `GYRO_SIGN` to −1);
+  - (2.4.0) the correction pushes one way while the gyro reports a growing hard turn the other way, for 75 ms. This
+    catches a wrong sign even when the Pi steers by the same gyro (the side view does), so its request agrees with
+    the wrong sign and the check above stays quiet;
+  - the correction stays pinned at its cap for 1 s (wheel stuck).
+- **Stuck gyro (2.4.0).** `GYRO_STUCK_SAMPLES` (100 = 0.5 s) identical raw readings in a row: the chip has frozen
+  (a working one always jitters by a count or so). Treated as absent until restart. Before this, a gyro frozen at
+  zero made the loop add difference just under its cap (so the 1 s trip never fired) until the tyres broke loose,
+  and the simulated robot rolled over, at 12 mph and even at 6 mph.
+- **Why 75 ms, not 150.** Once skid-steer tyres break loose the robot yaws at ~25 rad/s²; in the simulator 150 ms
+  let a wrong-sign gyro roll it over in 3 of 6 side-view slalom runs. 75 ms: 1 in 10, and no false trip with a
+  working gyro in 72 runs.
+- **Still open: a gyro mounted upside down can still roll the robot over at speed** in the simulator (10 runs each:
+  side view slalom 1, bail 3, 12 mph 1; normal follow 12 mph 4). The skid starts before any check can see it.
+  **Do the sign check below** before driving with the loop on. (A gyro that sticks is handled: 0 roll-overs.)
 - **Matching track width.** `YAW_TRACK_WIDTH` must equal `track_width` in `robot.yaml` (a test checks).
 
-With the loop enabled the sketch also prints `G,<yaw rad/s>,<usable 0/1>` at 10 Hz (the bridge ignores it) for the
+With the loop enabled the sketch also prints `G,<yaw rad/s>,<usable 0/1>` at 10 Hz (the bridge publishes it as `esp32/yaw_rate`, used by the side view) for the
 sign check. Tuned in the simulator only (`sim/README.md`). Enable it after the sign check in
 `docs/first_drive.md` Stage 1.
 
@@ -90,6 +104,9 @@ sign check. Tuned in the simulator only (`sim/README.md`). Enable it after the s
 the bridge's `left_reversed` / `right_reversed`, so the Pi and the stick agree.
 
 The pan channel is independent of fail-safe: it slews toward the last `P` and is centred only at boot.
+Since 2.4.0 it has its own pulse range: pan ±1 = 1500 ± `PAN_SPAN_US` µs (778, ~±70° on a standard servo; measure
+yours and set camera_aim `half_range_deg`), clamped to `PAN_MIN_US`–`PAN_MAX_US` (500–2500). The ESC channels stay
+at 1000–2000 µs. The `G` line (yaw loop on) is now read by the bridge (`esp32/yaw_rate`) for the side view.
 
 ## Bench check: does the ESC slow the wheels with the ramp?
 
@@ -106,7 +123,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```bash
 arduino-cli upload -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```
-On the Pi the bridge log should then show `ESP32 firmware version 2.3.0` and `Remote (kill switch): never`.
+On the Pi the bridge log should then show `ESP32 firmware version 2.4.0` and `Remote (kill switch): never`.
 
 ## Why it is built this way
 

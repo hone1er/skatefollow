@@ -1,0 +1,22 @@
+# Side-view filming preset: the robot rides 2 m from the skater, 45 deg round from directly behind them, on
+# their RIGHT. Layered on top of robot.yaml for the follower by:
+#     ros2 launch honebot_bringup film.launch.py side_shot:=true
+# The simulator uses this same file for --side (sim/README.md).
+#
+# Needs: the ESP32 gyro (YAW_LOOP_ENABLED, firmware >= 2.3.0: G line -> esp32/yaw_rate) and the S line
+# (-> esp32/speed). Without either, or while the skater is slow (< 0.4 m/s) or far (> 13.5 m), the follower
+# uses the normal law below, which keeps the stop-behind gap.
+#
+# Close means close: if the skater stops dead at speed, the robot does not stop behind them; it coasts past
+# alongside, about 1.4 m to their side (simulated clearance 0.5-0.75 m from robot to body). Never closer than
+# side_min_range forward, and never steering toward the skater there. The HC-SR04 does not see the skater at
+# 45 deg: those two rules are the only protection on that side.
+#
+# The camera must pan to the skater at 45 deg: needs the +-70 deg pan (camera_aim half_range_deg, firmware
+# PAN_SPAN_US). At 2 m with the Linear lens a standing skater's head is above the frame: use the Wide lens
+# (camera_node gopro_fov) and tilt the GoPro up ~5 deg (docs/camera_plan.md).
+follower:
+  ros__parameters:
+    side_distance: 2.0             # m, skater to robot
+    side_angle: 0.785              # rad (45 deg) round from directly behind; + = robot on the skater's right
+    follow_bearing: 0.785          # normal law while the skater is slow: keep them at 45 deg left of the nose too

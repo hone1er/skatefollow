@@ -1,15 +1,19 @@
 """Pure follow-me math, kept free of ROS so it can be unit-tested and reused.
 
-Two entry points:
+Entry points:
   follow_command_relative(distance, bearing, gains)  the real one: target given
                                                      relative to the robot, as
                                                      UWB will provide it
   follow_command(fx, fy, ftheta, lx, ly, gains)      turtlesim convenience:
                                                      two world poses -> relative
+  SideShot(params).step(...)                         side-view filming mode (stateful):
+                                                     hold a point behind and beside the
+                                                     skater; None = use follow_command_relative
 """
 
 import math
 from dataclasses import dataclass
+from typing import Optional, Tuple
 
 
 @dataclass
@@ -137,3 +141,130 @@ def follow_command(fx, fy, ftheta, lx, ly, g: FollowGains):
     """Turtlesim form: follower pose (fx, fy, ftheta) chasing leader (lx, ly)."""
     distance, bearing = relative_target(fx, fy, ftheta, lx, ly)
     return follow_command_relative(distance, bearing, g)
+
+
+# ------------------------------------------------------------------------------------------------- side shot
+@dataclass
+class SideShotParams:
+    """Side-view filming: keep the robot side_distance from the skater, side_angle round from straight behind.
+
+    Off while side_distance is 0. Needs the robot's own speed (esp32/speed, from the ESP32's S line) and yaw rate
+    (esp32/yaw_rate, from its gyro G line): without both, or while the skater is slow or far, the caller falls
+    back to follow_command_relative (the normal law, which keeps the stop-behind gap).
+    """
+    side_distance: float = 0.0       # m, skater to robot (UWB range). 0 = side mode off
+    side_angle: float = 0.785        # rad round from directly behind the skater; + = robot on the skater's RIGHT
+    side_kp: float = 1.0             # 1/s: correction speed per metre of position error
+    side_max_correction: float = 1.5  # m/s cap on that correction (a far-off aim point must not cause a spin)
+    side_max_steer: float = 0.7      # rad: largest heading change asked for at once
+    side_kp_angular: float = 1.5     # rad/s per rad of heading change
+    side_enter_speed: float = 0.8    # m/s skater speed to switch side mode on ...
+    side_exit_speed: float = 0.4     # m/s ... and off again (stopped skater -> normal law)
+    side_engage_range: float = 12.0  # m: side mode only within this range (+1.5 m to leave it)
+    side_min_range: float = 1.5      # m: closer than this, never forward, and only steer away from the skater
+    side_lane: float = 0.6           # m: skater within this of the robot's path -> normal braking law caps speed
+    side_speed_tau: float = 0.3      # s: smoothing of the skater velocity estimate
+    side_input_timeout: float = 0.3  # s: own speed / yaw rate older than this -> side mode off
+
+
+class SideShot:
+    """Side-view filming controller. Pure (no ROS); the follower node calls step() at its rate.
+
+    How it works, all in a local odometry frame that the robot dead-reckons from its own speed and gyro yaw rate:
+      1. each UWB fix puts the skater in that frame; their velocity is the smoothed change between fixes
+         (relative motion alone cannot tell the skater's speed from the robot's);
+      2. the aim point is side_distance from the skater, side_angle round from straight behind them,
+         on their right for side_angle > 0 (it is never the skater itself);
+      3. the robot asks for the skater's velocity plus a capped correction toward the aim point, steering
+         toward that direction (capped) and driving at its forward component (never backwards).
+    Safety rules on top, none of them depending on the estimate: closer than side_min_range -> no forward
+    motion and no steering toward the skater; skater inside side_lane of the robot's path -> the normal
+    stop-behind braking law caps the speed. The safety gate and firmware still apply downstream.
+    """
+
+    def __init__(self, p: SideShotParams):
+        self.p = p
+        self.reset()
+
+    def reset(self):
+        self.pose = (0.0, 0.0, 0.0)      # x, y, heading in the odometry frame
+        self.last_t = None
+        self.fix = None                  # (x, y, stamp) of the last UWB fix, odometry frame
+        self.vel = (0.0, 0.0)            # skater velocity, odometry frame
+        self.has_vel = False
+        self.active = False
+
+    def step(self, t: float, target: Optional[Tuple[float, float]], target_stamp: Optional[float],
+             own_speed: Optional[float], own_yaw_rate: Optional[float],
+             g: FollowGains) -> Optional[Tuple[float, float]]:
+        """t: now (s). target: fresh (distance, bearing) in the robot frame, or None. target_stamp: when that fix
+        arrived. own_speed / own_yaw_rate: m/s and rad/s, None when unavailable or stale.
+        Returns (linear, angular) while side mode is active, else None."""
+        p = self.p
+        if p.side_distance <= 0.0 or target is None or own_speed is None or own_yaw_rate is None:
+            self.reset()
+            return None
+        # 1. dead-reckon our own pose
+        if self.last_t is not None:
+            dt = t - self.last_t
+            if dt <= 0.0 or dt > 0.5:
+                self.reset()
+            else:
+                x0, y0, th = self.pose
+                th += own_yaw_rate * dt
+                self.pose = (x0 + own_speed * math.cos(th) * dt, y0 + own_speed * math.sin(th) * dt, th)
+        self.last_t = t
+        X, Y, TH = self.pose
+        c, s = math.cos(TH), math.sin(TH)
+        distance, bearing = target
+        tx, ty = distance * math.cos(bearing), distance * math.sin(bearing)
+        # 2. skater velocity from successive fixes
+        if target_stamp is not None and (self.fix is None or target_stamp > self.fix[2]):
+            fx, fy = X + tx * c - ty * s, Y + tx * s + ty * c
+            if self.fix is not None:
+                dts = target_stamp - self.fix[2]
+                vx, vy = (fx - self.fix[0]) / dts, (fy - self.fix[1]) / dts
+                a = min(1.0, dts / p.side_speed_tau) if p.side_speed_tau > 0.0 else 1.0
+                if not self.has_vel:
+                    a = 1.0
+                self.vel = (self.vel[0] + a * (vx - self.vel[0]), self.vel[1] + a * (vy - self.vel[1]))
+                self.has_vel = True
+            self.fix = (fx, fy, target_stamp)
+        if not self.has_vel:
+            return None
+        vsx, vsy = self.vel[0] * c + self.vel[1] * s, -self.vel[0] * s + self.vel[1] * c   # robot frame
+        speed = math.hypot(vsx, vsy)
+        if self.active:
+            self.active = speed > p.side_exit_speed and distance < p.side_engage_range + 1.5
+        else:
+            self.active = speed > p.side_enter_speed and distance < p.side_engage_range
+        if not self.active:
+            return None
+        # 3. aim point: behind the skater by cos(angle), beside them (their right for angle > 0) by sin(angle)
+        ux, uy = vsx / speed, vsy / speed
+        nx, ny = -uy, ux                                 # the skater's left
+        back, side = p.side_distance * math.cos(p.side_angle), p.side_distance * math.sin(p.side_angle)
+        ax, ay = tx - back * ux - side * nx, ty - back * uy - side * ny
+        cx, cy = p.side_kp * ax, p.side_kp * ay
+        cm = math.hypot(cx, cy)
+        if cm > p.side_max_correction:
+            cx, cy = cx * p.side_max_correction / cm, cy * p.side_max_correction / cm
+        wx, wy = vsx + cx, vsy + cy
+        heading = math.atan2(wy, wx)
+        linear = clamp(math.hypot(wx, wy) * math.cos(heading), 0.0, g.max_linear)   # aim point behind: 0
+        steer = clamp(heading, -p.side_max_steer, p.side_max_steer)
+        angular = clamp(p.side_kp_angular * steer, -g.max_angular, g.max_angular)
+        # safety rules that do not depend on the estimate
+        if abs(ty) < p.side_lane and tx > 0.0:          # skater in our path: stop-behind braking law
+            if g.brake_decel > 0.0:
+                linear = min(linear, speed_for_gap(tx, g))
+            else:
+                linear = min(linear, max(0.0, g.kp_linear * (tx - g.follow_distance)))
+        if distance < p.side_min_range:                 # too close: no forward, never steer toward them
+            linear = 0.0
+            if angular * ty > 0.0:
+                angular = 0.0
+        if g.max_lat_accel > 0.0 and linear > 1e-3:
+            w_max = g.max_lat_accel / linear
+            angular = clamp(angular, -w_max, w_max)
+        return linear, angular

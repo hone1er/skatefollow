@@ -7,6 +7,7 @@
   mjpython -m honebot_sim.run carve_6 --view             # 3-D viewer (macOS needs `mjpython`, Linux `python`)
   python -m honebot_sim.run cruise_stop_8 --csv run.csv  # time series for plotting
   python -m honebot_sim.run --spin-test                  # effective track width for the bridge (friction guess!)
+  python -m honebot_sim.run --all --side --yaw-loop      # side view: src/honebot_bringup/config/side_shot.yaml
 
 Profiles:
   today    robot.yaml and the firmware exactly as they are (HC-SR04, max_linear 3.0, THROTTLE_LIMIT 0.5)
@@ -20,7 +21,7 @@ import math
 import sys
 import time
 
-from .config import load_config
+from .config import REPO, load_config, load_robot_yaml
 from .sim import Sim
 from .skater import MPH, SCENARIOS
 
@@ -47,15 +48,41 @@ def evaluate(sc, mt, cfg):
         fails.append("still moving at the end (%.1f m/s)" % mt.final_speed)
     if mt.max_current > cfg.motor.current_limit + 0.5:
         fails.append("motor current above the ESC limit")
-    if sc.expect_keep_up and mt.lost_time > 1.0:
-        fails.append("lost the UWB target for %.1f s" % mt.lost_time)
-    if sc.expect_keep_up and mt.framing < 0.85:
-        fails.append("skater in frame only %.0f %% of the time" % (100 * mt.framing))
+    side = bool(cfg.overrides.get("side"))
+    # side view: after a dead stop the robot ends up alongside, the skater out of the UWB cone; only judge
+    # tracking and framing while the skater moves there
+    lost, framing = (mt.lost_moving, mt.framing_moving) if side else (mt.lost_time, mt.framing)
+    if sc.expect_keep_up and lost > 1.0:
+        fails.append("lost the UWB target for %.1f s" % lost)
+    if sc.expect_keep_up and framing < 0.85:
+        fails.append("skater in frame only %.0f %% of the time" % (100 * framing))
+    if side:
+        f = load_side_shot()["follower"]
+        dist, ang = mt.side()
+        if mt.min_gap_moving < SIDE_MIN_GAP:
+            fails.append("side view: drove within %.2f m of the skater" % mt.min_gap_moving)
+        if sc.expect_keep_up and sc.side_check and mt.side_dist and not (abs(dist - f["side_distance"]) <= SIDE_DIST_TOL and
+                                                        abs(ang - math.degrees(f["side_angle"])) <= SIDE_ANGLE_TOL):
+            fails.append("side view held at %.1f m / %.0f deg" % (dist, ang))
     return not fails, fails
 
 
-def make(name, profile="today", seed=0, log=False, fw=None, ros=None, yaw_loop=False, **overrides):
-    """fw: {CONST: value} firmware overrides; ros: {node: {param: value}} robot.yaml overrides."""
+SIDE_SHOT_YAML = REPO / "src" / "honebot_bringup" / "config" / "side_shot.yaml"
+# side view pass marks, fixed before tuning: median distance and angle while the skater moves, and how close the
+# robot may drive (robot moving) to the skater's centre
+SIDE_DIST_TOL = 0.6          # m either side of side_distance
+SIDE_ANGLE_TOL = 12.0        # deg either side of side_angle
+SIDE_MIN_GAP = 0.5           # m, robot footprint to skater centre while the robot moves
+
+
+def load_side_shot():
+    """The side-view preset the robot uses (film.launch.py side_shot:=true): {node: {param: value}}."""
+    return load_robot_yaml(SIDE_SHOT_YAML)
+
+
+def make(name, profile="today", seed=0, log=False, fw=None, ros=None, yaw_loop=False, side=False, **overrides):
+    """fw: {CONST: value} firmware overrides; ros: {node: {param: value}} robot.yaml overrides;
+    side: layer config/side_shot.yaml on top (before `ros`), like film.launch.py side_shot:=true."""
     p = PROFILES[profile]
     if p["sensor"]:
         overrides.setdefault("forward_sensor", p["sensor"])
@@ -64,6 +91,10 @@ def make(name, profile="today", seed=0, log=False, fw=None, ros=None, yaw_loop=F
     if profile == "target":
         sc = _expect_all(sc)
     stack = {k: dict(v) for k, v in p["stack"].items()}
+    if side:
+        cfg.overrides["side"] = True
+        for node, params in load_side_shot().items():
+            stack.setdefault(node, {}).update(params)
     for node, params in (ros or {}).items():
         stack.setdefault(node, {}).update(params)
     firmware = dict(p["firmware"]); firmware.update(fw or {})
@@ -104,9 +135,13 @@ def _expect_all(sc):
 def summary_row(name, sc, mt, ok, why):
     states = sorted(mt.gate_time.items(), key=lambda kv: -kv[1])
     gate = ", ".join("%s %.0f%%" % (k, 100 * v / max(mt.duration, 1e-9)) for k, v in states[:3])
+    side = ""
+    if mt.side_dist:
+        dist, ang = mt.side()
+        side = "side %.1f m %+3.0f deg | " % (dist, ang)
     return ("%-15s %-4s min gap %4.2f m | max gap %5.1f m | top %4.1f m/s (%4.1f mph) | lost %4.1f s | framed %3.0f%% | "
-            "%s%s" % (name, "PASS" if ok else "FAIL", mt.min_gap, mt.max_gap_moving, mt.max_speed, mt.max_speed / MPH,
-                      mt.lost_time, 100 * mt.framing, gate, ("  <- " + "; ".join(why)) if why else ""))
+            "%s%s%s" % (name, "PASS" if ok else "FAIL", mt.min_gap, mt.max_gap_moving, mt.max_speed, mt.max_speed / MPH,
+                        mt.lost_time, 100 * mt.framing, side, gate, ("  <- " + "; ".join(why)) if why else ""))
 
 
 def run_one(name, args):
@@ -114,7 +149,7 @@ def run_one(name, args):
     if args.yaw_loop:
         fw["YAW_LOOP_ENABLED"] = True
     sim, cfg, sc = make(name, args.profile, args.seed, log=bool(args.csv or args.plot), fw=fw, ros=ros, friction=args.friction,
-                        gyro_fault=args.gyro_fault)
+                        gyro_fault=args.gyro_fault, side=args.side)
     if args.remote or args.keys:
         if not args.view:
             print("--remote and --keys drive the robot live: add --view")
@@ -264,6 +299,8 @@ def main(argv=None):
                     help="firmware 2.3.0 gyro yaw-rate loop ON (= YAW_LOOP_ENABLED true, a gyro fitted)")
     ap.add_argument("--gyro-fault", choices=["none", "sign", "stuck", "dead"], default="none",
                     help="with --yaw-loop: gyro mounted upside down, stuck at zero, or not answering")
+    ap.add_argument("--side", action="store_true",
+                    help="side view: 2 m, 45 deg behind on the right (config/side_shot.yaml); needs --yaw-loop (gyro)")
     ap.add_argument("--fw", action="append", metavar="CONST=VALUE",
                     help="override a firmware constant, e.g. --fw ESC_DEADBAND=0.12 (repeatable)")
     ap.add_argument("--set", action="append", metavar="NODE.PARAM=VALUE",
@@ -271,6 +308,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.friction is None:
         args.friction = load_config().friction
+    if args.side and not args.yaw_loop:
+        print("note: --side needs the gyro (--yaw-loop); without it the follower stays on the normal law")
     if args.list:
         for n, s in SCENARIOS.items():
             print("%-15s %5.0f s  %s" % (n, s.duration, s.description))

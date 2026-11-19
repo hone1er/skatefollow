@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive
 
 P = DiffDriveParams(track_width=0.40, max_wheel_speed=7.0)
@@ -42,3 +44,13 @@ def test_reversal_flags_and_bad_input():
     l, r = twist_to_diffdrive(3.5, 0.0, q)
     assert l < 0 < r
     assert twist_to_diffdrive(math.nan, 0.0, P) == (0.0, 0.0)
+
+
+def test_wheels_to_speed_inverts_the_linear_part():
+    from honebot_hardware.diffdrive import wheels_to_speed
+    left, right = twist_to_diffdrive(2.0, 1.0, P)
+    assert wheels_to_speed(left, right, P) == pytest.approx(2.0)
+    rev = DiffDriveParams(track_width=0.40, max_wheel_speed=7.0, left_reversed=True)
+    left, right = twist_to_diffdrive(1.5, 0.0, rev)
+    assert wheels_to_speed(left, right, rev) == pytest.approx(1.5)
+    assert wheels_to_speed(float('nan'), 0.5, P) == 0.0

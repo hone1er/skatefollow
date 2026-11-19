@@ -233,5 +233,23 @@ def test_run_builds_every_part():
     print("ok: %d parts, %d boxes, %d cylinders, %d booleans" % (n_parts, LOG["boxes"], LOG["cyls"], LOG["bool"]))
 
 
+def test_gyro_mount_screws_go_through_existing_deck_holes():
+    """The deck is already printed: the GY-521 mount must use holes it already has (M3 clearance grid holes)."""
+    for n in ("adsk", "adsk.core", "adsk.fusion"):
+        sys.modules.setdefault(n, types.ModuleType(n))
+    spec = importlib.util.spec_from_file_location("HonebotChassis_gyro", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    M = mod.build_model()
+    r = M.info["P"]["clr_m3"] / 2
+    deck_holes = {(round(c["a"][0], 1), round(c["a"][1], 1)) for c in M.get("deck")["cuts"]
+                  if c["t"] == "cyl" and abs(c["r"] - r) < 1e-6
+                  and abs(c["a"][0] - c["b"][0]) < 1e-6 and abs(c["a"][1] - c["b"][1]) < 1e-6}
+    for x, y in M.info["gyro"]["screws"]:
+        assert (round(x, 1), round(y, 1)) in deck_holes, "no deck hole at (%.1f, %.1f)" % (x, y)
+    print("ok: gyro mount screws at %s match deck holes" % M.info["gyro"]["screws"])
+
+
 if __name__ == "__main__":
     test_run_builds_every_part()
+    test_gyro_mount_screws_go_through_existing_deck_holes()
