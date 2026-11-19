@@ -8,6 +8,7 @@
 | [`chassis_cad.md`](chassis_cad.md) | The chassis being printed: 4-wheel skid steer. Checks, print settings, parts list, assembly |
 | [`hardware_plan.md`](hardware_plan.md) | UWB, power and radio choices with prices |
 | [`camera_plan.md`](camera_plan.md) | GoPro modes, pan servo wiring, detector model |
+| [`remote_case.md`](remote_case.md) | Printed case for the handheld remote (ESP32 + joystick + LiPo + switch): parts, wiring, print settings, assembly. Script `cad/remote_case/fusion/HonebotRemote/HonebotRemote.py`, STLs in `cad/remote_case/stl/` |
 
 **The printed parts come from one script: `cad/fusion/HonebotChassis/HonebotChassis.py`** (message box:
 "built 83 of 83 parts"). The other Fusion scripts in this repo build different robots.

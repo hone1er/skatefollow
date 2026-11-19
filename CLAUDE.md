@@ -40,7 +40,7 @@ Hard requirements that shape every decision:
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Vision camera (Phase 5) | GoPro in USB-webcam mode (mode A: Pi records the 1080p30 stream, GoPro cannot record to SD meanwhile) or any USB webcam next to it (mode B: GoPro records natively). `source` parameter picks |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe. **Pan servo GPIO 27** (firmware 2.1.0, holds last value in fail-safe, centred at boot) |
-| Handheld remote = wireless kill switch + manual drive (2nd ESP32, owned, + 5-pin joystick module, ESP-NOW) | **Software written 2026-11-17** (`firmware/esp32_remote`, robot firmware 2.2.1); host-tested only, **not yet compiled with arduino-cli or flashed**. Joystick: +5V pin → **3V3**, VRx GPIO 34, VRy GPIO 35, SW GPIO 32 |
+| Handheld remote = wireless kill switch + manual drive (2nd ESP32, owned, + 5-pin joystick module, ESP-NOW) | **Software written 2026-11-17** (`firmware/esp32_remote`, robot firmware 2.2.1); host-tested only, **not yet compiled with arduino-cli or flashed**. Joystick: +5V pin → **3V3**, VRx GPIO 34, VRy GPIO 35, SW GPIO 32. **Printed case designed 2026-11-18** (`cad/remote_case/`, `docs/remote_case.md`): 3 PETG parts, Adafruit 1200 mAh LiPo #258 + Micro-Lipo USB-C #4410 + toggle #3221 (rear end) + MiniBoost 5 V #4654 → VIN (owner's cart, not yet ordered); 134 × 54 × 35 mm; checker passes; nothing printed or bought yet |
 
 ### Wiring (ESP32 ↔ HC-SR04) — verified working
 | HC-SR04 | ESP32 |
