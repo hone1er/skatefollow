@@ -67,7 +67,8 @@ def test_real_remote_lines_over_a_serial_port():
         run_for(1.0, 0.5)                      # stick forward -> manual
         assert sim.esp.source == SRC_MANUAL
         assert math.hypot(sim.d.qvel[0], sim.d.qvel[1]) > 0.3
-        end = sim.t + 0.6                      # the remote goes quiet -> lost -> nobody drives
+        end = sim.t + 0.7                      # the remote goes quiet -> lost (0.12 s link gap + the firmware's
+        #                                        REMOTE_TIMEOUT_MS 0.5 s) -> nobody drives
         while sim.t < end:
             sim.step()
         assert rs.poll()[0] == "lost"

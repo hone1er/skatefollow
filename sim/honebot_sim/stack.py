@@ -10,8 +10,13 @@ plumbing, which is a few lines per node:
                 cmd_timeout), P line 20 Hz; R lines -> range (+inf for -1) and link_ok
   camera_aim    _step() 20 Hz: PanController with the UWB fallback                  (honebot_camera.aim)
 
-Not exercised here (they need ROS): message transport, parameter handling, serial port I/O and reconnects,
-the camera node's frame grabbing and its Kalman tracker (detections go straight to camera_aim).
+Every parameter (and every timer rate) comes from the node's own declare_parameter() default with robot.yaml on
+top (config.load_node_params), so the sim has no copies of its own. sim/tests/test_sources.py hashes the node
+functions mirrored here and fails when one changes, like tests/test_firmware.py does for the sketch.
+
+Not exercised here: message transport, live parameter changes, serial port I/O and reconnects (they need ROS or
+hardware), the camera node's frame grabbing, and its plausibility filters + Kalman tracker (honebot_camera.track,
+pure and unit-tested but not wired in: detections go straight to camera_aim).
 """
 
 import math
@@ -29,32 +34,51 @@ def _pick(cls, params):
 
 
 class PiStack:
+    """Parameters: cfg.params (each node's own declare_parameter() defaults with robot.yaml on top), then
+    `overrides` ({node: {param: value}}, from --set / profiles). Nothing is defaulted here: a parameter the node
+    does not declare raises KeyError instead of silently taking a sim-only value."""
+
+    NODES = ("follower", "safety_gate", "uwb_node", "esp32_bridge", "camera_aim")
+
     def __init__(self, cfg, overrides=None):
-        y = cfg.yaml
         ov = overrides or {}
-        fol = dict(y["follower"]); fol.update(ov.get("follower", {}))
-        gat = dict(y["safety_gate"]); gat.update(ov.get("safety_gate", {}))
-        uwb = dict(y["uwb_node"]); uwb.update(ov.get("uwb_node", {}))
-        brg = dict(y["esp32_bridge"]); brg.update(ov.get("esp32_bridge", {}))
+        unknown = set(ov) - set(self.NODES)
+        if unknown:
+            raise KeyError("no such node in the sim's Pi stack: %s" % sorted(unknown))
+        for n, params in ov.items():
+            bad = set(params) - set(cfg.params[n])
+            if bad:      # ROS would ignore an undeclared parameter; here a typo would silently test nothing
+                raise KeyError("%s does not declare %s" % (n, sorted(bad)))
+        P = {n: dict(cfg.params[n], **ov.get(n, {})) for n in self.NODES}
+        self.params = P
+        fol, gat, uwb, brg, aim = (P[n] for n in self.NODES)
         self.gains = _pick(FollowGains, fol)
-        self.target_timeout = fol.get("target_timeout", 0.5)
+        self.target_timeout = fol["target_timeout"]
         self.gate = _pick(GateParams, gat)
         self.dd = _pick(DiffDriveParams, brg)
-        self.bridge_cmd_timeout = brg.get("cmd_timeout", 0.3)
+        self.bridge_cmd_timeout = brg["cmd_timeout"]
+        # timer rates of the nodes (Hz), used by sim.py's scheduler
+        self.rates = dict(follower=fol["rate_hz"], gate=gat["rate_hz"], heartbeat=brg["heartbeat_hz"],
+                          cmd=brg["cmd_rate_hz"], pan=brg["pan_rate_hz"], aim=aim["rate_hz"])
         # uwb_node
-        self.geom = UwbGeometry(baseline=uwb.get("baseline", 0.3), anchor_x=uwb.get("anchor_x", 0.0))
-        alpha = uwb.get("filter_alpha", 0.5)
-        self.max_range = uwb.get("max_range", 30.0)
-        self.max_bearing = uwb.get("max_bearing_deg", 80.0)
-        self.bearing_sign = uwb.get("bearing_sign", 1.0)
-        self.f_range = RangeFilter(alpha=alpha, max_range=self.max_range)
-        self.f_bearing = RangeFilter(alpha=uwb.get("bearing_alpha", 0.6), min_range=-self.max_bearing,
+        self.geom = UwbGeometry(baseline=uwb["baseline"], anchor_x=uwb["anchor_x"])
+        self.max_range = uwb["max_range"]
+        self.max_bearing = uwb["max_bearing_deg"]
+        self.bearing_sign = uwb["bearing_sign"]
+        self.f_range = RangeFilter(alpha=uwb["filter_alpha"], max_range=self.max_range)
+        self.f_bearing = RangeFilter(alpha=uwb["bearing_alpha"], min_range=-self.max_bearing,
                                      max_range=self.max_bearing)
-        # camera_aim's declared parameter defaults (camera_aim.py), not AimGains' own defaults
-        self.pan = PanController(AimGains(kp=0.6, deadband=math.radians(1.0), max_rate=math.radians(150.0),
-                                          half_range=math.radians(45.0), lost_timeout=0.5, recenter_timeout=3.0,
-                                          recenter_rate=math.radians(30.0)))
-        self.aim_meas_max_age = 0.3
+        # camera_aim
+        self.pan = PanController(AimGains(kp=aim["kp"], deadband=math.radians(aim["deadband_deg"]),
+                                          max_rate=math.radians(aim["max_rate_deg_s"]),
+                                          half_range=math.radians(aim["half_range_deg"]),
+                                          lost_timeout=aim["lost_timeout"], recenter_timeout=aim["recenter_timeout"],
+                                          recenter_rate=math.radians(aim["recenter_rate_deg_s"])))
+        self.pan_half_range = math.radians(aim["half_range_deg"])
+        self.pan_sign = aim["pan_sign"]
+        self.use_uwb_fallback = aim["use_uwb_fallback"]
+        self.aim_uwb_timeout = aim["uwb_timeout"]
+        self.aim_meas_max_age = aim["measurement_max_age"]
         # state (None = never received), all times on the sim clock
         self.target = None          # (distance, bearing)
         self.target_t = None
@@ -64,6 +88,7 @@ class PiStack:
         self.cmd_vel_t = None
         self.range_m = None
         self.range_t = None
+        self.echo_t = None          # last finite range (safety_gate.echo_stamp)
         self.link_ok = False
         self.link_t = None
         self.speed_cap = None
@@ -72,7 +97,7 @@ class PiStack:
         self.uwb_t = None
         self.meas = None
         self.last_aim_t = 0.0
-        self.pan_cmd = 0.0
+        self.pan_cmd = None         # esp32_bridge sends no P line until camera_aim has published once
 
     # ---- uwb_node --------------------------------------------------------------------------------------
     def on_uwb_line(self, t, rng, bearing_deg):
@@ -99,18 +124,22 @@ class PiStack:
     def on_r_line(self, t, dist, link):
         self.range_m = dist if dist >= 0.0 else math.inf
         self.range_t = t
+        if dist > 0.0:                                          # finite reading = an echo (-1 = none)
+            self.echo_t = t
         self.link_ok, self.link_t = link, t
 
     # ---- safety_gate -------------------------------------------------------------------------------------
-    def gate_tick(self, t, dt):
+    def gate_tick(self, t):
         p = self.gate
+        dt = 1.0 / self.rates["gate"]          # safety_gate passes 1 / rate_hz to rising_cap
         if p.brake_decel > 0.0 and self.range_m is not None and self.range_m == self.range_m:
             self.speed_cap = rising_cap(self.speed_cap, sight_speed(self.range_m, p), dt, p)
         else:
             self.speed_cap = None
         age = lambda s: None if s is None else t - s
         lin, ang, state = gate_command(self.cmd_raw[0], self.cmd_raw[1], self.range_m, age(self.range_t),
-                                       self.link_ok, age(self.link_t), age(self.cmd_raw_t), p, self.speed_cap)
+                                       self.link_ok, age(self.link_t), age(self.cmd_raw_t), p, self.speed_cap,
+                                       age(self.echo_t))
         self.cmd_vel, self.cmd_vel_t = (lin, ang), t
         self.gate_state = state
 
@@ -123,7 +152,8 @@ class PiStack:
         return "C,%.3f,%.3f" % (a, b)
 
     def bridge_pan_line(self):
-        return "P,%.3f" % self.pan_cmd
+        """None until camera_aim has published (the bridge sends nothing before that)."""
+        return None if self.pan_cmd is None else "P,%.3f" % self.pan_cmd
 
     # ---- camera_aim --------------------------------------------------------------------------------------
     def on_detection(self, t, bearing_err):
@@ -138,6 +168,8 @@ class PiStack:
             self.meas = None
             if t - mt <= self.aim_meas_max_age:
                 err = b
-        fb = self.uwb_bearing if (self.uwb_t is not None and t - self.uwb_t <= 0.5) else None
+        fb = None
+        if self.use_uwb_fallback and self.uwb_t is not None and t - self.uwb_t <= self.aim_uwb_timeout:
+            fb = self.uwb_bearing
         self.pan.update(t, dt, err, fb)
-        self.pan_cmd = self.pan.normalized(1.0)
+        self.pan_cmd = self.pan.normalized(self.pan_sign)

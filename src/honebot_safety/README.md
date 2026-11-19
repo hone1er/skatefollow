@@ -69,3 +69,12 @@ With `brake_decel` > 0 (set in `honebot_bringup/config/robot.yaml`) the gate als
 robot can stop within what the sensor sees (`sight_speed` in `gate.py`): about 2.7 m/s when the ultrasonic sensor
 reads the ground ahead, 3.8 m/s when it reads nothing. The cap drops at once and rises at `cap_rise_rate`; the state
 is `SIGHT_LIMIT`. Off by default, so the bench and turtlesim behaviour is unchanged.
+
+## Blind check (real robot)
+
+A dead or unplugged HC-SR04 never echoes, and "no echo" (+inf) normally means clear road. Mounted 12° up at 10 cm,
+a working sensor sees the road at ~1.95 m on every ping, so with `blind_timeout` > 0 (0.5 s in `robot.yaml`) the
+gate blocks forward motion once there has been no echo at all for that long, or never one since start. State
+`BLIND`; reversing and turning stay allowed, like `OBSTACLE`, and the first echo clears it. Off by default. On the
+bench, point the sensor at a box or wall 1–3 m away, or `ros2 param set /safety_gate blind_timeout 0.0` (wheels
+off the ground only).

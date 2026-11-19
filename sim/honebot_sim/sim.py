@@ -3,11 +3,20 @@
 Everything runs on one clock (simulation time), stepped at physics_dt (2 ms):
   every step      ESP32 updateOutputs() -> ESC voltages -> motor torques -> mj_step
   60 ms           HC-SR04 ping -> R line -> bridge -> gate input            (10 ms for the TFmini option)
-  100 ms          bridge heartbeat H
-  20 ms           safety gate, bridge C line
-  50 ms           follower, camera_aim, bridge P line
+  1/heartbeat_hz  bridge heartbeat H                                        (the ROS nodes' own rate parameters:
+  1/rate_hz       follower; safety gate; camera_aim                          PiStack.rates, from the node sources
+  1/cmd_rate_hz   bridge C line;  1/pan_rate_hz  bridge P line               and robot.yaml)
   1/uwb_hz        UWB fix -> uwb_node filters -> target
   1/cam_hz        camera frame -> detection (after latency) -> camera_aim
+
+Faults for the safety tests (Sim.faults, a set; add or remove at any time during a run):
+  "pi_dead"   the Pi (bridge) stops sending anything: no H, C or P lines  -> ESP32 watchdog fail-safe
+  "uwb_dead"  the UWB board stops reporting                                -> follower target timeout
+  "us_dead"   the HC-SR04 never echoes (unplugged / broken): R,-1 lines    -> the gate sees +inf = clear
+  "rx_dead"   the ESP32's R lines stop reaching the Pi (Pi still sends)    -> gate RANGE_STALE / LINK_DOWN
+  "follower_dead"  the follower node stops publishing                     -> gate CMD_STALE
+  "gate_dead"      the safety gate stops publishing                       -> bridge sends neutral after cmd_timeout
+The handheld remote is Sim.esp.remote: "run" | "stop" | "lost" (packets stopped) | "none" (never heard).
 """
 
 import math
@@ -85,7 +94,8 @@ class Sim:
         mujoco.mj_forward(self.m, self.d)
         self.t = 0.0
         self.ms = 0
-        self.next = {k: 0.0 for k in ("us", "hb", "gate", "fol", "uwb", "cam", "log")}
+        self.next = {k: 0.0 for k in ("us", "hb", "gate", "cmd", "fol", "aim", "pan", "uwb", "cam", "log")}
+        self.faults = set()
         self.metrics = Metrics()
         self.log = [] if log else None
         self.skater_state = (0.0, 0.0, 0.0, 0.0)
@@ -129,19 +139,24 @@ class Sim:
         t = self.t
         nm = self.next
         # ---- sensors and Pi software at their own rates -------------------------------------------------
+        rate = pi.rates
+        pi_alive = "pi_dead" not in self.faults
         if t >= nm["us"]:
             nm["us"] += self.rs.period
-            dist = self.rs.measure(m, d, self.chassis)
+            dist = -1.0 if "us_dead" in self.faults else self.rs.measure(m, d, self.chassis)
             r, _, _ = esp.status_lines(dist)
             parts = r.split(",")
-            pi.on_r_line(t, float(parts[1]), parts[2] == "1")
+            if pi_alive and "rx_dead" not in self.faults:
+                pi.on_r_line(t, float(parts[1]), parts[2] == "1")
         if t >= nm["hb"]:
-            nm["hb"] += 0.1
-            esp.line("H", self.ms)
+            nm["hb"] += 1.0 / rate["heartbeat"]
+            if pi_alive:
+                esp.line("H", self.ms)
         if t >= nm["uwb"]:
             nm["uwb"] += self.uwb.period
             rng, brg = self.uwb.measure(m, d, self.chassis, self.anchor, self.tag)
-            pi.on_uwb_line(t, float("%.2f" % rng), float("%.1f" % brg))
+            if "uwb_dead" not in self.faults:
+                pi.on_uwb_line(t, float("%.2f" % rng), float("%.1f" % brg))
         if t >= nm["cam"]:
             nm["cam"] += self.det.period
             self.det.capture(t, m, d, self.pan_body, self.cam, self.skater)
@@ -149,32 +164,44 @@ class Sim:
         if e is not None:
             pi.on_detection(t, e)
         if t >= nm["fol"]:
-            nm["fol"] += 0.05
-            pi.follower_tick(t)
+            nm["fol"] += 1.0 / rate["follower"]
+            if "follower_dead" not in self.faults:
+                pi.follower_tick(t)
+        if t >= nm["aim"]:
+            nm["aim"] += 1.0 / rate["aim"]
             pi.aim_tick(t)
-            esp.line(pi.bridge_pan_line(), self.ms)
+        if t >= nm["pan"]:
+            nm["pan"] += 1.0 / rate["pan"]
+            line = pi.bridge_pan_line()
+            if line is not None and pi_alive:
+                esp.line(line, self.ms)
         if t >= nm["gate"]:
-            nm["gate"] += 0.02
-            pi.gate_tick(t, 0.02)
-            esp.line(pi.bridge_cmd_line(t), self.ms)
+            nm["gate"] += 1.0 / rate["gate"]
+            if "gate_dead" not in self.faults:
+                pi.gate_tick(t)
+        if t >= nm["cmd"]:
+            nm["cmd"] += 1.0 / rate["cmd"]
+            if pi_alive:
+                esp.line(pi.bridge_cmd_line(t), self.ms)
         # ---- ESP32 and drivetrain -------------------------------------------------------------------------
         if self.remote_input is not None:      # real remote over USB, or the keyboard: stands in for the radio
             esp.remote, fwd, turn = self.remote_input.poll()
-            esp.stick = (fwd, turn)
+            if esp.remote in ("run", "stop"):  # a fresh packet; when lost the firmware keeps the last one
+                esp.stick = (fwd, turn)
         if t >= self.next_gyro:
-            self.next_gyro += esp.k.get("GYRO_PERIOD_MS", 5.0) / 1000.0
+            self.next_gyro += esp.k["GYRO_PERIOD_MS"] / 1000.0
             w = float(d.qvel[5]) + self.gyro_bias + float(self.rng.normal(0.0, 0.05))
             w = {"sign": -w, "stuck": 0.0, "dead": None}.get(self.gyro_fault, w)
-            esp.gyro_read(w if w is None else w * esp.k.get("GYRO_SIGN", 1.0), self.ms)
+            esp.gyro_read(w if w is None else w * esp.k["GYRO_SIGN"], self.ms)
         esp.update(self.ms)
         if t >= self.next_pwm:
-            self.next_pwm += 0.02
+            self.next_pwm += 1.0 / esp.k["SERVO_FREQ_HZ"]
             self.pwm_hold = esp.wheel_outputs()
         ua, ub = self.pwm_hold
         wl, wr = d.qvel[self.jFL], d.qvel[self.jFR]
         d.ctrl[0] = self.motors[0].torque(ua, wl)
         d.ctrl[1] = self.motors[1].torque(ub, wr)
-        d.ctrl[2] = esp.out_pan * math.radians(45.0)        # servo: +1 = 45 deg left
+        d.ctrl[2] = esp.out_pan * pi.pan_half_range         # servo: +1 = half_range_deg left (camera_aim)
         # air drag on the body (Cd*A ~0.03 m^2: 1.5 N at 20 mph), applied at the CG
         vx, vy = d.qvel[0], d.qvel[1]
         sp = math.hypot(vx, vy)
@@ -233,7 +260,7 @@ class Sim:
                                  out_l=self.esp.out_a, out_r=self.esp.out_b, failsafe=int(self.esp.failsafe),
                                  i_l=self.motors[0].current, i_r=self.motors[1].current,
                                  pan=float(d.qpos[self.jpan]), uwb_ok=int(not (self.pi.target_t is None or
-                                                                                 t - self.pi.target_t > 0.5))))
+                                                                                 t - self.pi.target_t > self.pi.target_timeout))))
 
     def run(self, until=None, callback=None, extend=30.0):
         """Run to the scenario's end; then keep going (up to `extend` s) until the robot has stopped for 1 s,

@@ -132,3 +132,40 @@ def test_cap_drops_at_once_and_rises_slowly():
         cap = rising_cap(cap, sight_speed(math.inf, SIGHT), 0.02, SIGHT)
     assert math.isclose(cap, sight_speed(math.inf, SIGHT))
     assert rising_cap(cap, 0.5, 0.02, SIGHT) == 0.5                      # an obstacle: drops immediately
+
+
+# --- blind check: no echo at all for blind_timeout -> no forward motion ------------------------------------------
+from honebot_safety.gate import BLIND  # noqa: E402
+
+PB = GateParams(blind_timeout=0.5)
+
+
+def blind(linear, echo_age, range_m=math.inf, p=PB, angular=0.3, cmd_age=0.0):
+    return gate_command(linear, angular, range_m, 0.0, True, 0.0, cmd_age, p, None, echo_age)
+
+
+def test_blind_check_is_off_by_default():
+    assert gate_command(1.0, 0.0, math.inf, 0.0, True, 0.0, 0.0, P, None, None)[2] == OK
+
+
+def test_no_echo_for_longer_than_the_timeout_blocks_forward_but_keeps_steering():
+    assert blind(1.0, 0.4) == (1.0, 0.3, OK)               # a few missed pings: still fine
+    assert blind(1.0, 0.6) == (0.0, 0.3, BLIND)
+
+
+def test_never_echoed_counts_as_blind():
+    assert blind(1.0, None)[2] == BLIND                    # sensor unplugged at boot
+
+
+def test_blind_allows_reversing_and_stopping():
+    assert blind(-0.5, 5.0) == (-0.5, 0.3, OK)
+    assert blind(0.0, 5.0)[2] == OK
+
+
+def test_fresh_echo_clears_blind_and_obstacle_rules_still_apply():
+    assert blind(1.0, 0.0, range_m=1.95)[2] == OK
+    assert blind(1.0, 0.0, range_m=0.2)[2] == 'OBSTACLE'
+
+
+def test_stop_states_beat_blind():
+    assert blind(1.0, 5.0, cmd_age=None) == (0.0, 0.0, CMD_STALE)
