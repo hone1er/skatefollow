@@ -226,7 +226,7 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   skater within `side_lane` 0.6 m of the path → `speed_for_gap` cap. Off (normal law) when the skater is slow
   (enter 0.8 / exit 0.4 m/s), far (> 12 m), or speed/yaw older than 0.3 s → **needs the gyro**. Wheel-output yaw
   was tried: 2–3× off from scrub. Sim (target profile, committed 4.02 kg geometry): 1.7–2.0 m at 40–48° walking to
-  12 mph; 15 mph marginal (1.8–2.5 m, 25–42°, once 0.49 m); slalom ~2.9 m/32°; dead stop → coasts past alongside,
+  12 mph; 15 mph marginal (1.8–2.5 m, 25–42°, passes ~0.4 m from the skater's centre; kept by owner's choice 2026-11-19, test bound 0.3 m); slalom ~2.9 m/32°; dead stop → coasts past alongside,
   0.66–1.1 m to the skater's centre; today's HC-SR04 only at walking/~5 mph. Bad gyro: a stuck or upside-down gyro used to roll
   the robot over at speed (side and normal mode, even at 2.7 m/s); firmware 2.4.0 fixes the stuck case and only
   reduces the wrong-sign case (strict xfail; see the firmware section). ±15 % speed scale shifts the point ~0.3 m/13°. 10 unit tests. Never run on hardware.

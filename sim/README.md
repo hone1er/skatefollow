@@ -208,7 +208,7 @@ driving within 0.5 m of the skater's centre. Results (2026-11-19):
 | | result |
 |---|---|
 | `target` profile, walking to 12 mph, bail, U-turns both ways, stop-and-go, box | 1.7–2.0 m at 40–48° |
-| 15 mph | marginal: 1.8–2.5 m at 25–42° depending on noise; once 0.49 m from the skater while moving |
+| 15 mph | marginal: 1.8–2.5 m at 25–42° depending on noise; can pass ~0.4 m from the skater's centre (~15 cm from their body; 0.40 on Linux, 0.49 on macOS). Kept by the owner's choice; test bound 0.3 m |
 | `carve_6` slalom (heading swings ±43° every 2.5 s) | ~2.9 m at ~32°: the known weak spot |
 | bad gyro at speed | firmware 2.4.0: a **stuck** gyro no longer rolls it over (0 of 72; before, even at 6 mph). A gyro **upside down** still can, 10 runs each: side slalom 1, bail 3, 12 mph 1; normal 12 mph 4 (strict xfail). Do the bench sign check |
 | `today` (HC-SR04 sight limit ~2.7 m/s) | holds only at walking / ~5 mph rolling pace; at 6 mph it cannot catch up |
