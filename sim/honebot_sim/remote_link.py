@@ -20,12 +20,14 @@ LINE = re.compile(r"state=(RUN|STOP|FAULT)\s+x=([+-]?[\d.]+)\s+y=([+-]?[\d.]+)")
 
 
 class RemoteSerial:
-    def __init__(self, port, baud=115200, timeout=0.5, clock=time.monotonic):
+    def __init__(self, port, baud=115200, timeout=0.12, clock=time.monotonic):
         try:
             import serial
         except ImportError as e:
             raise SystemExit("pyserial is needed for --remote: pip install pyserial") from e
         self.ser = serial.Serial(port, baud, timeout=0.1)
+        # "lost" here only means "no fresh line": ~2 missed lines at the 20 Hz print rate. The emulated firmware
+        # then applies its own REMOTE_TIMEOUT_MS on top, exactly as it does when radio packets stop.
         self.timeout = timeout
         self.clock = clock              # tests pass a fake clock; live use is wall time (the viewer runs in real time)
         self.state, self.x, self.y = "none", 0.0, 0.0
@@ -58,7 +60,7 @@ class RemoteSerial:
         if self.last is None:
             return "none", 0.0, 0.0
         if self.clock() - self.last > self.timeout:
-            return "lost", 0.0, 0.0
+            return "lost", self.x, self.y          # the firmware keeps the last packet's stick too
         return self.state, self.x, self.y
 
     def close(self):

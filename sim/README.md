@@ -9,16 +9,30 @@ an ideal point; this moves the robot.
 | Part | Model | Source of the numbers |
 |---|---|---|
 | Body | 4.02 kg rigid body at the CAD centre of gravity, 4 wheels on hinges, contact with the ground; scrub, sliding and tipping come out of the physics | CAD script `build_model()` + `cad/report/check_report.md` |
-| Drivetrain | per side one 370 KV motor on an AM32 ESC in voltage mode: current = (throttle × 11.1 V − back-EMF) / 0.15 Ω, limited to 30 A; 2:1 belt; rear wheel tied 1:1 to the front; rolling resistance; air drag | `cad/check_design.py` drivetrain section |
+| Drivetrain | per side one 370 KV motor on an AM32 ESC in voltage mode: current = (throttle × 11.1 V − back-EMF) / 0.15 Ω, limited to 30 A; 2:1 belt; rear wheel tied 1:1 to the front; rolling resistance; air drag | `cad/check_design.py` drivetrain section (pinned by a test); belt ratio from the CAD pulley teeth |
 | ESP32 | the **real** `drive_logic.h`, compiled on first run and called directly (who may drive, slew, fail-safe ramp, deadband), plus the sketch's loop code; every constant parsed from the `.ino` | `firmware/esp32_ultrasonic/` |
-| Pi software | the **real** pure modules: `follow_command_relative`, `gate_command` with the sight limit, `twist_to_diffdrive`, uwb_node's `RangeFilter` + `aoa_position`, camera_aim's `PanController`; the nodes' rates and timeouts are mirrored | `src/honebot_*`, `robot.yaml` |
+| Pi software | the **real** pure modules: `follow_command_relative`, `gate_command` with the sight limit, `twist_to_diffdrive`, uwb_node's `RangeFilter` + `aoa_position`, camera_aim's `PanController`; the nodes' timer and callback code is mirrored (hash-pinned) | every parameter and rate = the node's own `declare_parameter()` default with `robot.yaml` on top, read from the node source |
 | HC-SR04 | rays fanned over the ±15° beam from the CAD mount: ground return ~1.95 m, obstacles, the skater; 60 ms pings, no echo past 4.29 m | CAD + firmware |
 | UWB AoA | 3-D range + horizontal bearing, noise, drop-outs, worse when something blocks the line of sight | datasheet-class guesses |
 | Camera | GoPro on the pan servo; detector at 10 Hz with 0.1 s latency and 95 % recall, hidden behind obstacles | measured det/s, guessed recall |
 | Skater | scripted paths: walking, cruising at 6/8/12/15 mph with dead stops, a bail, slalom, U-turn, stop-and-go, a box to avoid, slow circles around the robot | `honebot_sim/skater.py` |
 
-Everything runs on one simulated clock, so there are no false timeouts. Not exercised (they need ROS): message
-transport, parameter handling, serial I/O, the camera node's frame grabbing and its Kalman tracker.
+Everything runs on one simulated clock, so there are no false timeouts. Not exercised: message transport, live
+parameter changes and serial I/O (they need ROS or hardware), the camera node's frame grabbing, and its
+plausibility filters + Kalman tracker (`honebot_camera/track.py` is pure and unit-tested, but the sim feeds
+detections straight to camera_aim).
+
+**One source of truth.** The simulator reads robot numbers from their owners: the CAD (geometry, mass, belt
+ratio), the `.ino` (every constant, incl. PWM frame rate and pulse span), the nodes' declared defaults with
+`robot.yaml` on top (every parameter and timer rate, the pan travel, the camera FOV). Where a copy has to exist,
+a test pins it against the original:
+`tests/test_sources.py` (node defaults vs the pure modules' dataclasses, the hashed node code that
+`stack.py` mirrors, firmware vs `robot.yaml`, the remote bridge's port of `drive::decide` vs the compiled one,
+motor numbers vs `cad/check_design.py`) and `tests/test_firmware.py` (the hashed sketch code). `--set` refuses a
+parameter the node does not declare, so a typo cannot silently test nothing. Still plain guesses in
+`config.py`, owned by nobody yet: tyre friction, drag area, sensor noise/dropouts, UWB rate, camera recall and
+latency. One disagreement left open: the CAD models the HC-SR04 beam as ±15° (30° cone), while the bridge's
+`Range.field_of_view` says 0.26 rad (15° cone); only the CAD number affects behaviour.
 
 **Guesses that matter.** Tyre friction (0.8), UWB and camera noise, and motor resistance are estimates until
 the real robot exists. The turning results depend directly on friction. Use the simulator to compare designs and
@@ -49,7 +63,7 @@ The first run compiles the firmware logic with Xcode's command-line tools (alrea
 cd sim && ~/honebot-sim/bin/python -m pytest -q tests
 ```
 
-You should see `41 passed`.
+You should see `90 passed`.
 
 ## Use it (from the `sim` folder)
 
@@ -161,6 +175,15 @@ With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of
    `THROTTLE_LIMIT` 1.0 (`--profile target`): 15 mph cruise, then a dead stop 1.0 m short of the skater.
    **Mount such a lidar tilted up by half its beam (1° for a TFmini).** Level at 10 cm, its 2° beam hits the
    road at 5.9 m, and the gate would treat that as an obstacle and cap the speed at about 12.8 mph.
+6. **A dead HC-SR04 looked like clear road; the gate's blind check now catches it** (`tests/test_failsafe.py`).
+   Unplugged or broken, it never echoes, the firmware sends `R,-1` and the bridge publishes +inf ("nothing in
+   range", REP 117). Without the check the robot drove into the box in `obstacle`. On flat ground the tilted
+   sensor sees the road at ~1.95 m on every ping, so `blind_timeout` (0.5 s in `robot.yaml`) of no echo now blocks
+   forward motion (state `BLIND`). The simulated sensor misses 2 % of pings and the check never trips in any
+   scenario. It relies on the mounted sensor really seeing the ground, which `docs/first_drive.md` Stage 0 step 4
+   checks. Every fail-safe layer (UWB lost, follower dead, gate dead, Pi dead, ESP32 data stale, sensor dead,
+   remote STOP, remote lost) stops the robot from 6 mph within its timeout plus ~1.2 s. The `target` profile turns
+   the check off: its lidar is tilted to never see the ground, so it would need its own health check.
 
 ## Files
 
@@ -178,9 +201,12 @@ sim/
 │   ├── sim.py         the closed loop + metrics + the gyro model (noise, bias, faults) + 50 Hz PWM frames
 │   ├── remote_link.py the handheld remote over USB, or the keyboard, as the radio link
 │   └── run.py         command line, viewer, plots, spin test
-└── tests/             41 tests (also in CI)
+└── tests/             90 tests (also in CI); test_failsafe.py trips every fail-safe layer
+                       at speed, test_sources.py holds the single-source-of-truth checks
 ```
 
 The compiled firmware library is cached in `sim/.cache/` (git-ignored) and rebuilt whenever `drive_logic.h`
 changes. If the sketch's `updateOutputs()`, `handleLine()` or `applyOutputs()` change, `tests/test_firmware.py`
-fails on purpose. Mirror the change in `honebot_sim/firmware.py`, then update the hash in the test.
+fails on purpose. Mirror the change in `honebot_sim/firmware.py`, then update the hash in the test. The same goes
+for the node code `stack.py` mirrors (`follower._tick`, `safety_gate._tick`, `esp32_bridge._send_cmd`, ...):
+`tests/test_sources.py` fails, mirror the change in `honebot_sim/stack.py`, update the hash.

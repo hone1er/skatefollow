@@ -95,6 +95,7 @@ class Esp32:
         self.failsafe_rate = fw["FAILSAFE_DECEL_G"] * g
         self.remote = remote            # run | stop | lost | none (never heard): the handheld kill switch
         self.last_remote = 0
+        self.remote_run_flag = False    # RUN flag of the last packet received (the sketch's rxFlags)
         self.heartbeat_seen = False
         self.last_hb = 0
         self.cmd_seen = False
@@ -110,7 +111,7 @@ class Esp32:
         self.stick = (0.0, 0.0)         # (forward, turn) -1..1 from the remote, as in its radio packet
         # yaw-rate loop (2.3.0): gyro state as the sketch keeps it; the sim feeds gyro_read() every GYRO_PERIOD_MS
         self.yaw_state = self.L.hb_yaw_state_new()
-        self.gyro_present = bool(fw.get("YAW_LOOP_ENABLED", False))   # setupGyro(): the sim always has a gyro fitted
+        self.gyro_present = bool(fw["YAW_LOOP_ENABLED"])   # setupGyro(): the sim always has a gyro fitted
         self.gyro_bias_sum = 0.0
         self.gyro_bias_n = 0
         self.gyro_bias = 0.0
@@ -118,7 +119,7 @@ class Esp32:
         self.gyro_z = 0.0
         self.gyro_last_ok = 0
         self.drive_a = self.drive_b = 0.0
-        self.manual_turn_scale_gyro = (fw.get("MANUAL_MAX_YAW", 3.0) * fw.get("YAW_TRACK_WIDTH", 0.39)
+        self.manual_turn_scale_gyro = (fw["MANUAL_MAX_YAW"] * fw["YAW_TRACK_WIDTH"]
                                        / (2.0 * fw["MANUAL_LIMIT"] * fw["FULL_SCALE_MPS"]))
 
     def __del__(self):
@@ -163,8 +164,8 @@ class Esp32:
         self.gyro_last_ok = now_ms
 
     def yaw_loop_usable(self, now_ms):
-        return (bool(self.k.get("YAW_LOOP_ENABLED", False)) and self.gyro_present and self.gyro_bias_done
-                and now_ms - self.gyro_last_ok < self.k.get("GYRO_STALE_MS", 50)
+        return (bool(self.k["YAW_LOOP_ENABLED"]) and self.gyro_present and self.gyro_bias_done
+                and now_ms - self.gyro_last_ok < self.k["GYRO_STALE_MS"]
                 and not self.L.hb_yaw_state_tripped(self.yaw_state))
 
     # --- updateOutputs() ------------------------------------------------------------------------------
@@ -174,13 +175,14 @@ class Esp32:
         self.last_loop = now_ms
         if self.remote in ("run", "stop"):
             self.last_remote = now_ms           # a fresh packet this step ("lost" = packets stopped arriving)
+            self.remote_run_flag = self.remote == "run"
         r_seen = self.remote != "none"
         rem, link = ctypes.c_int(), ctypes.c_int()
         self.source = L.hb_decide(self.state, int(k["REMOTE_REQUIRED"]), int(k["ARM_MS"]), int(k["WATCHDOG_MS"]),
                                   int(k["CMD_TIMEOUT_MS"]), int(k["REMOTE_TIMEOUT_MS"]), int(k["MANUAL_HOLD_MS"]),
                                   k["STICK_DEADBAND"], now_ms, int(self.heartbeat_seen), self.last_hb,
                                   int(self.cmd_seen), self.last_cmd, int(r_seen), self.last_remote,
-                                  int(self.remote == "run"), self.stick[0], self.stick[1],
+                                  int(self.remote_run_flag), self.stick[0], self.stick[1],
                                   ctypes.byref(rem), ctypes.byref(link))
         self.remote_state, self.link_ok = rem.value, bool(link.value)
         was = self.failsafe
@@ -216,7 +218,7 @@ class Esp32:
             L.hb_yaw_state_reset(self.yaw_state)
         a, b = ctypes.c_float(self.out_a), ctypes.c_float(self.out_b)
         active = k["DIFF_DRIVE"] and not self.failsafe and self.yaw_loop_usable(now_ms)
-        if k.get("YAW_LOOP_ENABLED", False):
+        if k["YAW_LOOP_ENABLED"]:
             L.hb_yaw_loop(self.yaw_state, k["YAW_KP"], k["YAW_KI"], k["YAW_MAX_CORR"], k["FULL_SCALE_MPS"],
                           k["YAW_TRACK_WIDTH"], int(k["YAW_SAT_MS"]), int(k["YAW_WRONG_WAY_MS"]), int(active),
                           self.gyro_z, now_ms, dt,
@@ -228,7 +230,8 @@ class Esp32:
         k = self.k
         a = self.L.hb_deadband_comp(self.drive_a, k["ESC_DEADBAND"])
         b = self.L.hb_deadband_comp(self.drive_b, k["ESC_DEADBAND"])
-        q = lambda v: round(_clamp(v, -1, 1) * 500) / 500.0      # whole microseconds of pulse width
+        span = k["PULSE_MAX_US"] - k["PULSE_NEUTRAL_US"]           # pulseFor(): whole microseconds of pulse width
+        q = lambda v: round(_clamp(v, -1, 1) * span) / span
         a, b = q(a), q(b)
         return (-a if k["THROTTLE_REVERSED"] else a), (-b if k["STEER_REVERSED"] else b)
 

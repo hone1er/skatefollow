@@ -45,6 +45,8 @@ def build_mjcf(cfg, obstacles=(), friction=None):
     arm = cfg.motor.rotor_inertia * cfg.motor.ratio ** 2      # motor rotor seen at the front wheel
     # urethane rolling resistance (Crr ~0.015) + bearings, as a constant drag torque per wheel
     rr = cfg.motor.rolling_crr * g.mass * 9.81 / 4 * wr + 0.0005
+    # pan servo travel = camera_aim's half_range_deg (the owner sets it from the measured travel), + a hair of slack
+    pan_lim = math.radians(cfg.params["camera_aim"]["half_range_deg"]) + 0.015
 
     out = ['<mujoco model="honebot">',
            '  <compiler angle="radian" autolimits="true"/>',
@@ -77,9 +79,9 @@ def build_mjcf(cfg, obstacles=(), friction=None):
             '      <geom name="hcsr04" type="box" group="%d" pos="%s" size="0.01 0.023 0.01" rgba=".2 .4 .9 1" mass="0" contype="0" conaffinity="0"/>'
             % (ROBOT_GROUP, _f(ox, 0, oz)),
             '      <site name="us" pos="%s"/>' % _f(*g.us_origin),
-            '      <site name="uwb" pos="%s"/>' % _f(cfg.yaml["uwb_node"].get("anchor_x", 0.06), 0, cfg.sensors.uwb_anchor_z),
+            '      <site name="uwb" pos="%s"/>' % _f(cfg.params["uwb_node"]["anchor_x"], 0, cfg.sensors.uwb_anchor_z),
             '      <body name="pan" pos="%s">' % _f(g.pan_axis_x, 0, g.mast_top),
-            '        <joint name="pan" type="hinge" axis="0 0 1" range="-0.8 0.8" damping="0.05" armature="0.002"/>',
+            '        <joint name="pan" type="hinge" axis="0 0 1" range="-%g %g" damping="0.05" armature="0.002"/>' % (pan_lim, pan_lim),
             '        <geom name="gopro" type="box" group="%d" pos="0 0 %g" size="0.017 0.036 0.028" rgba=".15 .15 .15 1" mass="%g"/>'
             % (ROBOT_GROUP, g.lens_z - g.mast_top, m_pan),
             '        <camera name="gopro" pos="%s" xyaxes="0 -1 0 0 0 1" fovy="%g"/>'
@@ -111,7 +113,7 @@ def build_mjcf(cfg, obstacles=(), friction=None):
             '  <actuator>',
             '    <motor name="motor_L" joint="wheel_FL" ctrlrange="-50 50"/>',
             '    <motor name="motor_R" joint="wheel_FR" ctrlrange="-50 50"/>',
-            '    <position name="pan_servo" joint="pan" kp="3" kv="0.15" ctrlrange="-0.8 0.8"/>',
+            '    <position name="pan_servo" joint="pan" kp="3" kv="0.15" ctrlrange="-%g %g"/>' % (pan_lim, pan_lim),
             '  </actuator>',
             '  <sensor>',
             '    <framepos name="pos" objtype="body" objname="chassis"/>',

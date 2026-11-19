@@ -28,6 +28,12 @@ safety_gate:
     reaction_time: 0.25            # s
     sight_distance: 3.0            # m
     cap_rise_rate: 1.0             # m/s^2
+    # Blind check: mounted 12 deg up at 10 cm, the sensor sees the road at ~1.95 m on every ping. No echo at all
+    # for this long = sensor unplugged/broken or not seeing the ground -> no forward motion (/safety/state BLIND).
+    # A dead sensor otherwise looks like "clear road". 0.5 s = 8 missed pings in a row. On the bench, point the
+    # sensor at a box or wall 1-3 m away. Set 0.0 only if the beam test (docs/first_drive.md Stage 0) shows the
+    # mounted sensor does NOT see the ground; then a dead sensor goes unnoticed.
+    blind_timeout: 0.5             # s
 
 uwb_node:
   ros__parameters:

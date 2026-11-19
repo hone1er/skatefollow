@@ -228,6 +228,11 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   ~1.95 m, 3.8 m/s if it reads nothing (`sight_distance` 3.0). The cap drops at once and rises at
   `cap_rise_rate`. New state `SIGHT_LIMIT`. **Consequence: with only the HC-SR04 the robot is limited to ~6–8 mph;
   12–15 mph needs a longer-range forward sensor** (e.g. a ~12 m ToF sensor or a 2D lidar). Not run on the Pi yet.
+- **Blind check (2026-11-19, off unless `blind_timeout` > 0; 0.5 s in `robot.yaml`):** no echo at all (only +inf, or
+  none since start) for `blind_timeout` → forward motion blocked, state `BLIND` (reverse/turn allowed; the first echo
+  clears it). Why: a dead/unplugged HC-SR04 reads as +inf = clear road. Relies on the mounted sensor seeing the road
+  at ~1.95 m (first_drive.md Stage 0 step 4); on the bench point it at a box. Node tracks `echo_stamp`; `gate_command`
+  takes `echo_age`. Not run on the Pi yet.
 
 ### honebot_hardware — `esp32_bridge` node
 - Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10),
@@ -546,7 +551,18 @@ valid only for the tricycle variant or an RC car.
   scenario `playground`. Owner reported (2026-11-19, sim + real remote): without the loop the stick only turns near
   full side deflection then pivots hard; with `--yaw-loop` turning is proportional (20°→0.35, 45°→1.4, 90°→3 rad/s).
   `--gyro-fault sign|stuck|dead` tests the fallbacks (no contact in any). Sim also models 50 Hz PWM frames.
-  41 tests in `sim/tests`, CI job `sim`. Viewer and offscreen rendering untested here (no OpenGL in the cloud
+  90 tests in `sim/tests`, CI job `sim`. **Single source of truth (2026-11-19):** the sim reads every
+  node parameter and timer rate from the node's own `declare_parameter()` default + robot.yaml (`config.load_node_params`,
+  AST of the node source); `--set` rejects undeclared params; `test_sources.py` pins node defaults = dataclass defaults
+  (AimGains defaults were aligned to camera_aim's), hashes the node code `stack.py` mirrors, pins `max_wheel_speed` =
+  `FULL_SCALE_MPS`, remote_logic's constants + `Arbiter` vs the compiled `drive::decide`, and the motor numbers vs
+  check_design.py; belt ratio comes from CAD `pul_w_t/pul_m_t`. `test_failsafe.py` trips each layer at 6 mph (faults
+  `pi_dead`, `uwb_dead`, `rx_dead`, `follower_dead`, `gate_dead`, `us_dead` in `Sim.faults`, remote stop/lost). Also
+  derived now: PWM frame/pulse span from the .ino, pan joint travel from camera_aim `half_range_deg`, camera FOV from
+  camera_node `hfov_deg`. Remote over USB: link reports lost after a 0.12 s gap, firmware's 500 ms on top. Fixed: a lost remote used to read as
+  STOP at once in the emulator (0.5 s optimistic); it now keeps the last RUN packet for REMOTE_TIMEOUT_MS like the sketch.
+  Gap found and closed: a dead HC-SR04 sends `R,-1` = +inf = clear, so the robot drove into the `obstacle` box; the
+  gate's blind check (`blind_timeout`) now stops it. Viewer and offscreen rendering untested here (no OpenGL in the cloud
   container); everything headless was run.
 - **Findings:** today's config passes straight-line/stop/obstacle scenarios safely (never touches the skater) but
   (model prediction, robust to contact model and friction 0.5–0.8; real tyres creep, so expect heavy understeer;

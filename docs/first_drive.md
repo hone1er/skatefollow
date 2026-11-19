@@ -40,8 +40,11 @@ raised deliberately, not all at once.
    ```bash
    ros2 topic echo /ultrasonic/range --field range
    ```
-   - `inf` most of the time → the 3.8 m/s limit applies.
-   - About 1.9–2.0 → the 2.7 m/s limit applies.
+   - `inf` most of the time → the 3.8 m/s limit applies, **and** the gate's blind check would stop the robot
+     (it treats a long run of `inf` as a dead sensor): tilt the sensor down a little in the CAD (`us_tilt_deg`)
+     until it sees the road, or set `blind_timeout: 0.0` in `config/robot.yaml` (then an unplugged sensor
+     goes unnoticed).
+   - About 1.9–2.0 → the 2.7 m/s limit applies, and the blind check works as intended.
    - 0.5–1.5 → it sees the ground too close: raise `us_tilt_deg` in the CAD before printing the bracket.
 5. **How far does it see a person?** Stand 4 m in front of the sensor and walk toward it; note the distance at
    which the reading first drops from `inf` to a number. The sight limit assumes 3 m (`sight_distance`): if you
@@ -52,7 +55,9 @@ raised deliberately, not all at once.
 1. Configure both ESCs with the AM32 tool: bidirectional, sine start-up on, low-voltage cutoff 3.3 V per cell,
    and braking as the command falls (see `firmware/esp32_ultrasonic/README.md`, "Bench check").
 2. **Find the smallest command that turns the wheels.** ESCs ignore small commands around neutral, and slow
-   moves are tiny: 1 m/s is a command of about 0.10, and a slow pivot is only 0.02 per side. Remote in RUN.
+   moves are tiny: 1 m/s is a command of about 0.10, and a slow pivot is only 0.02 per side. Remote in RUN. Point the
+   HC-SR04 at a box or wall 1–3 m away: if it sees nothing, `/safety/state` shows `BLIND` and the gate blocks
+   forward commands (that is the dead-sensor check working).
    **Pi:** run this, then stop it (Ctrl-C) and repeat with `x: 0.2`, `0.4`, `0.6`, … until the wheels turn:
    ```bash
    ros2 topic pub -r 20 /cmd_vel_raw geometry_msgs/Twist "{linear: {x: 0.2}}"
@@ -68,6 +73,7 @@ raised deliberately, not all at once.
    - switch the remote off;
    - Ctrl-C the `ros2 topic pub`;
    - put a hand 20 cm in front of the sensor (forward command only);
+   - unplug the HC-SR04 (forward command only): `/safety/state` goes `BLIND` within half a second;
    - unplug the ESP32's USB cable from the Pi.
 6. Belts: no skipping, no rubbing on flanges, pulleys do not wobble.
 7. **Gyro (for the yaw-rate loop; skip if no MPU6050 is fitted).** Wire it (firmware README, pins 21/22), set

@@ -36,13 +36,14 @@ def vfov_from_hfov(hfov, width, height):
 
 @dataclass
 class AimGains:
+    # Same values as camera_aim.py's declared parameter defaults (sim/tests/test_sources.py checks).
     kp: float = 0.6               # fraction of the measured error applied per detection
-    deadband: float = 0.02        # rad: ignore errors smaller than this (about 1 degree)
-    max_rate: float = 2.5         # rad/s: pan slew limit while tracking (protects the camera)
-    half_range: float = math.radians(45.0)   # mechanical limit either side of centre
+    deadband: float = math.radians(1.0)       # rad: ignore errors smaller than this
+    max_rate: float = math.radians(150.0)     # rad/s: pan slew limit while tracking (protects the camera)
+    half_range: float = math.radians(45.0)    # mechanical limit either side of centre
     lost_timeout: float = 0.5     # s without a detection before we fall back to the UWB bearing
     recenter_timeout: float = 3.0  # s without a detection (and no UWB) before drifting back to centre
-    recenter_rate: float = 0.5    # rad/s when falling back / recentring
+    recenter_rate: float = math.radians(30.0)  # rad/s when falling back / recentring
 
 
 def _toward(current, target, max_step):

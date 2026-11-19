@@ -3,13 +3,17 @@
   geometry        cad/fusion/HonebotChassis/HonebotChassis.py  (build_model(): wheels, sensor, mast, camera)
   mass and CG     cad/report/check_report.md                   ("Mass 4.02 kg, CG (-71, 0, 81) mm", written by
                                                                  cad/check_design.py from the same CAD model)
-  Pi software     src/honebot_bringup/config/robot.yaml        (follower, safety_gate, uwb_node, esp32_bridge)
+  Pi software     each node's declare_parameter() defaults       (src/honebot_*/..., see NODE_SOURCES)
+                  + src/honebot_bringup/config/robot.yaml      (follower, safety_gate, uwb_node, esp32_bridge)
   firmware        firmware/esp32_ultrasonic/esp32_ultrasonic.ino (const values: limits, ramps, timeouts)
-  motor           cad/check_design.py drivetrain model           (Kv 370, 0.15 ohm, 30 A, 3S 11.1 V, 2:1 belt)
+  belt ratio      CAD PARAMS pul_w_t / pul_m_t                  (56T / 28T)
+  motor           cad/check_design.py drivetrain model           (Kv 370, 0.15 ohm, 30 A, 3S 11.1 V; pinned by
+                                                                 sim/tests/test_sources.py)
 
 Only numbers no file holds yet live here (tyre friction, sensor noise, skater behaviour); each says why.
 """
 
+import ast
 import importlib.util
 import math
 import re
@@ -60,6 +64,52 @@ def load_mass_cg(report=None):
 def load_robot_yaml(path=None):
     data = yaml.safe_load(Path(path or REPO / "src" / "honebot_bringup" / "config" / "robot.yaml").read_text())
     return {node: v.get("ros__parameters", {}) for node, v in data.items()}
+
+
+# ------------------------------------------------------------------------------------------ node param defaults
+# The ROS nodes the simulator mirrors (honebot_sim/stack.py). Their declare_parameter() defaults are THE defaults:
+# the sim reads them from the node source instead of keeping its own copies, then applies robot.yaml on top,
+# exactly as `ros2 launch` does.
+NODE_SOURCES = {
+    "follower": "src/honebot_follow/honebot_follow/follower.py",
+    "safety_gate": "src/honebot_safety/honebot_safety/safety_gate.py",
+    "uwb_node": "src/honebot_uwb/honebot_uwb/uwb_node.py",
+    "esp32_bridge": "src/honebot_hardware/honebot_hardware/esp32_bridge.py",
+    "camera_aim": "src/honebot_camera/honebot_camera/camera_aim.py",
+    "camera_node": "src/honebot_camera/honebot_camera/camera_node.py",   # only hfov_deg is used (sensors.py)
+}
+
+
+def load_node_defaults(node):
+    """{param: default} for every `declare_parameter('name', <literal>)` (or its `p(...)` alias) in the node.
+    Parameters whose default is not a literal (follower's `leader_timeout` alias) are skipped."""
+    tree = ast.parse((REPO / NODE_SOURCES[node]).read_text())
+    out = {}
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call) or len(n.args) < 2:
+            continue
+        f = n.func
+        name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
+        if name not in ("declare_parameter", "p"):
+            continue
+        if not (isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)):
+            continue
+        try:
+            out.setdefault(n.args[0].value, ast.literal_eval(n.args[1]))
+        except ValueError:
+            pass
+    return out
+
+
+def load_node_params(robot_yaml=None):
+    """{node: params} as the running robot would have them: node defaults, then robot.yaml on top."""
+    y = load_robot_yaml() if robot_yaml is None else robot_yaml
+    out = {}
+    for node in NODE_SOURCES:
+        p = load_node_defaults(node)
+        p.update(y.get(node, {}))
+        out[node] = p
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------- firmware
@@ -118,7 +168,7 @@ class MotorParams:
     resistance: float = 0.15     # ohm phase-to-phase, typical 5010 [M]
     current_limit: float = 30.0  # A, ESC
     battery_v: float = 11.1      # 3S nominal (11.1-12.6 V)
-    ratio: float = 2.0           # 56T / 28T
+    ratio: float = 2.0           # wheel pulley / motor pulley teeth; load_config() takes it from the CAD PARAMS
     efficiency: float = 0.9      # belt + bearings
     rotor_inertia: float = 2.5e-5   # kg m^2, ~40 g bell at 25 mm radius [M]
     esc_deadband: float = 0.0    # fraction of throttle the ESC ignores around neutral (measure: first_drive.md)
@@ -144,7 +194,7 @@ class SensorParams:
     cam_latency: float = 0.10         # s, frame -> detection
     cam_p_detect: float = 0.95        # recall measured 100 % indoors; 95 % for motion blur outdoors
     cam_bearing_noise_deg: float = 0.5
-    cam_hfov_deg: float = 87.0        # GoPro Linear
+    cam_hfov_deg: float = 87.0        # GoPro Linear; load_config() takes camera_node's hfov_deg
     forward_sensor: str = "hcsr04"    # or "tfmini": 12 m, 2 deg beam, 100 Hz (what 12-15 mph needs)
 
 
@@ -153,8 +203,9 @@ class SimConfig:
     geom: RobotGeometry
     motor: MotorParams
     sensors: SensorParams
-    yaml: dict
+    yaml: dict                        # robot.yaml as written (node -> params)
     firmware: dict
+    params: dict = field(default_factory=dict)   # node -> node defaults + robot.yaml: what the sim's Pi stack uses
     friction: float = 0.8             # urethane on asphalt slides at ~0.7-0.9 g (cad report); a GUESS until the
     #                                   spin test on the real robot. Scrub in turns depends on it directly.
     cda: float = 0.03                 # m^2, drag area of the body + mast + GoPro (estimate)
@@ -185,10 +236,13 @@ def load_config(**overrides) -> SimConfig:
         pan_axis_x=cam["pan_axis"][0] / 1000, lens_z=cam["lens"][2] / 1000,
         mast_x=M.info["mast"]["x"] / 1000, mast_top=cam["bottom"] / 1000)
     fw = load_firmware_constants()
-    sensors = SensorParams(us_period=fw.get("MEASURE_PERIOD_MS", 60.0) / 1000.0,
-                           us_max_range=fw.get("ECHO_TIMEOUT_US", 25000.0) * 1e-6 * 343.0 / 2.0)
-    cfg = SimConfig(geom=g, motor=MotorParams(esc_deadband=fw.get("ESC_DEADBAND", 0.0)), sensors=sensors,
-                    yaml=load_robot_yaml(), firmware=fw)
+    sensors = SensorParams(us_period=fw["MEASURE_PERIOD_MS"] / 1000.0,
+                           us_max_range=fw["ECHO_TIMEOUT_US"] * 1e-6 * 343.0 / 2.0)
+    y = load_robot_yaml()
+    params = load_node_params(y)
+    sensors.cam_hfov_deg = params["camera_node"]["hfov_deg"]
+    cfg = SimConfig(geom=g, motor=MotorParams(esc_deadband=fw["ESC_DEADBAND"], ratio=P["pul_w_t"] / P["pul_m_t"]),
+                    sensors=sensors, yaml=y, firmware=fw, params=params)
     for k, v in overrides.items():
         for obj in (cfg, cfg.motor, cfg.sensors):
             if hasattr(obj, k):

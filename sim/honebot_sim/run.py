@@ -26,7 +26,8 @@ from .skater import MPH, SCENARIOS
 
 PROFILES = {
     "today": dict(stack={}, firmware={}, sensor=None),
-    "target": dict(stack={"follower": {"max_linear": 7.5}, "safety_gate": {"sight_distance": 12.0}},
+    # blind_timeout 0: the lidar is tilted up so it never sees flat ground; "no return" is its normal reading
+    "target": dict(stack={"follower": {"max_linear": 7.5}, "safety_gate": {"sight_distance": 12.0, "blind_timeout": 0.0}},
                    firmware={"THROTTLE_LIMIT": 1.0}, sensor="tfmini"),
 }
 
