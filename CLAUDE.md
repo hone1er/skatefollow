@@ -618,7 +618,7 @@ valid only for the tricycle variant or an RC car.
 0. **Owner:** read `docs/chassis_cad.md` (current design + BOM; `docs/robot_design.md` §1/§3 for the AM32 setup) and
    `docs/hardware_plan.md`; order per the chassis_cad.md BOM: 2 × MAD 5010 EEE 370KV (or 5010 with M3 prop holes on
    D12), 2 × AM32 ESCs + USB linker, 2 × HTD-3M 258 mm + 2 × 510 mm 9 mm belts, a 4-pack of 90 mm longboard wheels,
-   4 × 608-2RS idlers, 4 × M8 × 140 12.9 bolts, 16×2 and 12×2 steel tube, heat-set inserts, 3S 5000 mAh + charger, Pololu 5 V/6 V regulators,
+   4 × 608-2RS idlers, 4 × M8 × 140 12.9 bolts, 16×2 and 12×2 steel tube, heat-set inserts, 3S 4000–4500 mAh hard case ≤ 145 × 50 × 30 (no 5000 fits the tunnel) + charger, Pololu 5 V/6 V regulators,
    ESP32 3-pack, UWB AoA anchor + tag. Measure the backpack.
    **Then follow `docs/first_drive.md` stage by stage; it supersedes the list below where they overlap.**
 1. **Owner (Mac):** 2026-11-17 the **robot board is flashed with a 2.2.x build**: its serial output on the Mac

@@ -116,7 +116,7 @@ tension spec above, and the pull-screw stop, which keeps tension from creeping u
 | Wheels 90 × 52 | front (0, ±138.5, 45), rear (−200.0, ±138.5, 45) | track 277, wheelbase 200.0 |
 | Motors (≤ Ø62 × 33) | centre (−40, ±62…95, 96), outside the walls under the shell pods | 28T bolted to the bell, belt plane y ±102; **HTD-3M 258 mm** → 64.6 mm centres |
 | Rear belt | plane y ±84, 36T:36T | **HTD 510-3M-09**; 2 × 608 idler at x −100, slot z 53.7–69.3 |
-| Battery tunnel | x −141…4, \|y\| ≤ 26.5, z 32…62 | 3S 5000 hard case ≤ 145 × 50 × 30 |
+| Battery tunnel | x −141…4, \|y\| ≤ 26.5, z 32…62 | 3S 4000–4500 mAh hard case ≤ 145 × 50 × 30 (5000 mAh packs found are too tall or too long) |
 | Fuse + distribution | under the deck, x −180…−146 (behind the battery) | 20 A blade fuse, XT30/Wago; XT60 arming plug in the rear wall |
 | Deck (removable) | z 79…82 | Pi 5 (USB end to the rear), 2 regulators beside the mast socket, 2 ESCs zip-tied at the rear, **ESP32 slide-in cradle printed on** (x −195, PCB 30 mm above the deck so the jumper plugs on its downward pins clear), 10 mm M3 grid |
 | HC-SR04 "eyes" | front, z 102, tilted up 12°, mounted upside down | ground return at 1.95 m (> `slow_distance` 1.0 m); plug rises behind the bracket into the wall hole at z 131 |
@@ -288,11 +288,12 @@ MG996R body · HTD-3M pitch diameters · HTD 510-3M-09 and 258-3M belts are stoc
 | M3 screws (shell 4, deck 4, motor plates 6, belt pull 2 × M3 × 25, HC-SR04 2), M4 thumb screws (mast 2, door 2) | | |
 | Pololu D36V50F5 (5 V, Pi) + D36V50F6 (6 V, servo) | 1 + 1 | |
 | XT60 pigtails, 20 A blade fuse holder, panel XT60 as arming plug | | pull the plug = everything off |
+| 3S balance charger (XT60), LiPo low-voltage alarm (balance lead), LiPo charging bag, 12 AWG silicone wire, 1000 µF 16 V capacitor (servo) | | power and charging extras (not printed parts) |
 | MG996R or DS3218 servo + 470–1000 µF cap | 1 | |
 | Right-angle USB-A cables (USB-C GoPro, micro-USB ESP32) | 2 | |
 | SunFounder ESP32 camera extension board + 4 × M2 × 10–16 screws + 4 heat-set inserts (owned; same 3.6 mm hole as the Pi standoffs) | 1 | screws pass the board and the printed spacers into the inserts |
 | **GY-521 (MPU6050) gyro breakout**, 3.3 V-capable, ~21 × 16 mm with 2 mounting holes + 4 female–female Dupont jumpers (~10 cm) | 1 | needed for the firmware yaw-rate loop (turning) and the side view. Mounted on the printed `gyro_mount`: 2 × **M3 × 10 + 2 × M3 nyloc** through two existing deck grid holes (x −141, y ±10), board on 2 × M2 × 6–8 screws into 2 heat-set inserts (the owner's M2 ones, 3.6 mm hole). **Measure the board** (outline, hole spacing ~15.2 mm) and set `gy_board_*`, `gy_hole_*` in PARAMS before printing. Wires: VCC → 3V3, GND, SDA → GPIO 21, SCL → GPIO 22. Chip side up → `GYRO_SIGN` +1 |
-| 3S 5000 mAh hard case ≤ 145 × 50 × 30 | 1 | |
+| **3S 4000–4500 mAh hard case, XT60, ≤ 145 × 50 × 30 mm** (e.g. HRB 3S 4000 60C 135 × 42 × 25 or its 4500 mAh option 136 × 45 × 27; Gens ace 3S 4000 G-Tech 131 × 43 × 24) | 1 | Updated 2026-11-19: no 3S 5000 hard case found fits (common ones are 138 × 46 × 38 or 155 × 48 × 24). ~10–20 % less run time than 5000. The pack is shorter and narrower than the tunnel: **pack the gap in front of the door prongs (~10 mm) and the sides with foam** so it cannot slide. Check the seller's dimensions; CAD keeps the 145 × 50 × 30 envelope and 0.40 kg |
 
 ## 6b. Prototype kit: drive it before buying the metal
 

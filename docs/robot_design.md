@@ -158,7 +158,7 @@ listed material prints natively.
 ### Battery and charger (≈ $80–120, reusable)
 | Item | Price | Notes / link |
 |---|---|---|
-| 3S 5000 mAh LiPo, 50C, hard case | **$48–75** | [Gens Ace 3S 5000 50C $60.99–74.99](https://hobby-sports.com/products/gens-ace-3s-lipo-battery-50c-w), [Zeee 3S 5200 $47.82](https://rcdrone.top/products/zeee-3s-5200mah-battery). ~55 Wh ≈ 1 h of following with the Pi on. |
+| 3S 5000 mAh LiPo, 50C, hard case (**superseded 2026-11-19: 3S 4000–4500 mAh, see chassis_cad.md BOM; no 5000 fits the tunnel**) | **$48–75** | [Gens Ace 3S 5000 50C $60.99–74.99](https://hobby-sports.com/products/gens-ace-3s-lipo-battery-50c-w), [Zeee 3S 5200 $47.82](https://rcdrone.top/products/zeee-3s-5200mah-battery). ~55 Wh ≈ 1 h of following with the Pi on. |
 | Balance charger (1–6S) | **$30–60** | [HTRC C150 $57.99](https://pyrodrone.com/products/htrc-lipo-charger-1-6s-ac-dc-c150-for-nicd-li-ion-life-nimh-lihv-pb-smart-battery), [SkyRC iMAX B6AC V2 ~$60](https://motionrc.com/collections/skyrc-battery-chargers/products/skyrc-b6ac-v2-50w-6-cell-6s-ac-dc-lipo-battery-charger-sk-100008-01) (Pololu warns about counterfeits); DC-only B6 clones ~$25–30. |
 
 ### Later (see hardware_plan.md)

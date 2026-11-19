@@ -36,7 +36,8 @@ PARAMS = {
     # tub (main printed body, PAHT-CF)
     "tub_x0": -242.0, "tub_x1": 58.0, "tub_hw": 62.0, "wall": 4.0, "floor_z0": 28.0, "floor_t": 4.0,
     "tub_top": 145.0, "front_t": 6.0, "rear_t": 6.0,
-    # battery: 3S 5000 mAh hard case. Tunnel fits <= 145 x 50 x 30 [M]
+    # battery: 3S 4000-4500 mAh hard case (no 5000 mAh hard case found fits). Tunnel fits <= 145 x 50 x 30 [M];
+    # the model keeps that envelope and the 5000 mAh class mass (0.40 kg; real 4000-4500 packs ~0.29-0.32 kg)
     "bat_l": 145.0, "bat_w": 50.0, "bat_h": 30.0, "bat_x0": -141.0,
     # electronics deck (removable tray, PETG or PAHT-CF)
     "deck_z0": 79.0, "deck_t": 3.0, "grid_pitch": 10.0,
@@ -958,7 +959,7 @@ def build_model(P=None):
                mates={"idler_" + side, "belt2_" + side, "tub"})
         m.info.setdefault("idler", {})[side] = (P["idler_x"], iz_hi)
     m.part("battery", H, COL["battery"], [box(P["bat_x0"], P["bat_x0"] + P["bat_l"], -P["bat_w"] / 2, P["bat_w"] / 2, zf1, zf1 + P["bat_h"])],
-           mass=0.40, mates={"tub", "bumper_door"}, note="3S 5000 mAh hard case <= 145 x 50 x 30 [M]")
+           mass=0.40, mates={"tub", "bumper_door"}, note="3S 4000-4500 mAh hard case <= 145 x 50 x 30 [M]; foam the gap to the door prongs")
     m.part("pi5", H, COL["pcb_green"], [box(pi_x0, pi_x1, -28, 28, dz1 + 6, dz1 + 7.6),
                                         box(pi_x0 + 20, pi_x0 + 70, -24, 24, dz1 + 7.6, dz1 + 22)], mass=0.07,
            mates={"deck"}, note="Raspberry Pi 5 + Active Cooler on the deck's printed 6 mm standoffs")
