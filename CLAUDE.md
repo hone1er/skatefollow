@@ -50,7 +50,7 @@ Hard requirements that shape every decision:
 | Trig | GPIO 5 |
 | Echo | 1 kΩ → GPIO 18, and 2 kΩ from GPIO 18 → GND (5 V → 3.3 V divider) |
 
-Onboard LED = GPIO 2 (firmware 2.2.1: on = someone may drive, slow blink = fail-safe with Pi link, fast blink = remote STOP/lost). Pins used: 2, 5, 18, 25, 26, 27.
+Onboard LED = GPIO 2 (firmware 2.2.1: on = someone may drive, slow blink = fail-safe with Pi link, fast blink = remote STOP/lost). Pins used: 2, 5, 18, 25, 26, 27; 21/22 = I2C to an optional MPU6050 gyro (2.3.0 yaw loop, not bought/wired).
 The USB chip is a **CP2102 (bcdDevice 1.00, serial "0001")**: closing the port blocks ~5 s (see gotchas).
 
 ### Wiring (pan servo ↔ ESP32, GoPro ↔ Pi) — planned, see `docs/camera_plan.md` §2
@@ -108,7 +108,7 @@ honebot_ws/
 ├── .github/workflows/ci.yml          GitHub Actions: pytest per package, firmware host tests, CAD stub test (green 2026-11-17)
 ├── scripts/pi_setup.sh               Pi housekeeping (setserial, udev rule, honebot.service); owner runs it, it asks for sudo
 ├── firmware/
-│   ├── esp32_ultrasonic/             robot ESP32 firmware v2.2.1: .ino + drive_logic.h (pure decisions) + honebot_link.h
+│   ├── esp32_ultrasonic/             robot ESP32 firmware v2.3.0: .ino + drive_logic.h (pure decisions) + honebot_link.h
 │   ├── esp32_remote/                 handheld remote v1.0.0: .ino + remote_logic.h + honebot_link.h (identical copy)
 │   └── tests/run_tests.sh            g++ host tests of the pure logic + stub syntax check of both sketches
 └── src/
@@ -322,6 +322,14 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   pivot is only ~2 % per side and would otherwise do nothing. Owner measures it in `docs/first_drive.md` Stage 1.
 - `P,<pan>` → GPIO 27 as before (`PAN_RATE_PER_S` 3.0), independent of fail-safe.
 - `handleLine()` is the place to add new serial commands.
+- **2.3.0 (2026-11-19): gyro yaw-rate loop, `YAW_LOOP_ENABLED` default false** (off / no gyro / bad read = exactly
+  2.2.1). `drive::yawLoop` (pure, host-tested): w_cmd = (b−a)·FULL_SCALE_MPS/YAW_TRACK_WIDTH (0.39, must equal
+  robot.yaml track_width; sim test checks), PI kp 0.12 ki 0.8, adds only the left/right difference (mean kept),
+  capped YAW_MAX_CORR 0.2; trips to open loop until the next fail-safe on wrong-way gyro 150 ms or pinned 1 s.
+  MPU6050 on SDA 21/SCL 22 at 0x68, ±1000 dps, 200 Hz, `Wire.setTimeOut(2)`, bias averaged in the 2 s arming window,
+  `GYRO_SIGN`. With the loop usable the stick asks for a yaw rate (MANUAL_MAX_YAW 3 rad/s, expo 0.5). Prints
+  `G,<yaw>,<usable>` at 10 Hz (bridge ignores). S line now reports the post-loop outputs. Sign check: first_drive.md
+  Stage 1 step 7. Never run on hardware; tuned in the sim only.
 
 ## 6. Verified results
 
@@ -530,13 +538,16 @@ valid only for the tricycle variant or an RC car.
   `--spin-test`, `--profile target`, `--yaw-loop` (prototype), `--set node.param=v`, `--fw CONST=v`.
   `--remote /dev/cu.usbserial-X --view` drives the sim with the REAL handheld remote over USB (its 20 Hz status line
   `state=RUN x= y=` stands in for ESP-NOW; remote `PRINT_PERIOD_MS` 200 → 50 for this), `--keys --view` = arrow keys;
-  scenario `playground`. 29 tests in `sim/tests`, CI job `sim`. Viewer and offscreen rendering untested here (no OpenGL in the cloud
+  scenario `playground`. Owner reported (2026-11-19, sim + real remote): without the loop the stick only turns near
+  full side deflection then pivots hard; with `--yaw-loop` turning is proportional (20°→0.35, 45°→1.4, 90°→3 rad/s).
+  `--gyro-fault sign|stuck|dead` tests the fallbacks (no contact in any). Sim also models 50 Hz PWM frames.
+  41 tests in `sim/tests`, CI job `sim`. Viewer and offscreen rendering untested here (no OpenGL in the cloud
   container); everything headless was run.
 - **Findings:** today's config passes straight-line/stop/obstacle scenarios safely (never touches the skater) but
   (model prediction, robust to contact model and friction 0.5–0.8; real tyres creep, so expect heavy understeer;
   the real spin test settles it) **barely turns on small commands**: voltage-mode ESCs give current ∝ voltage difference, scrub needs ~10 A per
   motor, the follower's 0.5–3 rad/s requests give 1–5 A → no yaw; slalom/U-turn/circle lose the skater. A gyro
-  yaw-rate PI loop on the ESP32 (`--yaw-loop`, NOT in the firmware) makes 11/11 pass; effective track 2–2.7×
+  yaw-rate PI loop on the ESP32 (firmware 2.3.0, off by default; `--yaw-loop` turns it on in the sim) makes 11/11 pass; effective track 2–2.7×
   geometric (robot.yaml guesses 1.4×). `--profile target` (12 m lidar tilted up 1°, max_linear 7.5,
   THROTTLE_LIMIT 1.0) + yaw loop reaches 15 mph and stops ~1 m short of a dead-stopped skater. A level TFmini at
   10 cm sees the road at 5.9 m and caps speed.

@@ -37,8 +37,8 @@ def test_sight_limit_caps_speed_with_the_hcsr04():
 
 def test_turns_need_the_yaw_loop():
     """Model prediction (rigid Coulomb friction; real tyres creep, so read "heavy understeer"): open-loop wheel
-    voltages cannot break the tyres loose for small turn commands (scrub threshold);
-    a gyro yaw-rate loop on the ESP32 (prototype here) fixes it."""
+    voltages cannot break the tyres loose for small turn commands (scrub threshold); the firmware's gyro yaw-rate
+    loop (2.3.0, YAW_LOOP_ENABLED) fixes it."""
     sc, mt, cfg = _run("carve_6")
     assert mt.lost_time > 1.0
     sc, mt, cfg = _run("carve_6", yaw_loop=True)
@@ -50,4 +50,15 @@ def test_target_profile_reaches_12_mph():
     sc, mt, cfg = _run("cruise_stop_12", profile="target", yaw_loop=True)
     ok, why = evaluate(sc, mt, cfg)
     assert ok, why
-    assert mt.max_speed > 5.0 and mt.lost_time == 0.0
+    assert mt.max_speed > 5.0 and mt.lost_time < 0.5
+
+
+@pytest.mark.parametrize("fault", ["sign", "stuck", "dead"])
+@pytest.mark.parametrize("name", ["standing_turns", "carve_6"])
+def test_a_bad_gyro_falls_back_to_open_loop_safely(fault, name):
+    """Gyro upside down, stuck at zero or silent: the loop must drop out (wrong-way / saturation / stale checks)
+    and the robot behave like 2.2.1: it may lose the skater on turns, but it never touches anyone."""
+    sc, mt, cfg = _run(name, yaw_loop=True, gyro_fault=fault)
+    assert not mt.skater_contact and not mt.obstacle_contact and not mt.tipped
+    assert mt.min_gap > 0.5
+

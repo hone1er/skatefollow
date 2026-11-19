@@ -76,3 +76,38 @@ def test_real_remote_lines_over_a_serial_port():
         rs.close()
         os.close(master)
         os.close(slave)
+
+
+class _Fixed:
+    def __init__(self):
+        self.v = ("run", 0.0, 0.0)
+
+    def poll(self):
+        return self.v
+
+
+def _stick_yaw(angle_deg, yaw_loop):
+    sim, cfg, sc = make("playground", yaw_loop=yaw_loop)
+    sim.path.at = lambda t: (80.0, 80.0, 0.0, 0.0)
+    r = _Fixed()
+    sim.remote_input = r
+    while sim.t < 2.5:
+        sim.step()
+    a = math.radians(angle_deg)
+    r.v = ("run", math.cos(a), math.sin(a))
+    yaws = []
+    while sim.t < 7.5:
+        sim.step()
+        if sim.t > 5.5:
+            yaws.append(sim.d.qvel[5])
+    return sum(yaws) / len(yaws)
+
+
+def test_stick_turns_gently_with_the_yaw_loop():
+    """With the gyro loop the side stick asks for a yaw rate: a diagonal turns gently, full side = MANUAL_MAX_YAW.
+    Without it (2.2.1 behaviour) a diagonal goes straight (scrub threshold, a model prediction)."""
+    assert abs(_stick_yaw(45, yaw_loop=False)) < 0.1
+    y20, y45, y90 = (_stick_yaw(a, yaw_loop=True) for a in (20, 45, 90))
+    assert 0.1 < y20 < y45 < y90
+    assert y90 == pytest.approx(3.0, abs=0.4)
+

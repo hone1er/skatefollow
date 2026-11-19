@@ -40,4 +40,17 @@ void hb_arcade_mix(float f, float t, float limit, float turnScale, float *l, flo
   drive::arcadeMix(f, t, limit, turnScale, l, r);
 }
 
+void *hb_yaw_state_new() { return new drive::YawState(); }
+void hb_yaw_state_free(void *s) { delete static_cast<drive::YawState *>(s); }
+void hb_yaw_state_reset(void *s) { static_cast<drive::YawState *>(s)->reset(); }
+int hb_yaw_state_tripped(void *s) { return static_cast<drive::YawState *>(s)->tripped ? 1 : 0; }
+
+void hb_yaw_loop(void *state, float kp, float ki, float maxCorr, float fullScale, float track, unsigned satMs,
+                 unsigned wrongWayMs, int active, float gyroZ, unsigned nowMs, float dt, float *a, float *b) {
+  drive::YawConfig c = {kp, ki, maxCorr, fullScale, track, satMs, wrongWayMs};
+  drive::yawLoop(c, static_cast<drive::YawState *>(state), active != 0, gyroZ, nowMs, dt, a, b);
+}
+
+float hb_expo(float v, float e) { return drive::expo(v, e); }
+
 }  // extern "C"

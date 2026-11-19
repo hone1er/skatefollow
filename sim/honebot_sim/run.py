@@ -53,7 +53,7 @@ def evaluate(sc, mt, cfg):
     return not fails, fails
 
 
-def make(name, profile="today", seed=0, log=False, fw=None, ros=None, **overrides):
+def make(name, profile="today", seed=0, log=False, fw=None, ros=None, yaw_loop=False, **overrides):
     """fw: {CONST: value} firmware overrides; ros: {node: {param: value}} robot.yaml overrides."""
     p = PROFILES[profile]
     if p["sensor"]:
@@ -66,6 +66,8 @@ def make(name, profile="today", seed=0, log=False, fw=None, ros=None, **override
     for node, params in (ros or {}).items():
         stack.setdefault(node, {}).update(params)
     firmware = dict(p["firmware"]); firmware.update(fw or {})
+    if yaw_loop:
+        firmware["YAW_LOOP_ENABLED"] = True
     return Sim(cfg, sc, seed=seed, stack_overrides=stack, firmware_overrides=firmware, log=log), cfg, sc
 
 
@@ -108,8 +110,10 @@ def summary_row(name, sc, mt, ok, why):
 
 def run_one(name, args):
     fw, ros = parse_overrides(args.fw, args.set)
+    if args.yaw_loop:
+        fw["YAW_LOOP_ENABLED"] = True
     sim, cfg, sc = make(name, args.profile, args.seed, log=bool(args.csv or args.plot), fw=fw, ros=ros, friction=args.friction,
-                        yaw_loop=args.yaw_loop)
+                        gyro_fault=args.gyro_fault)
     if args.remote or args.keys:
         if not args.view:
             print("--remote and --keys drive the robot live: add --view")
@@ -212,12 +216,13 @@ def spin_test(args):
     """Pivot in place: command yaw rates through the bridge (track_width from robot.yaml) and the firmware, and
     measure what the physics does. Shows the scrub breakaway and the effective track width."""
     from .skater import Scenario, Segment
-    cfg = load_config(friction=args.friction, yaw_loop=args.yaw_loop)
-    print("spin test, tyre friction %.2f (a guess), yaw loop %s" % (cfg.friction, "ON (prototype)" if args.yaw_loop else "off"))
+    cfg = load_config(friction=args.friction, gyro_fault=args.gyro_fault)
+    fw = {"YAW_LOOP_ENABLED": True} if args.yaw_loop else {}
+    print("spin test, tyre friction %.2f (a guess), firmware yaw loop %s" % (cfg.friction, "ON" if args.yaw_loop else "off"))
     print("  commanded   achieved   wheel speed diff   effective track   motor current")
     for w_cmd in (0.5, 1.0, 2.0, 3.0, 4.0, 6.0):
         sc = Scenario("spin", "spin test", [Segment(6.0, 0.0)], robot_start=(0.0, 0.0, 0.0), settle=0.0)
-        sim = Sim(cfg, sc)
+        sim = Sim(cfg, sc, firmware_overrides=fw)
         sim.path.at = lambda t: (50.0, 50.0, 0.0, 0.0)
         sim.pi.follower_tick = lambda t: None
         acc = []
@@ -255,7 +260,9 @@ def main(argv=None):
                     help="drive with the real handheld remote plugged in by USB, e.g. /dev/cu.usbserial-XXXX (needs --view)")
     ap.add_argument("--keys", action="store_true", help="drive with the arrow keys in the viewer (needs --view)")
     ap.add_argument("--yaw-loop", action="store_true",
-                    help="PROTOTYPE: closed-loop yaw rate with a gyro on the ESP32 (not in the firmware yet)")
+                    help="firmware 2.3.0 gyro yaw-rate loop ON (= YAW_LOOP_ENABLED true, a gyro fitted)")
+    ap.add_argument("--gyro-fault", choices=["none", "sign", "stuck", "dead"], default="none",
+                    help="with --yaw-loop: gyro mounted upside down, stuck at zero, or not answering")
     ap.add_argument("--fw", action="append", metavar="CONST=VALUE",
                     help="override a firmware constant, e.g. --fw ESC_DEADBAND=0.12 (repeatable)")
     ap.add_argument("--set", action="append", metavar="NODE.PARAM=VALUE",

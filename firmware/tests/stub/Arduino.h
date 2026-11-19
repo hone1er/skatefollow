@@ -32,6 +32,7 @@ struct SerialStub {
   int available();
   int read();
   int printf(const char *, ...) __attribute__((format(printf, 2, 3)));
+  void println(const char *);
 };
 extern SerialStub Serial;
 struct portMUX_TYPE { int x; };

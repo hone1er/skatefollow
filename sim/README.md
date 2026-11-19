@@ -49,7 +49,7 @@ The first run compiles the firmware logic with Xcode's command-line tools (alrea
 cd sim && ~/honebot-sim/bin/python -m pytest -q tests
 ```
 
-You should see `29 passed`.
+You should see `41 passed`.
 
 ## Use it (from the `sim` folder)
 
@@ -115,11 +115,22 @@ Close the Arduino serial monitor first, because only one program can use the por
 Click the 3-D view, press **R** for RUN, then use the **arrow keys** (each press moves the virtual stick 0.2)
 and **Space** to centre it.
 
+**Gentle turns need `--yaw-loop`.** Without it (today's firmware settings), the robot goes straight until the
+stick is nearly sideways and then pivots hard: a diagonal does not give the tyres enough left/right difference to
+slide (see "What it found"). With the firmware's gyro loop on, the side stick asks for a turn *rate*: 20° of stick
+turns at 0.35 rad/s, 45° at 1.4, full side at 3 (`MANUAL_MAX_YAW`). The real robot needs an MPU6050 for this
+(firmware README).
+
+```bash
+~/honebot-sim/bin/mjpython -m honebot_sim.run playground --view --remote /dev/cu.usbserial-XXXX --yaw-loop
+```
+
 Any scenario works with `--remote` or `--keys`: take over from the follower in `carve_6`, or press STOP mid-run
 and watch the fail-safe ramp.
 
 Other options: `--list` (scenarios), `--spin-test` (turn-rate sweep), `--profile target` (what 12–15 mph needs),
-`--yaw-loop` (prototype gyro loop), `--friction 0.6`, `--seed 3` (different sensor noise).
+`--yaw-loop` (the firmware's gyro loop on, as if an MPU6050 were fitted), `--gyro-fault sign|stuck|dead`,
+`--friction 0.6`, `--seed 3` (different sensor noise).
 
 ## What it found (2026-11-19)
 
@@ -142,7 +153,7 @@ With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of
    or 0.13 it lifts *every* wheel command, so the robot drove faster than the follower asked, hit the box in
    `obstacle` and, at 0.13, the skater in `cruise_stop_8`. Keep it for the ESC's own dead zone only.
 4. **A yaw-rate loop fixes it.** With a gyro on the ESP32 and a PI loop that adds the missing wheel difference
-   (`--yaw-loop`, a prototype here, not in the firmware), all 11 scenarios pass. The spin test then tracks the
+   (firmware 2.3.0, `YAW_LOOP_ENABLED`, off by default; `--yaw-loop` here), all 11 scenarios pass. The spin test then tracks the
    command to within 0.05 rad/s at about 10 A. The effective track width comes out at 2–2.7 × geometric,
    not the 1.4 × guessed in `robot.yaml`. A gyro is a few dollars: an MPU6050 breakout on the ESP32's I2C, or
    the one on the Crius board.
@@ -164,10 +175,10 @@ sim/
 │   ├── sensors.py     HC-SR04 / TFmini rays, UWB AoA, camera detector
 │   ├── stack.py       the Pi software (follower, gate, bridge, uwb_node, camera_aim), on the sim clock
 │   ├── skater.py      scenarios
-│   ├── sim.py         the closed loop + metrics + the prototype yaw loop
+│   ├── sim.py         the closed loop + metrics + the gyro model (noise, bias, faults) + 50 Hz PWM frames
 │   ├── remote_link.py the handheld remote over USB, or the keyboard, as the radio link
 │   └── run.py         command line, viewer, plots, spin test
-└── tests/             29 tests (also in CI)
+└── tests/             41 tests (also in CI)
 ```
 
 The compiled firmware library is cached in `sim/.cache/` (git-ignored) and rebuilt whenever `drive_logic.h`

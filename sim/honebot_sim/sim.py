@@ -90,8 +90,13 @@ class Sim:
         self.log = [] if log else None
         self.skater_state = (0.0, 0.0, 0.0, 0.0)
         self.remote_input = None
-        yl = cfg.overrides.get("yaw_loop")
-        self.yaw_loop = YawLoop(fw, self.pi.dd.track_width, self.rng) if yl else None
+        # gyro (MPU6050) as the firmware sees it: 200 Hz, 0.05 rad/s noise, a constant bias the firmware calibrates
+        # away during the arming window; faults for testing: sign (mounted upside down), stuck (reads 0), dead
+        self.gyro_fault = cfg.overrides.get("gyro_fault", "none")
+        self.gyro_bias = float(self.rng.normal(0.0, 0.03))
+        self.next_gyro = 0.0
+        self.pwm_hold = (0.0, 0.0)            # servo PWM: the ESCs see a new pulse width once per 20 ms frame
+        self.next_pwm = 0.0
 
     # ----------------------------------------------------------------------------------------------------
     def _move_skater(self, t):
@@ -156,12 +161,16 @@ class Sim:
         if self.remote_input is not None:      # real remote over USB, or the keyboard: stands in for the radio
             esp.remote, fwd, turn = self.remote_input.poll()
             esp.stick = (fwd, turn)
+        if t >= self.next_gyro:
+            self.next_gyro += esp.k.get("GYRO_PERIOD_MS", 5.0) / 1000.0
+            w = float(d.qvel[5]) + self.gyro_bias + float(self.rng.normal(0.0, 0.05))
+            w = {"sign": -w, "stuck": 0.0, "dead": None}.get(self.gyro_fault, w)
+            esp.gyro_read(w if w is None else w * esp.k.get("GYRO_SIGN", 1.0), self.ms)
         esp.update(self.ms)
-        ua, ub = esp.wheel_outputs()
-        if self.yaw_loop is not None and not esp.failsafe:
-            ua, ub = self.yaw_loop.apply(esp, ua, ub, d.qvel[5], m.opt.timestep)
-        elif self.yaw_loop is not None:
-            self.yaw_loop.reset()
+        if t >= self.next_pwm:
+            self.next_pwm += 0.02
+            self.pwm_hold = esp.wheel_outputs()
+        ua, ub = self.pwm_hold
         wl, wr = d.qvel[self.jFL], d.qvel[self.jFR]
         d.ctrl[0] = self.motors[0].torque(ua, wl)
         d.ctrl[1] = self.motors[1].torque(ub, wr)
@@ -241,29 +250,3 @@ class Sim:
             if self.t >= hard and still >= 1.0:
                 break
         return self.metrics
-
-
-class YawLoop:
-    """PROTOTYPE, NOT IN THE FIRMWARE: closed-loop yaw rate on the ESP32 from a gyro (e.g. the MPU6050 on the
-    Crius board). The commanded yaw rate is read back from the two wheel channels the way the bridge built them;
-    a PI term adds the differential the tyres need to start scrubbing. Gyro: 0.05 rad/s noise, 500 Hz."""
-
-    def __init__(self, fw, track_width, rng, kp=0.12, ki=0.8, limit=0.35):
-        self.full = fw["FULL_SCALE_MPS"]
-        self.track = track_width
-        self.rng = rng
-        self.kp, self.ki, self.limit = kp, ki, limit
-        self.i = 0.0
-
-    def reset(self):
-        self.i = 0.0
-
-    def apply(self, esp, ua, ub, yaw_rate, dt):
-        w_cmd = (esp.out_b - esp.out_a) * self.full / self.track
-        e = w_cmd - (yaw_rate + self.rng.normal(0.0, 0.05))
-        if abs(esp.out_a) < 1e-3 and abs(esp.out_b) < 1e-3:
-            self.i = 0.0
-            return ua, ub
-        self.i = max(-self.limit, min(self.limit, self.i + self.ki * e * dt))
-        c = max(-self.limit, min(self.limit, self.kp * e + self.i))
-        return max(-1.0, min(1.0, ua - c)), max(-1.0, min(1.0, ub + c))
