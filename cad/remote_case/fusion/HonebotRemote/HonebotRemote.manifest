@@ -1,0 +1,10 @@
+{
+	"autodeskProduct":	"Fusion360",
+	"type":	"script",
+	"author":	"honebot",
+	"description":	{
+		"":	"Generates the honebot handheld remote case (printed parts + reference hardware)"
+	},
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}

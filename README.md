@@ -322,6 +322,16 @@ re-encode). See `src/honebot_camera/README.md` and `docs/camera_plan.md`.
 is always up before anything that can produce motion. A systemd unit runs bringup at boot; a `record`
 launch wraps `ros2 bag record -a`. Foxglove on the Mac is the dashboard; no GUI runs on the Pi.
 
+### 7.6 Handheld remote in turtlesim (`honebot_remote_bridge`)
+
+On the robot the handheld remote talks only to the robot ESP32 (ESP-NOW), and the firmware decides who drives:
+nobody in STOP or when the remote is lost, the stick when it is pushed in RUN, the Pi (follow-bot code) otherwise.
+`honebot_remote_bridge` brings that into turtlesim before the robot exists. `source:=serial` reads the remote board
+over USB and applies the same rules in Python (`remote_logic.Arbiter`, a port of `drive::decide`);
+`source:=esp32` mirrors the robot ESP32's real wheel outputs (`/esp32/outputs` from `esp32_bridge`). With
+`follow:=true` turtle1 is the skater and turtle2 the robot: the follower drives it and the remote overrides it.
+Guide: `docs/remote_turtlesim.md`.
+
 ---
 
 ## 8. Conventions used everywhere
@@ -438,6 +448,18 @@ ros2 run turtlesim turtle_teleop_key                                            
 ```
 Cover the ultrasonic sensor with your hand: the chasing turtle freezes. Unplug the ESP32: it freezes.
 
+### Handheld remote + follow bot in turtlesim (HDMI console, from `~/honebot_ws`)
+Checks the setup, then launches. `fake` needs no ESP32 and runs an automatic PASS/FAIL check; `serial` = remote
+board on USB, `esp32` = robot ESP32 on USB with the remote by radio. `follow` adds the follow bot on turtle2,
+overridden by the remote. Guide: `docs/remote_turtlesim.md`.
+```bash
+tests/test_esp32_remote.sh fake follow
+```
+```bash
+tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
+```
+Flash the remote from the Mac first: `scripts/flash_remote.sh <remote_port> [robot_port]`.
+
 ### Gamepad teleop (after bringup is running)
 ```bash
 ros2 launch honebot_bringup teleop_joy.launch.py            # xbox layout; joy_config:=ps5 etc.
@@ -489,15 +511,18 @@ honebot_ws/
 ├── cad/                           chassis: Fusion script + offline checks (docs/chassis_cad.md)
 ├── sim/                           MuJoCo physics simulator of the whole robot (+ README)
 ├── scripts/pi_setup.sh            Pi housekeeping (udev rule, auto-start service)
+├── scripts/flash_remote.sh        Mac: flash the handheld remote (and robot ESP32), then print the checks
 ├── firmware/esp32_ultrasonic/     robot ESP32 sketch (+ README)
 ├── firmware/esp32_remote/         handheld remote sketch: kill switch + manual drive (+ README)
-├── firmware/tests/                PC tests of the firmware logic
+├── firmware/tests/                PC (host g++) tests of the firmware logic, run by CI
+├── tests/                         hand-run ROS checks: remote + follow bot in turtlesim, fake remote (+ README)
 └── src/
     ├── honebot_follow/            follow-me controller; turtlesim demo; simulated UWB     (+ README)
     ├── honebot_safety/            safety gate between controller and motors              (+ README)
     ├── honebot_hardware/          ESP32 serial bridge; Twist → wheel/steer conversion    (+ README)
     ├── honebot_uwb/               UWB serial → relative target                           (+ README)
     ├── honebot_camera/            GoPro/webcam in, person detection, pan-servo aiming    (+ README)
+    ├── honebot_remote_bridge/     handheld remote (+ follow bot) in turtlesim            (+ README)
     └── honebot_bringup/           launch files, config/robot.yaml, systemd unit          (+ README)
 ```
 Each package: `honebot_<name>/` (Python module), `launch/`, `test/`, `setup.py`, `package.xml`.

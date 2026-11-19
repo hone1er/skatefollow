@@ -3,7 +3,10 @@
 ESP32 -> Pi (published):
   R,<m>,<link>   ->  ultrasonic/range   sensor_msgs/Range    (+inf when nothing is in range)
                      esp32/link_ok      std_msgs/Bool        (ESP32 hears our heartbeat)
-  S,<fs>,<t>,<s> ->  esp32/failsafe     std_msgs/Bool        (ESP32 is forcing neutral)
+  S,<fs>,<a>,<b> ->  esp32/failsafe     std_msgs/Bool        (ESP32 is forcing neutral)
+                     esp32/outputs      geometry_msgs/Vector3 what the ESP32 really outputs, from the stick or
+                                        the Pi: x = a (left wheel / throttle), y = b (right wheel / steer),
+                                        z = 1.0 in failsafe. 10 Hz.
   V,<version>    ->  logged             (firmware version banner at boot)
   K,<req>,<remote>,<source> (firmware >= 2.2.0, handheld remote / kill switch)
                  ->  esp32/remote       std_msgs/String      never | lost | stop | run
@@ -77,6 +80,7 @@ class Esp32Bridge(Node):
         self.link_pub = self.create_publisher(Bool, 'esp32/link_ok', 10)
         self.failsafe_pub = self.create_publisher(Bool, 'esp32/failsafe', 10)
         self.act_pub = self.create_publisher(Vector3, 'esp32/actuators', 10)
+        self.outputs_pub = self.create_publisher(Vector3, 'esp32/outputs', 10)
         self.remote_pub = self.create_publisher(String, 'esp32/remote', 10)
         self.manual_pub = self.create_publisher(Bool, 'esp32/manual', 10)
         self.create_subscription(Twist, 'cmd_vel', self._on_cmd, 10)
@@ -215,6 +219,14 @@ class Esp32Bridge(Node):
             self._publish_link(link_ok)
         elif parts[0] == 'S' and len(parts) >= 2:
             self._publish_failsafe(parts[1] == '1')
+            if len(parts) == 4:
+                try:
+                    a, b = float(parts[2]), float(parts[3])
+                except ValueError:
+                    self._bad(line)
+                    return
+                # What the ESP32 is really outputting (stick or Pi, after kill switch, ramps and limits).
+                self.outputs_pub.publish(Vector3(x=a, y=b, z=1.0 if parts[1] == '1' else 0.0))
         elif parts[0] == 'K' and len(parts) == 4:
             self._publish_remote(parts[1] == '1', parts[2], parts[3])
         elif parts[0] == 'V' and len(parts) == 2:

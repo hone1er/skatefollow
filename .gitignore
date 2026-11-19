@@ -7,11 +7,13 @@ log/
 __pycache__/
 *.pyc
 *.egg-info/
+.pytest_cache/
 
 # editors / OS
 .vscode/
 *.swp
 .DS_Store
-__pycache__/
+
+# generated meshes (cad/check_mesh.py)
 cad/stl/
 sim/.cache/

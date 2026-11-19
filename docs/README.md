@@ -9,14 +9,17 @@
 | [`hardware_plan.md`](hardware_plan.md) | UWB, power and radio choices with prices |
 | [`camera_plan.md`](camera_plan.md) | GoPro modes, pan servo wiring, detector model |
 | [`../sim/README.md`](../sim/README.md) | Physics simulator (MuJoCo, runs on the Mac): try settings before the robot exists, and what it found |
+| [`remote_turtlesim.md`](remote_turtlesim.md) | Testing the handheld remote and the follow-bot code in turtlesim before the robot exists |
+| [`remote_case.md`](remote_case.md) | Printed case for the handheld remote (ESP32 + joystick + LiPo + switch): parts, wiring, print settings, assembly. Script `cad/remote_case/fusion/HonebotRemote/HonebotRemote.py`, STLs in `cad/remote_case/stl/` |
 
 **The printed parts come from one script: `cad/fusion/HonebotChassis/HonebotChassis.py`** (message box:
-"built 86 of 86 parts"). The other Fusion scripts in this repo build different robots.
+"built 86 of 86 parts", including a hidden prototype kit). The handheld remote's case has its own script (see `remote_case.md`).
 
-## Other designs kept in the repo
+## Earlier plan
 
 | Path | What it is |
 |---|---|
 | [`robot_design.md`](robot_design.md) | The first chassis plan (two driven wheels + caster). Its power and ESC sections still apply; the layout does not |
-| [`robot_design_v2.md`](robot_design_v2.md), `cad/honebot_v2/` | "V2": two driven wheels + a servo-steered third wheel, sensored motors, lidar, folding mast, side-follow shots. A different robot from the one being printed. Its filming requirements (§1) are worth keeping in view: the offset follow and the sight-limited speed in the current software come from them |
-| `honebot_ws/` | An older copy of the workspace docs and an earlier chassis script (caster base, "ostrich legs"). `honebot_ws/CLAUDE.md` is an old handoff file: the current one is the `CLAUDE.md` at the repository root |
+
+Older designs (the servo-steered "V2" and an earlier copy of the workspace) were removed on 2026-11-18; they
+are in the git history before that date if ever needed.

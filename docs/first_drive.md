@@ -16,7 +16,7 @@ raised deliberately, not all at once.
 
 | Limit | Value now | Where it lives | What raises it |
 |---|---|---|---|
-| Obstacle sight | 2.7 m/s (6 mph) when the ultrasonic sensor reads the ground ahead; 3.8 m/s (8.5 mph) when it reads nothing | safety gate `sight_distance`, `brake_decel` in `config/robot.yaml` | A longer-range forward sensor (`docs/robot_design_v2.md` §1.6 and §4 list a 12 m ToF and a 2D lidar). Not a bigger number |
+| Obstacle sight | 2.7 m/s (6 mph) when the ultrasonic sensor reads the ground ahead; 3.8 m/s (8.5 mph) when it reads nothing | safety gate `sight_distance`, `brake_decel` in `config/robot.yaml` | A longer-range forward sensor (e.g. a ~12 m ToF sensor or a 2D lidar). Not a bigger number |
 | Follower top speed | 3.0 m/s | `max_linear` in `config/robot.yaml`, or `max_linear:=` on `film.launch.py` | Testing at each speed step |
 | Firmware throttle cap | command 0.5 ≈ 4.8 m/s no-load | `THROTTLE_LIMIT` in the robot sketch | Edit and reflash once the robot behaves |
 | Manual (stick) speed | ≈ 2.4 m/s | `MANUAL_LIMIT` in the robot sketch | Edit and reflash |

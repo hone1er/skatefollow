@@ -24,6 +24,17 @@ jobs:
             (cd "$pkg" && python -m pytest -q test)
           done
 
+  remote-tools:
+    name: Remote test tools against the fake remote (no ROS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyserial
+      - run: python tests/test_remote_basic.py --sim
+
   firmware:
     name: Firmware logic (host g++)
     runs-on: ubuntu-latest
@@ -40,6 +51,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python cad/tests/test_fusion_script.py
+      - run: python cad/remote_case/tests/test_remote_script.py
+      - run: pip install numpy && python cad/remote_case/check_remote.py --quick
 
   sim:
     name: Simulator (MuJoCo physics + real firmware logic + robot software)
