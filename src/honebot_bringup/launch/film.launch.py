@@ -5,6 +5,7 @@ Start it by hand, after robot.launch.py (or honebot.service) is running:
     ros2 launch honebot_bringup film.launch.py
     ros2 launch honebot_bringup film.launch.py max_linear:=2.0 follow_bearing:=0.45
     ros2 launch honebot_bringup film.launch.py camera:=false bag:=false        # follow only
+    ros2 launch honebot_bringup film.launch.py side_shot:=true                 # side view, config/side_shot.yaml
 
 The robot moves only while the handheld remote is in RUN. Ctrl-C here stops the follower; the safety gate
 then sees no commands and stops the robot.
@@ -12,6 +13,7 @@ then sees no commands and stops the robot.
 Arguments
   max_linear      top follow speed, m/s (default: config/robot.yaml, 3.0; the gate's sight limit also applies)
   follow_bearing  where to keep the skater, rad, + = left of the nose (default: config/robot.yaml)
+  side_shot       ride 2 m from the skater, 45 deg behind on their right (config/side_shot.yaml; default false)
   uwb_port        UWB board serial device
   camera          start the GoPro/webcam detector and the pan servo aim (default true)
   camera_source   'gopro', '/dev/videoN', URL or file
@@ -34,7 +36,11 @@ from launch_ros.substitutions import FindPackageShare
 
 def _movers(context):
     """uwb_node + follower. A launch argument overrides config/robot.yaml only when it was actually given."""
-    config = os.path.join(FindPackageShare('honebot_bringup').perform(context), 'config', 'robot.yaml')
+    share = FindPackageShare('honebot_bringup').perform(context)
+    config = os.path.join(share, 'config', 'robot.yaml')
+    follower_params = [config]
+    if context.launch_configurations.get('side_shot', 'false').lower() == 'true':
+        follower_params.append(os.path.join(share, 'config', 'side_shot.yaml'))
     overrides = {}
     for name in ('max_linear', 'follow_bearing'):
         value = context.launch_configurations.get(name, '')
@@ -44,7 +50,7 @@ def _movers(context):
         Node(package='honebot_uwb', executable='uwb_node', name='uwb_node', output='screen',
              parameters=[config, {'port': context.launch_configurations['uwb_port']}]),
         Node(package='honebot_follow', executable='follower', name='follower', output='screen',
-             parameters=[config, overrides] if overrides else [config]),
+             parameters=follower_params + ([overrides] if overrides else [])),
     ]
 
 
@@ -55,6 +61,8 @@ def generate_launch_description():
                               description='Top follow speed (m/s); empty = value in config/robot.yaml'),
         DeclareLaunchArgument('follow_bearing', default_value='',
                               description='Keep the skater at this bearing (rad, + = left); empty = config value'),
+        DeclareLaunchArgument('side_shot', default_value='false',
+                              description='Side view: 2 m, 45 deg behind on the right (config/side_shot.yaml)'),
         DeclareLaunchArgument('uwb_port', default_value='/dev/ttyUSB1', description='UWB board serial device'),
         DeclareLaunchArgument('camera', default_value='true', description='Start the camera detector and pan aim'),
         DeclareLaunchArgument('camera_source', default_value='gopro'),

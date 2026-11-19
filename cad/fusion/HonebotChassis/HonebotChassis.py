@@ -72,6 +72,16 @@ PARAMS = {
     "ext_standoff_h": 6.0,   # [D] printed spacer tube length (plain tube, no threads)
     "ext_spacer_od": 5.0, "ext_spacer_id": 2.4,   # [D] tube: M2 screw passes through
     "ext_cbore_d": 5.4, "ext_cbore_depth": 2.0,   # [D] spacer seat (0.2 mm per side): 6 mm tube -> 4 mm gap under the board
+    # GY-521 gyro (MPU6050) mount (2026-11-19): a plate bolted to the ALREADY PRINTED deck through two of its grid
+    # holes (M3 + nyloc nut under the deck), board on two printed posts with M2 heat-set inserts. Between the ESCs,
+    # behind the Pi's USB ports, ~5 cm from the ESP32's I2C pins. Board flat, chip up -> firmware GYRO_SIGN +1.
+    "gy_screw_x": -141.0, "gy_screw_y": 10.0,      # [D] the two deck grid holes used (x, +-y): exist on the printed
+    #                                                deck and stay clear of the planned deck windows
+    "gy_board_x0": -160.0,                         # [D] board edge toward the ESP32 (header pins on this edge)
+    "gy_board_x": 15.6, "gy_board_y": 20.3,        # [M] GY-521 outline (header along the 20.3 mm edge); MEASURE yours
+    "gy_hole_dy": 15.2, "gy_hole_in": 2.5,         # [M] its two mounting holes: spacing, and centre-to-edge on the far
+    #                                                side from the header; MEASURE yours before printing
+    "gy_plate_t": 3.0, "gy_post_h": 5.0, "gy_post_d": 8.0,   # [D] posts lift the board over its solder joints
     # front: HC-SR04 bracket tilted up so the beam's lower edge meets the ground beyond slow_distance
     "us_z": 102.0, "us_tilt_deg": 12.0, "us_beam_half_deg": 15.0,   # [M] beam half-angle: measure (see docs)
     # camera mast (removable), standard servo pan head, GoPro HERO9
@@ -79,7 +89,7 @@ PARAMS = {
     "mast_x": 38.0, "mast_sq": 22.0, "mast_wall": 3.0, "servo_seat_z": 200.0,
     "gopro_w": 71.0, "gopro_h": 55.0, "gopro_d": 33.6, "gopro_mass": 0.158,      # [V]
     "gopro_lens_dy": 17.0, "gopro_lens_dz": 6.0, "gopro_lens_protrude": 5.0,    # [M] approx. lens centre offset
-    "pan_half_range_deg": 45.0, "cam_tilt_deg": 0.0,                             # [D] matches camera_aim default
+    "pan_half_range_deg": 70.0, "cam_tilt_deg": 0.0,                             # [D] matches camera_aim default
     # standard servo body (MG996R class) [V body 40.7 x 19.7 x 42.9, ears 54 wide]; ear seat height [M]
     "servo_l": 40.7, "servo_w": 19.7, "servo_h": 42.9, "servo_ear_span": 54.0, "servo_ear_z": 27.0,
     "servo_shaft_off": 10.0,                       # [M] shaft offset from body centre along its length
@@ -1033,6 +1043,43 @@ def build_model(P=None):
     term_y, term_z = by + 10, bd_z0 + 6.5             # where the signal harnesses end (+y terminal strip)
     m.info["esp32"] = {"pcb_z": dk_z, "x": ecx, "board_z": bd_z0, "plate_top": pl_z1,
                        "top": dk_z + 4.8, "usb_top": dk_z + 8}
+    # ---------------- GY-521 gyro mount on the deck (bolted through existing grid holes) ----------------
+    gz0 = P["deck_z0"] + P["deck_t"]                       # deck top
+    gz1 = gz0 + P["gy_plate_t"]                            # plate top
+    gb0, gb1 = P["gy_board_x0"], P["gy_board_x0"] + P["gy_board_x"]
+    gbz = gz1 + P["gy_post_h"]                             # board underside
+    ghx, ghy = gb1 - P["gy_hole_in"], P["gy_hole_dy"] / 2  # board mounting holes
+    gsx, gsy = P["gy_screw_x"], P["gy_screw_y"]
+    g_px0, g_px1 = gb0 - 1.0, gsx + 5.0                    # plate: board footprint + the two screw holes
+    g_py = max(P["gy_board_y"] / 2, gsy + 4.5) + 1.0
+    gr = P["gy_post_d"] / 2
+    m.part("gyro_mount", "printed", COL["light"],
+           rbox(g_px0, g_px1, -g_py, g_py, gz0, gz1, 3)
+           + [cyl_z(gz1 - 0.01, gbz, ghx, sy * ghy, gr) for sy in (-1, 1)]
+           + [box(gb0 + 3.0, gb0 + 5.0, -6.0, 6.0, gz1 - 0.01, gbz)],          # rest rib under the header end
+           material="PETG", mates={"deck", "gy521", "gyro_screws"},
+           note="GY-521 mount: 2 x M3 x 10 through the plate and two existing deck grid holes, M3 nyloc under the deck; "
+                "board on 2 posts with M2 heat-set inserts; print flat, no supports")
+    for sy in (-1, 1):
+        sd_ = "L" if sy > 0 else "R"
+        m.hole("gyro_mount", "gy_screw_" + sd_, (gsx, sy * gsy, gz1 + co), (gsx, sy * gsy, gz0 - co), P["clr_m3"],
+               for_item="M3 x 10 + nyloc nut through an existing deck grid hole")
+        m.hole("gyro_mount", "gy_insert_" + sd_, (ghx, sy * ghy, gbz + co), (ghx, sy * ghy, gbz - P["ins_m25_depth"]),
+               P["ins_m25"], kind="insert", for_item="GY-521 M2 screw into a heat-set insert (same hole as the Pi's)")
+    m.part("gy521", H, COL["pcb_blue"],
+           [box(gb0, gb1, -P["gy_board_y"] / 2, P["gy_board_y"] / 2, gbz, gbz + 1.6),
+            box(gb0 + 5.5, gb0 + 9.5, -2.0, 2.0, gbz + 1.6, gbz + 2.5)],               # the MPU6050 chip
+           mass=0.003, mates={"gyro_mount", "gyro_wires"},
+           note="GY-521 (MPU6050) 3.3 V breakout [M size]; I2C to the ESP32: VCC 3V3, GND, SDA GPIO 21, SCL GPIO 22")
+    m.part("gyro_wires", "keepout", COL["keepout"],
+           [box(gb0 - 1.5, gb0 + 3.0, -P["gy_board_y"] / 2, P["gy_board_y"] / 2, gbz + 1.6, gbz + 16)],
+           note="straight header pins up + 4 Dupont jumpers to the ESP32 extension board", mates={"gy521"})
+    m.part("gyro_screws", H, (90, 90, 95),
+           [cyl_z(gz1, gz1 + 3.0, gsx, sy * gsy, 2.75) for sy in (-1, 1)]                # M3 heads on the plate
+           + [cyl_z(P["deck_z0"] - 4.0, P["deck_z0"], gsx, sy * gsy, 3.2) for sy in (-1, 1)],   # nyloc under the deck
+           mass=0.004, mates={"gyro_mount", "deck"}, note="2 x M3 x 10 + 2 x M3 nyloc")
+    m.info["gyro"] = {"screws": [(gsx, gsy), (gsx, -gsy)], "board": (gb0, gb1, gbz)}
+
     m.part("fuse_zone", "keepout", (255, 160, 0), [box(-180, -146, -30, 30, zf1 + 1, zf1 + 28)],
            note="20 A blade fuse + XT30/Wago distribution, below the deck behind the battery [M]", mates={"tub"})
     m.part("xt60_plug", H, COL["battery"], [box(x0 - 14, xr_in, -38, -22, 117, 125)], mass=0.01, mates={"tub"},
@@ -1080,7 +1127,7 @@ def build_model(P=None):
                 ("servo", "servo9g_adapter", "alternatives: only one is fitted")]
     mast_grp = ["mast", "servo", "pan_buckle", "gopro", "uwb_anchor", "servo9g_adapter"]
     deck_grp = ["deck", "pi5", "reg_L", "reg_R", "esc_L", "esc_R", "esp_ext_plate", "esp_ext_spacers", "esp_ext_board",
-                "esp32"]
+                "esp32", "gyro_mount", "gy521", "gyro_screws"]
     bolts = ["plate_bolt_%s%d" % (sd_, k) for sd_ in "LR" for k in range(3)]
     m.removals = [
         (mast_grp, (0, 0, 1), 170, []),

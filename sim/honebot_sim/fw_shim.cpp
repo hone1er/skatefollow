@@ -53,4 +53,10 @@ void hb_yaw_loop(void *state, float kp, float ki, float maxCorr, float fullScale
 
 float hb_expo(float v, float e) { return drive::expo(v, e); }
 
+void *hb_stuck_new() { return new drive::StuckWatch(); }
+void hb_stuck_free(void *w) { delete static_cast<drive::StuckWatch *>(w); }
+int hb_stuck_reading(void *w, int raw, unsigned limit) {
+  return drive::stuckReading(static_cast<drive::StuckWatch *>(w), (int16_t)raw, (uint16_t)limit) ? 1 : 0;
+}
+
 }  // extern "C"

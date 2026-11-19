@@ -14,10 +14,10 @@ FW = load_firmware_constants()
 MIRRORED = {
     "void updateOutputs(": "6675b365fc98",
     "void handleLine(": "b7effa7893ee",
-    "void applyOutputs(": "1b48d4aca295",
+    "void applyOutputs(": "a3d34909dd2f",
     "bool parseCommand(": "1eac34ef75b5",
     "bool parsePan(": "595be73ee563",
-    "void updateGyro(": "65c4a0d240b0",
+    "void updateGyro(": "73f7244c3873",
     "bool yawLoopUsable(": "61ff5e1bce66",
 }
 
@@ -121,15 +121,36 @@ def test_yaw_loop_off_by_default_and_passthrough():
 def test_yaw_loop_needs_gyro_bias_window_then_corrects():
     fw = dict(FW, YAW_LOOP_ENABLED=True)
     e = Esp32(fw)
-    for t in range(0, 2600):                      # stop before the stuck-gyro check (1 s pinned) trips the loop
+    for t in range(0, 2600):                      # stop before the saturation check (1 s pinned) trips the loop
         if t % 5 == 0:
-            e.gyro_read(0.02, t)                  # robot still, gyro bias 0.02 rad/s
+            e.gyro_read(0.02 + (0.002 if t % 10 else -0.002), t)   # still, bias 0.02 rad/s, +-4 counts of noise
         if t % 100 == 0:
             e.line("H", t)
         if t % 20 == 0:
             e.line("C,0.200,0.250", t)
         e.update(t)
-    assert e.gyro_bias == pytest.approx(0.02) and e.yaw_loop_usable(2599)
+    assert e.gyro_bias == pytest.approx(0.02, abs=1e-4) and e.yaw_loop_usable(2599)
     assert e.drive_b - e.drive_a > e.out_b - e.out_a + 0.05     # tyres not turning -> the loop adds difference
     assert (e.drive_a + e.drive_b) / 2 == pytest.approx((e.out_a + e.out_b) / 2, abs=1e-6)
 
+
+
+def test_a_frozen_gyro_reading_switches_the_loop_off():
+    """2.4.0: GYRO_STUCK_SAMPLES identical raw readings in a row = stuck, treated as absent until restart."""
+    fw = dict(FW, YAW_LOOP_ENABLED=True)
+    e = Esp32(fw)
+    freeze = 2100                                 # after the arming window, well before the 1 s saturation trip
+    off_by = freeze + FW["GYRO_STUCK_SAMPLES"] * FW["GYRO_PERIOD_MS"] + FW["GYRO_STALE_MS"] + 10
+    for t in range(0, int(off_by) + 1):
+        if t % 5 == 0:
+            e.gyro_read(0.02 + (0.002 if t % 10 else -0.002) if t < freeze else 0.0, t)
+        if t % 100 == 0:
+            e.line("H", t)
+        if t % 20 == 0:
+            e.line("C,0.200,0.250", t)
+        e.update(t)
+        if t == freeze - 1:
+            assert e.yaw_loop_usable(t)
+    assert not e.yaw_loop_usable(int(off_by))
+    assert not e.L.hb_yaw_state_tripped(e.yaw_state)            # it was the stuck check, not the saturation trip
+    assert (e.drive_a, e.drive_b) == (e.out_a, e.out_b)        # open loop, exactly as without a gyro

@@ -22,7 +22,9 @@ def _f(*v):
     return " ".join("%.6g" % x for x in v)
 
 
-def build_mjcf(cfg, obstacles=(), friction=None):
+def build_mjcf(cfg, obstacles=(), friction=None, params=None):
+    """params: node -> parameters (PiStack.params, i.e. with --set overrides); default cfg.params."""
+    params = cfg.params if params is None else params
     g = cfg.geom
     mu = cfg.friction if friction is None else friction
     mw = g.wheel_mass
@@ -46,7 +48,7 @@ def build_mjcf(cfg, obstacles=(), friction=None):
     # urethane rolling resistance (Crr ~0.015) + bearings, as a constant drag torque per wheel
     rr = cfg.motor.rolling_crr * g.mass * 9.81 / 4 * wr + 0.0005
     # pan servo travel = camera_aim's half_range_deg (the owner sets it from the measured travel), + a hair of slack
-    pan_lim = math.radians(cfg.params["camera_aim"]["half_range_deg"]) + 0.015
+    pan_lim = math.radians(params["camera_aim"]["half_range_deg"]) + 0.015
 
     out = ['<mujoco model="honebot">',
            '  <compiler angle="radian" autolimits="true"/>',
@@ -79,7 +81,7 @@ def build_mjcf(cfg, obstacles=(), friction=None):
             '      <geom name="hcsr04" type="box" group="%d" pos="%s" size="0.01 0.023 0.01" rgba=".2 .4 .9 1" mass="0" contype="0" conaffinity="0"/>'
             % (ROBOT_GROUP, _f(ox, 0, oz)),
             '      <site name="us" pos="%s"/>' % _f(*g.us_origin),
-            '      <site name="uwb" pos="%s"/>' % _f(cfg.params["uwb_node"]["anchor_x"], 0, cfg.sensors.uwb_anchor_z),
+            '      <site name="uwb" pos="%s"/>' % _f(params["uwb_node"]["anchor_x"], 0, cfg.sensors.uwb_anchor_z),
             '      <body name="pan" pos="%s">' % _f(g.pan_axis_x, 0, g.mast_top),
             '        <joint name="pan" type="hinge" axis="0 0 1" range="-%g %g" damping="0.05" armature="0.002"/>' % (pan_lim, pan_lim),
             '        <geom name="gopro" type="box" group="%d" pos="0 0 %g" size="0.017 0.036 0.028" rgba=".15 .15 .15 1" mass="%g"/>'

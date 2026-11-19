@@ -40,7 +40,7 @@ class AimGains:
     kp: float = 0.6               # fraction of the measured error applied per detection
     deadband: float = math.radians(1.0)       # rad: ignore errors smaller than this
     max_rate: float = math.radians(150.0)     # rad/s: pan slew limit while tracking (protects the camera)
-    half_range: float = math.radians(45.0)    # mechanical limit either side of centre
+    half_range: float = math.radians(70.0)    # angle at pan +-1 (firmware PAN_SPAN_US): measure it
     lost_timeout: float = 0.5     # s without a detection before we fall back to the UWB bearing
     recenter_timeout: float = 3.0  # s without a detection (and no UWB) before drifting back to centre
     recenter_rate: float = math.radians(30.0)  # rad/s when falling back / recentring

@@ -54,11 +54,17 @@ Pins now in use on the ESP32: 2 LED · 5 trig · 18 echo · 25 left ESC · 26 ri
   ~10 kg·cm) or a digital DS3218 (~$12–15, 20 kg·cm, waterproof) at 5–6 V. A 9 g servo is for the bench.
 - Pan axis **vertical through the camera's centre of mass**, servo shaft pointing up, GoPro's two-finger
   mount on an adapter screwed to the servo horn (print the adapter in PETG; the fingers' M5 thumb screw
-  holds it). A foam/TPU pad between servo base and frame; **leave slack in the USB-C cable** for ±45°.
-- 1000–2000 µs moves most servos ~90–120°, not 180°. Measure yours (pan_cmd ±1.0 → angle) and set
-  `half_range_deg` = half of that travel (default 45). If it pans the wrong way: `pan_sign:=-1.0`.
-- Tilt is not needed: at 3 m the GoPro's vertical field of view covers a standing skater and the ground.
-  Mount it level or tilted up ~5°.
+  holds it). A foam/TPU pad between servo base and frame; **leave slack in the USB-C cable** for ±70°.
+- **Pan travel ±70° (firmware 2.4.0).** The side view keeps the skater 45° off the robot's nose, so ±45° is not
+  enough. The pan channel has its own pulse range: pan ±1 = 1500 ± `PAN_SPAN_US` (778 µs, clamped to 500–2500 µs);
+  the ESCs keep 1000–2000 µs. A standard servo turns ~0.09°/µs, so that is about ±70°, but servos differ:
+  **measure** the angle at `ros2 topic pub /camera/pan_cmd std_msgs/Float32 "{data: 1.0}"` (and −1.0) and set
+  camera_aim's `half_range_deg` to it (default 70). If the servo buzzes or hits a stop at ±1, lower
+  `PAN_SPAN_US` and measure again. If it pans the wrong way: `pan_sign:=-1.0`.
+- **Tilt.** At 3 m behind, the vertical field of view covers a standing skater. **At the side view's 2 m it does
+  not with the Linear lens** (55° tall, lens 0.27 m up): a 1.8 m skater's head is 39° above level, the frame
+  ends at 27.5°. Use the Wide lens (`gopro_fov`, 69.5° tall) and tilt the GoPro up ~5°: then 39° top / −8° feet
+  fit with a few degrees to spare. Linear needs ~12° up and has no margin.
 
 ## 3. One-time Pi setup (sudo, owner types the password)
 ```bash

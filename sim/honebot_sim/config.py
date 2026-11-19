@@ -120,7 +120,7 @@ def load_firmware_constants(path=None):
     """`const <type> NAME = <literal>;` lines of the robot sketch -> {NAME: value} (numbers and bools only)."""
     text = Path(path or FIRMWARE_DIR / "esp32_ultrasonic.ino").read_text()
     out = {}
-    for name, val in re.findall(r"^const\s+(?:unsigned\s+long|unsigned|long|float|double|int|bool|uint32_t)\s+"
+    for name, val in re.findall(r"^const\s+(?:unsigned\s+long|unsigned|long|float|double|int|bool|uint32_t|uint16_t)\s+"
                                 r"([A-Z_][A-Z0-9_]*)\s*=\s*([^;]+);", text, flags=re.M):
         v = val.strip()
         if v in ("true", "false"):

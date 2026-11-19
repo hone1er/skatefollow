@@ -274,3 +274,109 @@ def test_offset_follow_gives_margin_when_braking_is_weak():
     behind = closest(dataclasses.replace(OFFSET, follow_bearing=0.0))
     offset = closest(OFFSET)
     assert behind < 0.5 and offset > 1.0
+
+
+# --- side shot ----------------------------------------------------------------------------------------------------
+import pytest  # noqa: E402
+
+from honebot_follow.control import SideShot, SideShotParams, follow_command_relative, speed_for_gap  # noqa: E402
+
+SIDE = SideShotParams(side_distance=2.0, side_angle=math.radians(45))
+GS = FollowGains(follow_distance=1.5, max_linear=7.5, max_angular=3.0, brake_decel=4.4, time_headway=0.5)
+
+
+def _side_run(speed, seconds=20.0, turn=0.0, start=(-3.0, 0.0, 0.0), own=lambda v, w: (v, w)):
+    """Skater from (0, 0) heading +x at `speed` (turning at `turn` rad/s); robot a unicycle that does exactly what
+    it is told, controller and UWB at 20 Hz. own(v, w) -> what the robot reports as its own speed and yaw rate.
+    Returns the history of (time, distance, angle round from behind the skater in degrees, + = their right)."""
+    ctl = SideShot(SIDE)
+    rx, ry, rth = start
+    sx = sy = sth = 0.0
+    dt, t, v, w, out = 0.05, 0.0, 0.0, 0.0, []
+    while t < seconds:
+        sth += turn * dt
+        sx += speed * math.cos(sth) * dt
+        sy += speed * math.sin(sth) * dt
+        dx, dy = sx - rx, sy - ry
+        d = math.hypot(dx, dy)
+        b = math.atan2(dy, dx) - rth
+        b = math.atan2(math.sin(b), math.cos(b))
+        cmd = ctl.step(t, (d, b), t, *own(v, w), GS)
+        v, w = cmd if cmd is not None else follow_command_relative(d, b, GS)[:2]
+        rth += w * dt
+        rx += v * math.cos(rth) * dt
+        ry += v * math.sin(rth) * dt
+        t += dt
+        a = math.atan2(ry - sy, rx - sx) - (sth + math.pi)
+        out.append((t, math.hypot(rx - sx, ry - sy), math.degrees(math.atan2(math.sin(a), math.cos(a))), ctl.active))
+    return out
+
+
+def test_side_shot_is_off_by_default_and_without_own_motion():
+    assert SideShot(SideShotParams()).step(0.0, (3.0, 0.0), 0.0, 0.0, 0.0, GS) is None
+    ctl = SideShot(SIDE)
+    assert ctl.step(0.0, (3.0, 0.0), 0.0, None, 0.0, GS) is None       # no S line
+    assert ctl.step(0.0, (3.0, 0.0), 0.0, 0.0, None, GS) is None       # no gyro
+
+
+@pytest.mark.parametrize("speed", [1.5, 2.7, 5.4])        # ~3, 6 and 12 mph
+def test_side_shot_settles_at_two_metres_and_45_degrees(speed):
+    hist = _side_run(speed)
+    late = [h for h in hist if h[0] > 12.0]
+    assert all(h[3] for h in late)
+    # one 20 Hz tick of lag shows at speed: 1.91 m / 48 deg at 6 mph, 1.82 m / 51 deg at 12 mph
+    assert all(abs(h[1] - 2.0) < 0.25 for h in late)
+    assert all(abs(h[2] - 45.0) < 8.0 for h in late)
+
+
+def test_side_shot_holds_through_a_turn_toward_the_robot():
+    hist = _side_run(2.2, seconds=25.0, turn=-0.3)          # skater curves right, toward the robot's side
+    late = [h for h in hist if h[0] > 12.0]
+    assert min(h[1] for h in late) > 1.5
+    assert abs(sorted(h[2] for h in late)[len(late) // 2] - 45.0) < 10.0
+
+
+def test_side_shot_tolerates_a_wrong_speed_scale():
+    """max_wheel_speed is a no-load guess: the robot's own-speed report can be 15 % off. The correction is
+    proportional, so the held point shifts: 2.2 m / 40 deg (report 15 % low) and 1.66 m / 58 deg (15 % high)
+    at 6 mph. Still a side view; calibrating max_wheel_speed (docs/first_drive.md) removes it."""
+    for k in (0.85, 1.15):
+        late = [h for h in _side_run(2.7, own=lambda v, w: (v * k, w)) if h[0] > 12.0]
+        assert all(abs(h[1] - 2.0) < 0.6 and abs(h[2] - 45.0) < 15.0 for h in late), k
+
+
+def _settled(speed=2.7):
+    """A controller that has seen the skater moving straight ahead-left at `speed` for 2 s, robot pacing them."""
+    ctl = SideShot(SIDE)
+    for i in range(41):
+        t = 0.05 * i
+        ctl.step(t, (2.0, math.radians(45)), t, speed, 0.0, GS)
+    return ctl, t
+
+
+def test_aim_point_behind_means_no_forward_motion():
+    ctl, t = _settled()
+    # robot drew level with the skater (they braked): aim point is behind us
+    lin, ang = ctl.step(t + 0.05, (1.6, math.radians(90)), t + 0.05, 2.7, 0.0, GS)
+    assert lin == 0.0
+
+
+def test_too_close_never_forward_and_never_steers_toward_the_skater():
+    ctl, t = _settled()
+    lin, ang = ctl.step(t + 0.05, (1.2, math.radians(30)), t + 0.05, 2.7, 0.0, GS)   # skater ahead-left, 1.2 m
+    assert lin == 0.0 and ang <= 0.0
+
+
+def test_skater_in_our_path_caps_speed_with_the_braking_law():
+    ctl, t = _settled()
+    lin, _ = ctl.step(t + 0.05, (1.9, 0.05), t + 0.05, 2.7, 0.0, GS)   # swerved in front of us, in the lane
+    assert lin <= speed_for_gap(1.9 * math.cos(0.05), GS) + 1e-9 < 1.0  # ~0.69 m/s, not the 2.7 it was doing
+
+
+def test_side_mode_hysteresis_and_range():
+    ctl, t = _settled(speed=1.0)
+    assert ctl.active                                       # above side_enter_speed (0.8)
+    ctl, t = _settled(speed=0.6)
+    assert not ctl.active                                   # never went above 0.8
+    ctl, t = _settled(speed=2.0)
+    assert ctl.step(t + 0.05, (14.0, 0.3), t + 0.05, 2.0, 0.0, GS) is None   # beyond side_engage_range + 1.5

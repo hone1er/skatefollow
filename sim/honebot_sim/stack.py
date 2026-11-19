@@ -4,7 +4,8 @@ Uses the robot's own pure modules (the same code the ROS nodes call) and mirrors
 plumbing, which is a few lines per node:
 
   uwb_node      _handle_aoa(): RangeFilter on range and bearing, aoa_position()      (honebot_uwb.localize)
-  follower      _tick() 20 Hz: target older than target_timeout -> zero Twist, else follow_command_relative()
+  follower      _tick() 20 Hz: target older than target_timeout -> zero Twist, else SideShot.step() (side_distance
+                > 0) or follow_command_relative(); own speed / yaw rate from esp32_bridge's S and G lines
   safety_gate   _tick() 50 Hz: rising_cap(sight_speed()), gate_command()           (honebot_safety.gate)
   esp32_bridge  heartbeat 10 Hz, C line 50 Hz via twist_to_diffdrive() (neutral when cmd_vel is older than
                 cmd_timeout), P line 20 Hz; R lines -> range (+inf for -1) and link_ok
@@ -22,8 +23,8 @@ pure and unit-tested but not wired in: detections go straight to camera_aim).
 import math
 
 from honebot_camera.aim import AimGains, PanController
-from honebot_follow.control import FollowGains, follow_command_relative
-from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive
+from honebot_follow.control import FollowGains, SideShot, SideShotParams, follow_command_relative
+from honebot_hardware.diffdrive import DiffDriveParams, twist_to_diffdrive, wheels_to_speed
 from honebot_safety.gate import GateParams, gate_command, rising_cap, sight_speed
 from honebot_uwb.localize import RangeFilter, UwbGeometry, aoa_position
 
@@ -54,6 +55,11 @@ class PiStack:
         fol, gat, uwb, brg, aim = (P[n] for n in self.NODES)
         self.gains = _pick(FollowGains, fol)
         self.target_timeout = fol["target_timeout"]
+        self.side = SideShot(_pick(SideShotParams, fol))
+        self.side_input_timeout = fol["side_input_timeout"]
+        self.drive_mode = brg["drive_mode"]
+        self.own_speed = None       # (m/s, t) esp32/speed, from S lines
+        self.own_yaw = None         # (rad/s, t) esp32/yaw_rate, from usable G lines
         self.gate = _pick(GateParams, gat)
         self.dd = _pick(DiffDriveParams, brg)
         self.bridge_cmd_timeout = brg["cmd_timeout"]
@@ -114,10 +120,20 @@ class PiStack:
         self.uwb_bearing, self.uwb_t = math.atan2(y, x), t      # camera_aim._on_uwb
 
     # ---- follower ------------------------------------------------------------------------------------
+    def _fresh(self, sample, t):
+        return None if sample is None or t - sample[1] > self.side_input_timeout else sample[0]
+
     def follower_tick(self, t):
         lin = ang = 0.0
         if self.target is not None and t - self.target_t <= self.target_timeout:
-            lin, ang, _ = follow_command_relative(self.target[0], self.target[1], self.gains)
+            side = self.side.step(t, self.target, self.target_t, self._fresh(self.own_speed, t),
+                                  self._fresh(self.own_yaw, t), self.gains)
+            if side is not None:
+                lin, ang = side
+            else:
+                lin, ang, _ = follow_command_relative(self.target[0], self.target[1], self.gains)
+        elif self.target is not None:
+            self.side.reset()
         self.cmd_raw, self.cmd_raw_t = (lin, ang), t
 
     # ---- esp32_bridge: incoming lines ------------------------------------------------------------------
@@ -127,6 +143,14 @@ class PiStack:
         if dist > 0.0:                                          # finite reading = an echo (-1 = none)
             self.echo_t = t
         self.link_ok, self.link_t = link, t
+
+    def on_s_line(self, t, a, b):
+        if self.drive_mode == "diff":
+            self.own_speed = (wheels_to_speed(a, b, self.dd), t)
+
+    def on_g_line(self, t, yaw, usable):
+        if usable and math.isfinite(yaw):
+            self.own_yaw = (yaw, t)
 
     # ---- safety_gate -------------------------------------------------------------------------------------
     def gate_tick(self, t):

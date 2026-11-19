@@ -65,7 +65,7 @@ follower:
     #          margin if braking is worse than assumed (simulated at 12 mph with braking at under half the
     #          assumed value: directly behind ends 0.1 m from the skater, offset ends 1.3 m away).
     #   Negative = to the left. Keep |follow_bearing| + stopped_turn_deadband under the camera's pan range
-    #   (45 deg = 0.785 rad), or the camera cannot reach the skater while the robot stands still.
+    #   (camera_aim half_range_deg, 70 deg = 1.22 rad), or the camera cannot reach the skater while the robot stands still.
     follow_bearing: 0.0
 
     max_linear: 3.0                # m/s. START LOW. Must exceed the skater's speed or the gap only grows.

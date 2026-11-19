@@ -36,7 +36,8 @@ Hard requirements that shape every decision:
 | ESP32 DevKit (WROOM-32 class), USB chip **Silicon Labs CP210x** (10c4:ea60) | In use, low-level controller |
 | HC-SR04 ultrasonic sensor | Wired to ESP32 and verified |
 | Monitor via HDMI on the Pi | Available for local GUI testing |
-| Chassis | **CAD done 2026-11-16, now a 4-wheel skid steer** (`cad/`, `docs/chassis_cad.md`): 4 × 90 mm longboard wheels, all driven; per side one 5010-class outrunner (reference MAD 5010 EEE V2.0 370KV) on a replaceable slotted plate, printed 28T HTD-3M pulley bolted to the bell → 56T on the front wheel (2:1, 258 mm belt, pull-screw tensioner); the front wheel's double pulley drives the rear wheel 1:1 (36T:36T, HTD 510-3M-09, 2 × 608 idler in a wall slot). Wheelbase 200.0 mm, track 277 mm. M8 12.9 stub axles from outside into captive nylocs, nested stock steel tubes 16×2 / 12×2. One-piece 300 mm PAHT-CF tub (both axles, battery tunnel), one PETG shell (lid + motor pods), deck with printed ESP32 cradle (now holds a slide-in adapter for the SunFounder ESP32 extension board: one printed plate + 4 plain printed spacer tubes, M2 screws into heat-set inserts (same 3.6 mm hole as the Pi standoffs, fits the owner's M2 inserts), vent slots; owner has only M2 screws and wants no bought standoffs; printed threads were dropped 2026-11-17 as unprintable), 2 × AM32 ESCs on the deck, HC-SR04 upside down, removable camera mast with the UWB plate. 15 printed parts. ≈ 4.0 kg, 343 × 343 × 150 mm (mast off; `tub_top` 145 since 2026-11-17 for headroom over the extension), ~21 mph no-load (cap in software); all offline checks pass. Fusion script: the caster version (72 parts) ran in the owner's Fusion; the 4WD version (86 parts incl. a hidden prototype kit; Pi standoffs printed on the deck with M2.5 inserts: printed PAHT-CF axle sleeves on the M8 bolts + TPU belts, limits in chassis_cad.md §6b) not yet. Nothing bought yet. Older plan + AM32 setup: `docs/robot_design.md` |
+| Chassis | **CAD done 2026-11-16, now a 4-wheel skid steer** (`cad/`, `docs/chassis_cad.md`): 4 × 90 mm longboard wheels, all driven; per side one 5010-class outrunner (reference MAD 5010 EEE V2.0 370KV) on a replaceable slotted plate, printed 28T HTD-3M pulley bolted to the bell → 56T on the front wheel (2:1, 258 mm belt, pull-screw tensioner); the front wheel's double pulley drives the rear wheel 1:1 (36T:36T, HTD 510-3M-09, 2 × 608 idler in a wall slot). Wheelbase 200.0 mm, track 277 mm. M8 12.9 stub axles from outside into captive nylocs, nested stock steel tubes 16×2 / 12×2. One-piece 300 mm PAHT-CF tub (both axles, battery tunnel), one PETG shell (lid + motor pods), deck with printed ESP32 cradle (now holds a slide-in adapter for the SunFounder ESP32 extension board: one printed plate + 4 plain printed spacer tubes, M2 screws into heat-set inserts (same 3.6 mm hole as the Pi standoffs, fits the owner's M2 inserts), vent slots; owner has only M2 screws and wants no bought standoffs; printed threads were dropped 2026-11-17 as unprintable), 2 × AM32 ESCs on the deck, HC-SR04 upside down, removable camera mast with the UWB plate. 15 printed parts. **Lightening cuts 2026-11-19** (`lighten` in PARAMS: gable windows in the tub side walls above the deck, blind pockets under the lid, 2 deck windows under the Pi/ESP32; floor and battery-bay walls stay solid; ligament + wall-strength checks in report §12/§7; −32 g filament, chassis_cad.md §4b). ≈ 3.9 kg, 343 × 343 × 150 mm (mast off; `tub_top` 145 since 2026-11-17 for headroom over the extension), ~21 mph no-load (cap in software); all offline checks pass. Fusion script: the caster version (72 parts) ran in the owner's Fusion; the 4WD version (86 parts incl. a hidden prototype kit; Pi standoffs printed on the deck with M2.5 inserts: printed PAHT-CF axle sleeves on the M8 bolts + TPU belts, limits in chassis_cad.md §6b) not yet. Nothing bought yet. Older plan + AM32 setup: `docs/robot_design.md` |
+| Gyro | **GY-521 (MPU6050) to buy** (2026-11-19; the yaw-rate loop and the side view need it). Printed `gyro_mount` (PETG) bolts to the ALREADY PRINTED deck through its grid holes at x −141, y ±10 (M3 × 10 + nyloc), board on 2 posts with M2 heat-set inserts, between the ESCs behind the Pi's USB ports; I2C 3V3/GND/GPIO 21 SDA/GPIO 22 SCL; chip up = `GYRO_SIGN` +1. Board outline/hole spacing are `[M]` PARAMS (`gy_*`): measure before printing. CAD checks pass on the committed deck; `cad/tests/test_fusion_script.py` checks the screws hit deck holes. The owner's Crius MultiWii SE v2.5 also carries an MPU6050 but needs its ATmega kept off the I2C bus and a 5 V/3.3 V check |
 | UWB modules | **Recommended: Makerfabs MaUWB_AOA Gen2** (angle-of-arrival anchor $39.80 + tag $29.80); not bought. See `docs/hardware_plan.md` §3 |
 | Vision camera (Phase 5) | GoPro in USB-webcam mode (mode A: Pi records the 1080p30 stream, GoPro cannot record to SD meanwhile) or any USB webcam next to it (mode B: GoPro records natively). `source` parameter picks |
 | ESC signal pins | **Firmware ready, nothing wired**: channel A GPIO 25 (left ESC), channel B GPIO 26 (right ESC); both 50 Hz 1000–2000 µs, neutral on fail-safe. **Pan servo GPIO 27** (firmware 2.1.0, holds last value in fail-safe, centred at boot) |
@@ -120,7 +121,7 @@ honebot_ws/
     │   ├── honebot_follow/follower.py    ROS node: turtlesim poses or a relative /target
     │   ├── honebot_follow/pose_to_target.py   simulated UWB from turtlesim poses
     │   ├── launch/turtle_follow.launch.py   use_safety / relative / ackermann options
-    │   └── test/test_control.py          27 pytest tests (incl. 1-D and 2-D follow simulations)
+    │   └── test/test_control.py          37 pytest tests (incl. 1-D and 2-D follow simulations, side shot)
     ├── honebot_safety/               ament_python — safety gate
     │   ├── honebot_safety/gate.py        pure gate logic (unit-tested)
     │   ├── honebot_safety/safety_gate.py ROS node
@@ -154,6 +155,7 @@ honebot_ws/
     │   └── launch/bridge_launch.py   turtlesim + bridge [+ follow:=true follower]; guide: docs/remote_turtlesim.md
     └── honebot_bringup/              ament_python — top-level launch + systemd
         ├── config/robot.yaml             ALL real-robot parameters (bridge, gate, uwb, follower); test/test_config.py checks the keys
+        ├── config/side_shot.yaml         side-view preset layered on the follower (film.launch.py side_shot:=true; sim --side)
         ├── launch/robot.launch.py        real robot's safety layer: bridge + gate + foxglove with robot.yaml (the boot service)
         ├── launch/film.launch.py         by hand: uwb_node + follower (+ camera, + bag of the run)
         ├── launch/bringup.launch.py      bench: esp32 bridge + safety gate + foxglove_bridge with default params [+ camera:=true]
@@ -216,6 +218,19 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   `follow_distance`; `max_lat_accel` (4.0) caps v·ω; `stopped_turn_deadband` (0.3 rad). `max_linear` starts at 3.0
   and must exceed the skater's speed. 27 tests, incl. a 20 Hz loop simulation with a dead stop at 8/12/15 mph and
   2-D offset-follow simulations (straight, both turns, dead stop).
+- **Side shot (2026-11-19, off unless `side_distance` > 0; preset `config/side_shot.yaml` = 2.0 m, `side_angle`
+  0.785 = 45° behind on the skater's RIGHT; `film.launch.py side_shot:=true`):** `control.SideShot` (pure, stateful)
+  dead-reckons the robot from `/esp32/speed` (S line) + `/esp32/yaw_rate` (gyro G line), turns each UWB fix into
+  a skater velocity, drives at it plus a capped correction (`side_kp` 1, `side_max_correction` 1.5 m/s, steer cap
+  0.7 rad) toward the aim point. Hard rules: < `side_min_range` 1.5 m → no forward, no steering toward the skater;
+  skater within `side_lane` 0.6 m of the path → `speed_for_gap` cap. Off (normal law) when the skater is slow
+  (enter 0.8 / exit 0.4 m/s), far (> 12 m), or speed/yaw older than 0.3 s → **needs the gyro**. Wheel-output yaw
+  was tried: 2–3× off from scrub. Sim (target profile, committed 4.02 kg geometry): 1.7–2.0 m at 40–48° walking to
+  12 mph; 15 mph marginal (1.8–2.5 m, 25–42°, passes ~0.4 m from the skater's centre; kept by owner's choice 2026-11-19, test bound 0.3 m); slalom ~2.9 m/32°; dead stop → coasts past alongside,
+  0.66–1.1 m to the skater's centre; today's HC-SR04 only at walking/~5 mph. Bad gyro: a stuck or upside-down gyro used to roll
+  the robot over at speed (side and normal mode, even at 2.7 m/s); firmware 2.4.0 fixes the stuck case and only
+  reduces the wrong-sign case (strict xfail; see the firmware section). ±15 % speed scale shifts the point ~0.3 m/13°. 10 unit tests. Never run on hardware.
+  At 2 m the Linear lens cuts off a standing skater's head: Wide lens + ~5° up-tilt (camera_plan.md §2c).
 
 ### honebot_safety — `safety_gate` node
 - Subscribes `cmd_vel_raw` (Twist), `ultrasonic/range`, `esp32/link_ok`; publishes `cmd_vel` at `rate_hz` (50)
@@ -246,6 +261,8 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   `/esp32/actuators` (Vector3: x = throttle, y = steer, what was sent).
 - Subscribes `cmd_vel` (Twist) → `ackermann.twist_to_ackermann()` → sends `C,<thr>,<steer>` at 50 Hz;
   sends neutral when `cmd_vel` is older than `cmd_timeout`; sends one neutral on exit.
+- Side view (2026-11-19): `S` → `/esp32/speed` (Float32, m/s = `diffdrive.wheels_to_speed`, diff mode);
+  `G,<yaw>,1` → `/esp32/yaw_rate` (Float32, rad/s; only while the firmware calls the loop usable).
 - Subscribes `camera/pan_cmd` (Float32, −1..1) → sends `P,<pan>` at `pan_rate_hz` (20) once a value has
   arrived; no timeout/neutral (not safety-relevant). `/esp32/actuators.z` = last pan sent.
 - Sends heartbeat `H\n` at 10 Hz. Non-blocking reads on a 100 Hz timer; auto-reconnects if USB is unplugged;
@@ -278,7 +295,7 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   confirmed track matched this cycle; status shows `seen=k/n track=...`.
   Threads: grabber keeps only the newest frame; detector thread; rclpy spins in main. Low-latency FFmpeg
   options via `OPENCV_FFMPEG_CAPTURE_OPTIONS` set before cv2 import.
-- `camera_aim` params (live-settable): `kp` 0.6, `deadband_deg` 1, `max_rate_deg_s` 150, `half_range_deg` 45,
+- `camera_aim` params (live-settable): `kp` 0.6, `deadband_deg` 1, `max_rate_deg_s` 150, `half_range_deg` 70 (was 45; measured angle at pan ±1, firmware 2.4.0),
   `lost_timeout` 0.5, `recenter_timeout` 3, `recenter_rate_deg_s` 30, `pan_sign` ±1, `use_uwb_fallback`.
   Open-loop incremental: pan += kp·error; lost → steer to UWB bearing; no UWB → recentre after 3 s.
   Publishes `camera/pan_cmd` (Float32 −1..1, 20 Hz), `camera/pan_angle` (rad), `camera/bearing` (pan + image
@@ -335,11 +352,25 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
 - **2.3.0 (2026-11-19): gyro yaw-rate loop, `YAW_LOOP_ENABLED` default false** (off / no gyro / bad read = exactly
   2.2.1). `drive::yawLoop` (pure, host-tested): w_cmd = (b−a)·FULL_SCALE_MPS/YAW_TRACK_WIDTH (0.39, must equal
   robot.yaml track_width; sim test checks), PI kp 0.12 ki 0.8, adds only the left/right difference (mean kept),
-  capped YAW_MAX_CORR 0.2; trips to open loop until the next fail-safe on wrong-way gyro 150 ms or pinned 1 s.
+  capped YAW_MAX_CORR 0.2; trips to open loop until the next fail-safe on wrong-way gyro (75 ms since 2.4.0) or pinned 1 s.
   MPU6050 on SDA 21/SCL 22 at 0x68, ±1000 dps, 200 Hz, `Wire.setTimeOut(2)`, bias averaged in the 2 s arming window,
   `GYRO_SIGN`. With the loop usable the stick asks for a yaw rate (MANUAL_MAX_YAW 3 rad/s, expo 0.5). Prints
-  `G,<yaw>,<usable>` at 10 Hz (bridge ignores). S line now reports the post-loop outputs. Sign check: first_drive.md
+  `G,<yaw>,<usable>` at 10 Hz (bridge → `/esp32/yaw_rate` since the side view). S line now reports the post-loop outputs. Sign check: first_drive.md
   Stage 1 step 7. Never run on hardware; tuned in the sim only.
+- **2.4.0 (2026-11-19): bad-gyro protection.** (1) `drive::stuckReading`: `GYRO_STUCK_SAMPLES` (100 = 0.5 s) identical
+  raw readings → gyro treated as absent until restart (a frozen-at-zero gyro kept the correction just under the cap,
+  so the 1 s trip never fired, until the tyres broke loose: sim roll-overs at 12 and 6 mph). (2) Runaway trip in
+  `yawLoop`: correction > half the cap against a gyro turn > 1 rad/s that does not ease for `YAW_WRONG_WAY_MS`
+  (catches a wrong sign when the Pi steers by the same gyro, as the side view does). (3) `YAW_WRONG_WAY_MS` 150 →
+  75. Sim: stuck gyro 0 roll-overs (was up to 5/6); wrong sign REDUCED, not fixed (10 seeds at 4.03 kg: side slalom
+  1, bail 3, 12 mph 1; normal 12 mph 4 — strict xfail; the bench sign check is the protection); no false trips with
+  a working gyro in 72 runs. A speed-dependent cap on the
+  correction was tried and dropped: breakaway needs ~0.13–0.15 at every speed, so any cap stops normal turning.
+  Host tests + sim tests (`test_firmware.py`, `test_side_shot.py`, `test_closed_loop.py` seeds 0 and 3).
+- **2.4.0 (2026-11-19): pan ±70°.** Pan channel has its own pulse: 1500 ± `PAN_SPAN_US` (778 µs, ~70° on a standard
+  servo; owner measures and sets camera_aim `half_range_deg`), clamped 500–2500 µs; ESC channels unchanged
+  1000–2000 µs. `writePulseUs`/`normToUs` take the limits/span. Compiled with arduino-cli on the Mac (70 % flash);
+  not flashed.
 
 ## 6. Verified results
 
@@ -551,7 +582,7 @@ valid only for the tricycle variant or an RC car.
   scenario `playground`. Owner reported (2026-11-19, sim + real remote): without the loop the stick only turns near
   full side deflection then pivots hard; with `--yaw-loop` turning is proportional (20°→0.35, 45°→1.4, 90°→3 rad/s).
   `--gyro-fault sign|stuck|dead` tests the fallbacks (no contact in any). Sim also models 50 Hz PWM frames.
-  90 tests in `sim/tests`, CI job `sim`. **Single source of truth (2026-11-19):** the sim reads every
+  133 tests + 1 strict xfail in `sim/tests`, CI job `sim` (incl. `test_side_shot.py`; 12 scenarios now: + `u_turn_right_5`). **Single source of truth (2026-11-19):** the sim reads every
   node parameter and timer rate from the node's own `declare_parameter()` default + robot.yaml (`config.load_node_params`,
   AST of the node source); `--set` rejects undeclared params; `test_sources.py` pins node defaults = dataclass defaults
   (AimGains defaults were aligned to camera_aim's), hashes the node code `stack.py` mirrors, pins `max_wheel_speed` =

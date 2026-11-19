@@ -53,12 +53,14 @@ def test_target_profile_reaches_12_mph():
     assert mt.max_speed > 5.0 and mt.lost_time < 0.5
 
 
+@pytest.mark.parametrize("seed", [0, 3])        # seed 3: a stuck gyro rolled the robot over in carve_6 before 2.4.0
 @pytest.mark.parametrize("fault", ["sign", "stuck", "dead"])
 @pytest.mark.parametrize("name", ["standing_turns", "carve_6"])
-def test_a_bad_gyro_falls_back_to_open_loop_safely(fault, name):
+def test_a_bad_gyro_falls_back_to_open_loop_safely(fault, name, seed):
     """Gyro upside down, stuck at zero or silent: the loop must drop out (wrong-way / saturation / stale checks)
     and the robot behave like 2.2.1: it may lose the skater on turns, but it never touches anyone."""
-    sc, mt, cfg = _run(name, yaw_loop=True, gyro_fault=fault)
+    sc, mt, cfg = _run(name, yaw_loop=True, gyro_fault=fault, seed=seed)
     assert not mt.skater_contact and not mt.obstacle_contact and not mt.tipped
-    assert mt.min_gap > 0.5
+    # while the robot moves; in standing_turns the scripted skater may walk close past a robot standing still
+    assert mt.min_gap_moving > 0.5
 

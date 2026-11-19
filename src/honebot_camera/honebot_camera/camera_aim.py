@@ -39,7 +39,7 @@ class CameraAim(Node):
             kp=float(p('kp', 0.6).value),
             deadband=math.radians(float(p('deadband_deg', 1.0).value)),
             max_rate=math.radians(float(p('max_rate_deg_s', 150.0).value)),
-            half_range=math.radians(float(p('half_range_deg', 45.0).value)),
+            half_range=math.radians(float(p('half_range_deg', 70.0).value)),   # measured angle at pan +-1
             lost_timeout=float(p('lost_timeout', 0.5).value),
             recenter_timeout=float(p('recenter_timeout', 3.0).value),
             recenter_rate=math.radians(float(p('recenter_rate_deg_s', 30.0).value)),
