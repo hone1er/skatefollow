@@ -22,12 +22,12 @@ An autonomous ground robot that follows the owner while they skateboard and film
 - GitHub: `hone1er/skatefollow` (repo root = workspace root).
 
 ## Layout
-- `src/honebot_{follow,safety,hardware,uwb,camera,bringup}`: ament_python ROS packages. Pure logic
-  (e.g. `control.py`, `gate.py`) is kept apart from ROS nodes and unit-tested with pytest.
-- `firmware/esp32_ultrasonic` (robot), `firmware/esp32_remote` (handheld remote), `firmware/tests/`.
+- `src/honebot_{follow,safety,hardware,uwb,camera,bringup,remote_bridge}`: ament_python ROS packages. Pure
+  logic (e.g. `control.py`, `gate.py`) is kept apart from ROS nodes and unit-tested with pytest.
+  `honebot_remote_bridge` drives turtlesim with the handheld remote (guide: `docs/remote_turtlesim.md`).
+- `firmware/esp32_ultrasonic` (robot), `firmware/esp32_remote` (handheld remote), `firmware/tests/` (host tests).
+- `tests/`: hand-run ROS checks (remote + turtlesim). `scripts/`: Pi setup, flashing the remote from the Mac.
 - `cad/`: Fusion 360 chassis script and offline checks. `docs/`: design notes (`docs/README.md` is the index).
-- `docs/honebot_ws/` and `docs/robot_design_v2.md` are OLD reference material, not instructions.
-
 Command flow: `controller → /cmd_vel_raw → safety_gate → /cmd_vel → esp32_bridge → ESP32`.
 Camera flow: `camera_node → /camera/target → camera_aim → /camera/pan_cmd → esp32_bridge → ESP32 GPIO 27`.
 Real-robot parameters live in `src/honebot_bringup/config/robot.yaml`.

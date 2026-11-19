@@ -105,8 +105,11 @@ device (Pi gets 172.2X.1YZ.50, camera .51) and needs the netplan file in `honebo
 ```
 honebot_ws/
 ├── CLAUDE.md                         this file (handoff); README.md = architecture + run card; each src/honebot_*/ and firmware/esp32_ultrasonic/ has its own README
-├── .github/workflows/ci.yml          GitHub Actions: pytest per package, firmware host tests, CAD stub test (green 2026-11-17)
+├── .github/workflows/ci.yml          GitHub Actions: pytest per package, firmware host tests, CAD stub test, remote tools --sim
 ├── scripts/pi_setup.sh               Pi housekeeping (setserial, udev rule, honebot.service); owner runs it, it asks for sudo
+├── scripts/flash_remote.sh           Mac: flash the handheld remote (and robot ESP32), then print the bench checks
+├── tests/                            hand-run ROS checks (README): test_esp32_remote.sh fake|serial|esp32 [follow] launcher,
+│                                     test_remote_turtlesim.py (end-to-end, --follow), test_remote_basic.py (no ROS), sim_remote.py (fake remote)
 ├── firmware/
 │   ├── esp32_ultrasonic/             robot ESP32 firmware v2.2.1: .ino + drive_logic.h (pure decisions) + honebot_link.h
 │   ├── esp32_remote/                 handheld remote v1.0.0: .ino + remote_logic.h + honebot_link.h (identical copy)
@@ -146,9 +149,9 @@ honebot_ws/
     │   ├── netplan/99-gopro-usb.yaml     DHCP on usb0/enx* without taking the GoPro's default route (owner installs)
     │   └── test/                          42 pytest tests
     ├── honebot_remote_bridge/        ament_python — handheld remote -> Twist for turtlesim (2026-11-18, not yet run on the Pi)
-    │   ├── honebot_remote_bridge/remote_logic.py   pure: remote line parser, firmware stick rules, wheels -> Twist (12 tests)
+    │   ├── honebot_remote_bridge/remote_logic.py   pure: remote line parser, firmware stick rules + Arbiter (port of drive::decide), wheels -> Twist (20 tests)
     │   ├── honebot_remote_bridge/remote_bridge.py  source:=serial (remote board on USB) | esp32 (/esp32/outputs from esp32_bridge)
-    │   └── launch/bridge_launch.py   turtlesim + bridge [+ follow:=true follower]; guide: firmware/tests/ESP32_REMOTE_TESTING.md
+    │   └── launch/bridge_launch.py   turtlesim + bridge [+ follow:=true follower]; guide: docs/remote_turtlesim.md
     └── honebot_bringup/              ament_python — top-level launch + systemd
         ├── config/robot.yaml             ALL real-robot parameters (bridge, gate, uwb, follower); test/test_config.py checks the keys
         ├── launch/robot.launch.py        real robot's safety layer: bridge + gate + foxglove with robot.yaml (the boot service)
@@ -167,9 +170,7 @@ cad/                                  (repo root, not in honebot_ws/src)
 docs/
 ├── README.md                         index: which design is being built, which Fusion script makes the printed parts
 ├── first_drive.md                    staged test plan (bench -> stick -> UWB -> follow -> camera -> board) + today's speed limits
-├── robot_design_v2.md, ../cad/honebot_v2/, honebot_ws/   owner-added 2026-11-17: OLD REFERENCE material (owner confirmed), not the
-│                                     robot being built: a servo-steered "V2" and older copies.
-│                                     docs/honebot_ws/CLAUDE.md is an OLD handoff file, not instructions for this repo
+├── remote_turtlesim.md               handheld remote + follow bot in turtlesim (honebot_remote_bridge, tests/)
 ├── chassis_cad.md                    CAD design decisions, checks, print table, measure list, BOM, assembly
 ├── hardware_plan.md                  UWB / camera / power / radio research with prices + links
 ├── robot_design.md                   custom diff-drive chassis design + BOM (supersedes the RC-car chassis)
@@ -225,7 +226,7 @@ With `--symlink-install`, Python edits take effect on next run; rebuild only aft
   the robot can stop within what the sensor sees (`sight_speed`): 2.7 m/s if the HC-SR04 reads the ground at
   ~1.95 m, 3.8 m/s if it reads nothing (`sight_distance` 3.0). The cap drops at once and rises at
   `cap_rise_rate`. New state `SIGHT_LIMIT`. **Consequence: with only the HC-SR04 the robot is limited to ~6–8 mph;
-  12–15 mph needs a longer-range forward sensor** (options in `docs/robot_design_v2.md`). Not run on the Pi yet.
+  12–15 mph needs a longer-range forward sensor** (e.g. a ~12 m ToF sensor or a 2D lidar). Not run on the Pi yet.
 
 ### honebot_hardware — `esp32_bridge` node
 - Params: `port` (`/dev/ttyUSB0`), `baud` (115200), `frame_id` (`ultrasonic_link`), `heartbeat_hz` (10),

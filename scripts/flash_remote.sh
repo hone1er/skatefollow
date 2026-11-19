@@ -2,15 +2,15 @@
 # Flash the handheld remote (and optionally the robot ESP32) from the Mac, then print the next steps for
 # driving turtlesim with it. Run from anywhere in the repo clone on the Mac:
 #
-#   firmware/tests/test_remote_turtle.sh                       # list the boards and their ports
-#   firmware/tests/test_remote_turtle.sh <remote_port>         # flash the remote only
-#   firmware/tests/test_remote_turtle.sh <remote_port> <robot_port>   # flash both
+#   scripts/flash_remote.sh                       # list the boards and their ports
+#   scripts/flash_remote.sh <remote_port>         # flash the remote only
+#   scripts/flash_remote.sh <remote_port> <robot_port>   # flash both
 #
 # Ports look like /dev/cu.usbserial-0001. Both boards use the same USB chip, so plug them in one at a time
 # if you are not sure which is which.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FQBN="esp32:esp32:esp32"
 REMOTE_PORT="${1:-}"
 ROBOT_PORT="${2:-}"
@@ -54,7 +54,7 @@ Flashed. Next:
    - Hold the button 1.5 s with the stick centred: state=RUN. Click: state=STOP.
    - robot=1 only when the robot ESP32 is powered and answering over ESP-NOW.
 
-2. Drive turtlesim on the Pi: see firmware/tests/ESP32_REMOTE_TESTING.md
+2. Drive turtlesim on the Pi: see docs/remote_turtlesim.md
    (remote board on the Pi's USB:  ros2 launch honebot_remote_bridge bridge_launch.py
     robot ESP32 on the Pi's USB:   ros2 launch honebot_remote_bridge bridge_launch.py source:=esp32)
 EOF

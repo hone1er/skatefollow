@@ -229,7 +229,6 @@ def belt_loop_n(circles, t, y, w):
         if d < math.radians(2):
             continue
         a0, a1 = t_in, t_in + (d if rho > 0 else -d)
-        sgn = 1 if rho > 0 else -1
         p1 = (cx + rho * math.cos(a0), cz + rho * math.sin(a0)); p2 = (cx + rho * math.cos(a1), cz + rho * math.sin(a1))
         am = t_in + (d / 2 if rho > 0 else -d / 2)
         pm = (cx + rho * math.cos(am), cz + rho * math.sin(am))
@@ -722,7 +721,7 @@ def build_model(P=None):
     for i, (nm, _) in enumerate(AX * 2):
         k = "%s%d" % (nm, i // 2 + 1)
         cx, cy = 120.0 + 40 * i, 0.0
-        ins = m.part("proto_sleeve_in_" + k, "prototype", COL["accent"],
+        m.part("proto_sleeve_in_" + k, "prototype", COL["accent"],
                      [cyl_z(pz, pz + 2.0, cx, cy, 15.0), cyl_z(pz + 1.99, pz + 32.3, cx, cy, sd / 2)],
                      [cyl_z(pz - co, pz + 32.3 + co, cx, cy, 4.2)], material="PAHT-CF", hidden=True,
                      note="prototype: inner sleeve + collar in one, collar on the bed; replaces the steel tube + collar")
@@ -1145,7 +1144,7 @@ def run(context):
     ui = app.userInterface
     failures = []
     try:
-        doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+        app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)   # new design becomes activeProduct
         design = adsk.fusion.Design.cast(app.activeProduct)
         try:
             design.designType = adsk.fusion.DesignTypes.DirectDesignType

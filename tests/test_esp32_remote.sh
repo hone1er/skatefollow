@@ -8,7 +8,7 @@
 #   add  follow  as the last word: follow bot on turtle2 + remote override (turtle1 = the skater), e.g.
 #     tests/test_esp32_remote.sh fake follow           tests/test_esp32_remote.sh esp32 /dev/ttyUSB0 follow
 #
-# Flash the boards first, from the Mac: firmware/tests/test_remote_turtle.sh. Guide: firmware/tests/ESP32_REMOTE_TESTING.md
+# Flash the boards first, from the Mac: scripts/flash_remote.sh. Guide: docs/remote_turtlesim.md
 set -uo pipefail
 
 MODE="${1:-}"

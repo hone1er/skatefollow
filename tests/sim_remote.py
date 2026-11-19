@@ -9,8 +9,8 @@ STOP, `run` only works with the stick centred, and a click (`stop`) stops at onc
 
 Python 3 standard library only. Linux (the Pi) or macOS.
 
-    python3 firmware/tests/sim_remote.py            # type commands, see below
-    python3 firmware/tests/sim_remote.py --demo     # loops a scripted drive
+    python3 tests/sim_remote.py            # type commands, see below
+    python3 tests/sim_remote.py --demo     # loops a scripted drive
 
 Then, in another terminal:
     ros2 launch honebot_remote_bridge bridge_launch.py port:=/tmp/honebot_fake_remote

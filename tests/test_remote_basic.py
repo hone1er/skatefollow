@@ -9,7 +9,7 @@ each step from the serial lines):
 Just watch the lines, with what the robot would do for each (wheel commands, speed, turn rate):
     python3 tests/test_remote_basic.py /dev/ttyUSB0 --watch
 
-No hardware: runs the same guided check against the fake remote (firmware/tests/sim_remote.py), playing the
+No hardware: runs the same guided check against the fake remote (tests/sim_remote.py), playing the
 person too. Checks this script, the parser and the pseudo-terminal plumbing:
     python3 tests/test_remote_basic.py --sim
 
@@ -24,8 +24,7 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [os.path.join(HERE, '..', 'src', 'honebot_remote_bridge'),
-                os.path.join(HERE, '..', 'firmware', 'tests')]
+sys.path[:0] = [os.path.join(HERE, '..', 'src', 'honebot_remote_bridge'), HERE]   # HERE: sim_remote.py
 from honebot_remote_bridge.remote_logic import parse_remote_line, remote_to_wheels, wheels_to_twist  # noqa: E402
 
 STEP_TIMEOUT_S = 20.0

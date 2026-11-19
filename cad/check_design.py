@@ -703,12 +703,11 @@ def structural(M, report, mass, cg, dyn):
                   "axle). The skater will not cross a 10 mm lip at 15 mph either; the follower must slow for driveways.\n"
                   % (K_LIP / 1000, m_w))
     report.append("| event | wheel force (N) |\n|---|---|")
-    Fw = 0.0; thw = 0.0
+    Fw = 0.0
     for name, h, v in cases:
-        a, ta = lip_impact(m_w, rw, h, v)
+        a, _ = lip_impact(m_w, rw, h, v)
         report.append("| %s | %.0f |" % (name, a))
-        if a > Fw:
-            Fw, thw = a, ta
+        Fw = max(Fw, a)
     rows = []
     # ---- stub axle: M8 12.9 bolt inside a steel sleeve (wall -> wheel) ----
     lever = (P["wheel_inner_y"] + P["wheel_w"] / 2) - P["tub_hw"]
@@ -1040,10 +1039,6 @@ def plot_views(M, path):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Polygon
-    try:
-        from scipy.spatial import ConvexHull  # noqa
-    except Exception:
-        ConvexHull = None
 
     def hull2(pts):
         pts = np.unique(np.round(pts, 3), axis=0)

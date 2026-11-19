@@ -36,7 +36,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from turtlesim.msg import Pose
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'firmware', 'tests'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # sim_remote.py sits next to this file
 from sim_remote import DEFAULT_LINK, FakeRemote  # noqa: E402
 
 SETTLE_S = 0.6        # line period 0.2 s + bridge 20 Hz + turtlesim, with margin

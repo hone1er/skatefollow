@@ -1,2 +1,0 @@
-# colcon: do not build anything in here. docs/honebot_ws/ is an OLD reference copy of the workspace
-# (see CLAUDE.md), and its packages would clash with the real ones in src/.
