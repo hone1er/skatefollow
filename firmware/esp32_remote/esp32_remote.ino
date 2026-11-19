@@ -49,7 +49,7 @@ const int LED_PIN = 2;
 // that pushing the stick away from you gives x=+1.00 and pushing it left gives y=+1.00.
 const bool SWAP_XY = false;                 // true if forward/back shows up on y
 const bool X_REVERSED = false;
-const bool Y_REVERSED = false;
+const bool Y_REVERSED = true;               // owner's joystick module reads left as -1 (turtlesim test, 2026-11-18)
 
 const int ADC_MAX = 4095;
 const float CENTRE_BAND = 0.15f;            // |stick| below this counts as centred (same as the robot's deadband)

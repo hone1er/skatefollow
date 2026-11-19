@@ -9,9 +9,10 @@
 | [`hardware_plan.md`](hardware_plan.md) | UWB, power and radio choices with prices |
 | [`camera_plan.md`](camera_plan.md) | GoPro modes, pan servo wiring, detector model |
 | [`remote_turtlesim.md`](remote_turtlesim.md) | Testing the handheld remote and the follow-bot code in turtlesim before the robot exists |
+| [`remote_case.md`](remote_case.md) | Printed case for the handheld remote (ESP32 + joystick + LiPo + switch): parts, wiring, print settings, assembly. Script `cad/remote_case/fusion/HonebotRemote/HonebotRemote.py`, STLs in `cad/remote_case/stl/` |
 
 **The printed parts come from one script: `cad/fusion/HonebotChassis/HonebotChassis.py`** (message box:
-"built 86 of 86 parts", including a hidden prototype kit). The other Fusion scripts in this repo build different robots.
+"built 86 of 86 parts", including a hidden prototype kit). The handheld remote's case has its own script (see `remote_case.md`).
 
 ## Earlier plan
 
