@@ -80,7 +80,10 @@ raised deliberately, not all at once.
    ```bash
    ros2 topic pub -r 20 /cmd_vel_raw geometry_msgs/Twist "{angular: {z: 1.0}}"
    ```
-   (If nothing moves, `ESC_DEADBAND` is not set yet: Stage 1, step 2.) Time one full turn. It should take 6.3 s. If it takes longer, raise `track_width` in `config/robot.yaml` in
+   (If nothing moves, `ESC_DEADBAND` is not set yet: Stage 1, step 2. **The simulator predicts the robot will
+   barely pivot at 1 rad/s even then**: the tyres need ~10 A per motor to scrub and this command gives ~1 A.
+   `sim/README.md` "What it found" explains it, and the fix is a gyro yaw-rate loop. Note what really happens
+   here: it decides whether that loop is needed.) Time one full turn. It should take 6.3 s. If it takes longer, raise `track_width` in `config/robot.yaml` in
    proportion (9 s → 0.39 × 9 / 6.3 = 0.56) and restart the service.
 4. **Speed calibration:** drive a measured 10 m at `linear.x: 1.0` and time it. If it takes 12 s the robot does
    0.83 m/s per commanded 1.0: multiply `max_wheel_speed` by 0.83.

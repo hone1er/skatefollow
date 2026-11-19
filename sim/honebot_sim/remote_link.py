@@ -20,13 +20,14 @@ LINE = re.compile(r"state=(RUN|STOP|FAULT)\s+x=([+-]?[\d.]+)\s+y=([+-]?[\d.]+)")
 
 
 class RemoteSerial:
-    def __init__(self, port, baud=115200, timeout=0.5):
+    def __init__(self, port, baud=115200, timeout=0.5, clock=time.monotonic):
         try:
             import serial
         except ImportError as e:
             raise SystemExit("pyserial is needed for --remote: pip install pyserial") from e
         self.ser = serial.Serial(port, baud, timeout=0.1)
         self.timeout = timeout
+        self.clock = clock              # tests pass a fake clock; live use is wall time (the viewer runs in real time)
         self.state, self.x, self.y = "none", 0.0, 0.0
         self.last = None
         self.lines = 0
@@ -49,14 +50,14 @@ class RemoteSerial:
                     run = m.group(1) == "RUN"
                     self.state = "run" if run else "stop"
                     self.x, self.y = (float(m.group(2)), float(m.group(3))) if run else (0.0, 0.0)
-                    self.last = time.monotonic()
+                    self.last = self.clock()
                     self.lines += 1
 
     def poll(self):
         """(state, forward, turn): state run | stop | lost | none."""
         if self.last is None:
             return "none", 0.0, 0.0
-        if time.monotonic() - self.last > self.timeout:
+        if self.clock() - self.last > self.timeout:
             return "lost", 0.0, 0.0
         return self.state, self.x, self.y
 

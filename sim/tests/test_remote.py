@@ -37,35 +37,40 @@ def test_keyboard_remote_drives_through_the_firmware_manual_path():
 
 
 def test_real_remote_lines_over_a_serial_port():
-    serial = pytest.importorskip("serial")
+    """The remote's USB line, through a pseudo-terminal. A fake clock (= sim time) keeps it independent of how
+    fast the machine running the test is."""
+    pytest.importorskip("serial")
     from honebot_sim.remote_link import RemoteSerial
     master, slave = os.openpty()
-    rs = RemoteSerial(os.ttyname(slave))
+    sim, cfg, sc = make("playground")
+    rs = RemoteSerial(os.ttyname(slave), clock=lambda: sim.t)
+    sim.remote_input = rs
+
+    def send(x):
+        n = rs.lines
+        os.write(master, b"state=RUN x=%+.2f y=+0.00 btn=0 robot=0 pi=0 failsafe=1 manual=0\n" % x)
+        deadline = time.monotonic() + 5.0
+        while rs.lines == n and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert rs.lines > n, "line not read"
+
+    def run_for(seconds, x):                  # keep the remote "talking" every 50 ms of sim time
+        end = sim.t + seconds
+        while sim.t < end:
+            send(x)
+            for _ in range(25):
+                sim.step()
     try:
-        sim, cfg, sc = make("playground")
-        sim.remote_input = rs
         assert rs.poll()[0] == "none"
-        t_end = time.monotonic() + 1.0
-        while time.monotonic() < t_end:            # the remote's 5 Hz status line, stick 0.5 forward
-            os.write(master, b"state=RUN x=+0.50 y=+0.00 btn=0 robot=0 pi=0 failsafe=1 manual=0\n")
-            time.sleep(0.05)
-            if rs.lines:
-                break
-        assert rs.poll() == ("run", 0.5, 0.0)
-        os.write(master, b"state=RUN x=+0.00 y=+0.00 btn=0 robot=0 pi=0 failsafe=1 manual=0\n")
-        time.sleep(0.2)
-        start = sim.t
-        while sim.t < start + 2.5:                 # arming window passes with the stick centred
-            sim.step()
-        os.write(master, b"state=RUN x=+0.50 y=+0.00 btn=0 robot=0 pi=0 failsafe=1 manual=0\n")
-        time.sleep(0.2)
-        start = sim.t
-        while sim.t < start + 0.3:
-            sim.step()
+        run_for(2.5, 0.0)                      # arming window with the stick centred (RUN seen centred)
+        assert rs.poll() == ("run", 0.0, 0.0)
+        run_for(1.0, 0.5)                      # stick forward -> manual
         assert sim.esp.source == SRC_MANUAL
-        time.sleep(0.6)                            # remote goes quiet -> lost -> nobody drives
+        assert math.hypot(sim.d.qvel[0], sim.d.qvel[1]) > 0.3
+        end = sim.t + 0.6                      # the remote goes quiet -> lost -> nobody drives
+        while sim.t < end:
+            sim.step()
         assert rs.poll()[0] == "lost"
-        sim.step()
         assert sim.esp.source == SRC_NONE
     finally:
         rs.close()

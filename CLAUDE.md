@@ -533,7 +533,8 @@ valid only for the tricycle variant or an RC car.
   scenario `playground`. 29 tests in `sim/tests`, CI job `sim`. Viewer and offscreen rendering untested here (no OpenGL in the cloud
   container); everything headless was run.
 - **Findings:** today's config passes straight-line/stop/obstacle scenarios safely (never touches the skater) but
-  **cannot turn on small commands**: voltage-mode ESCs give current ∝ voltage difference, scrub needs ~10 A per
+  (model prediction, robust to contact model and friction 0.5–0.8; real tyres creep, so expect heavy understeer;
+  the real spin test settles it) **barely turns on small commands**: voltage-mode ESCs give current ∝ voltage difference, scrub needs ~10 A per
   motor, the follower's 0.5–3 rad/s requests give 1–5 A → no yaw; slalom/U-turn/circle lose the skater. A gyro
   yaw-rate PI loop on the ESP32 (`--yaw-loop`, NOT in the firmware) makes 11/11 pass; effective track 2–2.7×
   geometric (robot.yaml guesses 1.4×). `--profile target` (12 m lidar tilted up 1°, max_linear 7.5,

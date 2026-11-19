@@ -77,7 +77,7 @@ One run, with a plot of speeds, gap, turn rate, camera pan and motor current:
 Try a setting before putting it on the robot (`--set` = any `robot.yaml` parameter, `--fw` = any firmware constant):
 
 ```bash
-~/honebot-sim/bin/python -m honebot_sim.run --all --set follower.follow_bearing=0.45 --fw ESC_DEADBAND=0.05
+~/honebot-sim/bin/python -m honebot_sim.run --all --set follower.follow_bearing=0.45 --set follower.max_linear=2.5
 ```
 
 ### Drive it yourself: your handheld remote, or the keyboard
@@ -123,18 +123,24 @@ Other options: `--list` (scenarios), `--spin-test` (turn-rate sweep), `--profile
 
 ## What it found (2026-11-19)
 
-With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of 11 scenarios pass.
+With `robot.yaml` and the firmware exactly as they are (`--profile today`), 8 of the 11 test scenarios pass
+(`--all` runs those 11; the 12th, `playground`, is for driving by hand).
 
 1. **Straight-line following and stopping are safe.** The robot stops 1.1–1.2 m from a skater who stops dead,
    and it stops for the box. It never touches the skater in any scenario.
 2. **The HC-SR04 caps the robot at about 2.7 m/s (6 mph)**, as the safety gate's sight limit intends. Faster
    skaters pull away, and past 30 m of UWB range the robot stops and stays stopped. (This was already known.)
-3. **New: it cannot turn on small commands.** To pivot, or to turn while rolling, the tyres must slide sideways.
+3. **New, a model prediction: it barely turns on small commands.** To pivot, or to turn while rolling, the tyres must slide sideways.
    That takes about 11 N of push per side, about 10 A per motor. With the ESC in voltage mode, a turn command
    gives a current *difference* proportional to the *voltage* difference. The follower's usual turn requests
    (0.5–3 rad/s) give 1–5 A, so the robot goes straight. `--spin-test`: no turn at all for any
    command up to 6 rad/s. In the slalom, the U-turn and the slow circle, the skater ends up behind the robot, the UWB
-   bearing passes 80° and the robot stops. `ESC_DEADBAND` does not fix it; it only makes slow driving jerky.
+   bearing passes 80° and the robot stops. The prediction holds for every MuJoCo contact model tried (elliptic or
+   pyramidal friction, hard or soft) and for friction 0.5–0.8. Real urethane creeps a little sideways, which this
+   rigid-friction model does not have, so expect heavy understeer rather than literally zero turn. **The real
+   spin test (`docs/first_drive.md` Stage 2, step 3) settles it.** `ESC_DEADBAND` does not fix it either: at 0.10
+   or 0.13 it lifts *every* wheel command, so the robot drove faster than the follower asked, hit the box in
+   `obstacle` and, at 0.13, the skater in `cruise_stop_8`. Keep it for the ESC's own dead zone only.
 4. **A yaw-rate loop fixes it.** With a gyro on the ESP32 and a PI loop that adds the missing wheel difference
    (`--yaw-loop`, a prototype here, not in the firmware), all 11 scenarios pass. The spin test then tracks the
    command to within 0.05 rad/s at about 10 A. The effective track width comes out at 2–2.7 × geometric,

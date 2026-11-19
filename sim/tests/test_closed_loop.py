@@ -36,7 +36,8 @@ def test_sight_limit_caps_speed_with_the_hcsr04():
 
 
 def test_turns_need_the_yaw_loop():
-    """Open-loop wheel voltages cannot break the tyres loose for small turn commands (scrub threshold);
+    """Model prediction (rigid Coulomb friction; real tyres creep, so read "heavy understeer"): open-loop wheel
+    voltages cannot break the tyres loose for small turn commands (scrub threshold);
     a gyro yaw-rate loop on the ESP32 (prototype here) fixes it."""
     sc, mt, cfg = _run("carve_6")
     assert mt.lost_time > 1.0
