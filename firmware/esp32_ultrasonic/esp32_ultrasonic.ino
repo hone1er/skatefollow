@@ -309,12 +309,13 @@ void pollUltrasonic(unsigned long now) {
   if (now - lastMeasureMs >= MEASURE_PERIOD_MS) {
     lastMeasureMs = now;
     if (pingInFlight) {
+      // Only reachable if loop() stalled past ECHO_TIMEOUT_US; drop the unknown sample instead of
+      // reporting -1 ("clear") so the Pi's range_timeout catches a sustained stall.
       portENTER_CRITICAL(&echoMux);
       echoArmed = false;
       echoRising = false;
       portEXIT_CRITICAL(&echoMux);
       pingInFlight = false;
-      Serial.printf("R,%.3f,%d\n", -1.0f, linkOk ? 1 : 0);
     }
     startPing();
   }

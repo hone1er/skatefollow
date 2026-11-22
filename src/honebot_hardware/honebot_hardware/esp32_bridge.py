@@ -95,6 +95,7 @@ class Esp32Bridge(Node):
 
         self.ser = None
         self.buf = b''
+        self._write_timeouts = 0
         self.last_link_ok = None
         self.last_failsafe = None
         self.last_remote = None
@@ -116,49 +117,29 @@ class Esp32Bridge(Node):
         self.get_logger().info(f'drive_mode = {self.drive_mode} '
                                f'(C line = {"left,right" if self.drive_mode == "diff" else "throttle,steer"})')
 
-    _POSITIVE_PARAMS = {'track_width', 'max_wheel_speed', 'wheelbase',
-                        'max_steer_angle', 'max_speed', 'min_speed_for_steer'}
+    _MAX_WRITE_TIMEOUTS = 3
+    _STARTUP_ONLY_PARAMS = {
+        'port', 'baud', 'frame_id', 'heartbeat_hz', 'cmd_rate_hz', 'pan_rate_hz',
+        'drive_mode', 'track_width', 'max_wheel_speed', 'left_reversed', 'right_reversed',
+        'wheelbase', 'max_steer_angle', 'max_speed', 'min_speed_for_steer',
+        'steer_reversed', 'throttle_reversed',
+    }
 
     def _on_params(self, params):
         updates = []
         for p in params:
+            if p.name in self._STARTUP_ONLY_PARAMS:
+                return SetParametersResult(
+                    successful=False, reason=f'{p.name} is fixed at startup; restart the bridge')
             if p.name == 'cmd_timeout':
                 val = float(p.value)
                 if not math.isfinite(val) or val <= 0.0:
                     return SetParametersResult(successful=False, reason='cmd_timeout must be finite and > 0')
-                updates.append(('self', p.name, val))
+                updates.append((p.name, val))
             elif p.name == 'send_commands':
-                updates.append(('self', p.name, bool(p.value)))
-            elif p.name == 'drive_mode':
-                val = str(p.value)
-                if val not in ('diff', 'ackermann'):
-                    return SetParametersResult(successful=False, reason="drive_mode must be 'diff' or 'ackermann'")
-                updates.append(('self', p.name, val))
-            elif hasattr(self.diff, p.name):
-                cur = getattr(self.diff, p.name)
-                if isinstance(cur, bool):
-                    val = bool(p.value)
-                else:
-                    val = float(p.value)
-                    if not math.isfinite(val) or (p.name in self._POSITIVE_PARAMS and val <= 0.0) or val < 0.0:
-                        return SetParametersResult(successful=False, reason=f'{p.name} must be finite and positive')
-                updates.append(('diff', p.name, val))
-            elif hasattr(self.ack, p.name):
-                cur = getattr(self.ack, p.name)
-                if isinstance(cur, bool):
-                    val = bool(p.value)
-                else:
-                    val = float(p.value)
-                    if not math.isfinite(val) or (p.name in self._POSITIVE_PARAMS and val <= 0.0) or val < 0.0:
-                        return SetParametersResult(successful=False, reason=f'{p.name} must be finite and >= 0')
-                updates.append(('ack', p.name, val))
-        for target, name, val in updates:
-            if target == 'self':
-                setattr(self, name, val)
-            elif target == 'diff':
-                setattr(self.diff, name, val)
-            else:
-                setattr(self.ack, name, val)
+                updates.append((p.name, bool(p.value)))
+        for name, val in updates:
+            setattr(self, name, val)
             self.get_logger().info(f'{name} = {val}')
         return SetParametersResult(successful=True)
 
@@ -167,10 +148,20 @@ class Esp32Bridge(Node):
         if self.ser is not None:
             return
         try:
-            self.ser = serial.Serial(self.port, self.baud, timeout=0, write_timeout=0.1)
+            # Configure DTR/RTS low before open() so reconnects avoid toggling EN/IO0 on CP2102 boards.
+            ser = serial.Serial()
+            ser.port = self.port
+            ser.baudrate = self.baud
+            ser.timeout = 0
+            ser.write_timeout = 0.1
+            ser.dtr = False
+            ser.rts = False
+            ser.open()
+            self.ser = ser
             self.buf = b''
+            self._write_timeouts = 0
             self.get_logger().info(f'Connected to ESP32 on {self.port}')
-        except serial.SerialException as e:
+        except (serial.SerialException, OSError) as e:
             self.ser = None
             self.get_logger().warn(f'Cannot open {self.port}: {e}', throttle_duration_sec=5.0)
 
@@ -181,14 +172,30 @@ class Esp32Bridge(Node):
         except Exception:
             pass
         self.ser = None
+        self._write_timeouts = 0
+
+    def _write(self, data: bytes) -> bool:
+        try:
+            self.ser.write(data)
+            self._write_timeouts = 0
+            return True
+        except serial.SerialTimeoutException as e:
+            self._write_timeouts += 1
+            if self._write_timeouts >= self._MAX_WRITE_TIMEOUTS:
+                self._drop(e)
+            else:
+                self.get_logger().warn(
+                    f'Serial write timeout ({self._write_timeouts}/{self._MAX_WRITE_TIMEOUTS}): {e}',
+                    throttle_duration_sec=1.0)
+            return False
+        except (serial.SerialException, OSError) as e:
+            self._drop(e)
+            return False
 
     def _heartbeat(self):
         if self.ser is None:
             return
-        try:
-            self.ser.write(b'H\n')
-        except (serial.SerialException, OSError) as e:
-            self._drop(e)
+        self._write(b'H\n')
 
     # --- actuator commands -----------------------------------------------
     def _on_cmd(self, msg: Twist):
@@ -215,10 +222,7 @@ class Esp32Bridge(Node):
             if self.cmd_stamp is not None and not self._warned_stale:
                 self.get_logger().warn('cmd_vel stale; sending neutral')
                 self._warned_stale = True
-        try:
-            self.ser.write(f'C,{throttle:.3f},{steer:.3f}\n'.encode('ascii'))
-        except (serial.SerialException, OSError) as e:
-            self._drop(e)
+        if not self._write(f'C,{throttle:.3f},{steer:.3f}\n'.encode('ascii')):
             return
         self.act_pub.publish(Vector3(x=float(throttle), y=float(steer),
                                      z=float(self.pan_sent) if self.pan_sent is not None else 0.0))
@@ -232,10 +236,7 @@ class Esp32Bridge(Node):
     def _send_pan(self):
         if self.ser is None or not self.send_commands or self.pan is None:
             return
-        try:
-            self.ser.write(f'P,{self.pan:.3f}\n'.encode('ascii'))
-        except (serial.SerialException, OSError) as e:
-            self._drop(e)
+        if not self._write(f'P,{self.pan:.3f}\n'.encode('ascii')):
             return
         self.pan_sent = self.pan
 
