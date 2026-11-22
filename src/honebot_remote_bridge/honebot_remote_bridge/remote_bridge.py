@@ -2,7 +2,7 @@
 """Handheld remote (+ the follow-bot code) -> the Twist that moves the "robot" turtle.
 
 source:=serial (bench: only the remote board, on this machine's USB)
-    Reads the remote's own printout (`state=RUN x=+0.50 y=-0.20 ...`, 5 per second) on `port`, and takes the
+    Reads the remote's own printout (`state=RUN x=+0.50 y=-0.20 ...`, 20 per second) on `port`, and takes the
     follow-bot code's commands on `cmd_vel_in` (Twist). Decides who drives exactly like the robot firmware
     (remote_logic.Arbiter = drive::decide): remote STOP or lost -> nobody; RUN + stick pushed -> the stick
     (same deadband, mixing and 2.4 m/s limit as the firmware); stick released for 0.8 s -> the follower again.
@@ -65,7 +65,9 @@ class RemoteBridge(Node):
         self.outputs = None             # esp32: last (left, right)
         self.outputs_time = None
         self.esp32_manual = False
+        self.esp32_manual_time = None
         self.esp32_remote = None
+        self.esp32_remote_time = None
         self.last_logged = (None, None)
 
         if self.source == 'serial':
@@ -134,9 +136,11 @@ class RemoteBridge(Node):
 
     def _on_esp32_manual(self, msg: Bool):
         self.esp32_manual = bool(msg.data)
+        self.esp32_manual_time = self._now()
 
     def _on_esp32_remote(self, msg: String):
         self.esp32_remote = msg.data
+        self.esp32_remote_time = self._now()
 
     # --- output -----------------------------------------------------------------
     def _publish(self):
@@ -151,11 +155,22 @@ class RemoteBridge(Node):
                 linear, angular = self.pi_cmd.linear.x, self.pi_cmd.angular.z
         else:
             fresh = self.outputs_time is not None and now - self.outputs_time <= self.remote_timeout
+            manual_fresh = (self.esp32_manual_time is not None
+                            and now - self.esp32_manual_time <= self.remote_timeout)
+            remote_fresh = (self.esp32_remote_time is not None
+                            and now - self.esp32_remote_time <= self.remote_timeout)
+            manual = fresh and self.esp32_manual and manual_fresh
             if fresh:
-                linear, angular = wheels_to_twist(*self.outputs, self.track_width, self.full_scale_mps)
-            rstate = self.esp32_remote or 'never'
+                scale = self.scale if manual else 1.0
+                linear, angular = wheels_to_twist(*self.outputs, self.track_width, self.full_scale_mps, scale)
+            if self.esp32_remote is None:
+                rstate = 'never'
+            elif fresh and remote_fresh:
+                rstate = self.esp32_remote
+            else:
+                rstate = 'lost'
             moving = abs(linear) > 1e-3 or abs(angular) > 1e-3
-            source = SRC_MANUAL if self.esp32_manual else (SRC_PI if moving else SRC_NONE)
+            source = SRC_MANUAL if manual else (SRC_PI if (fresh and moving) else SRC_NONE)
 
         if (source, rstate) != self.last_logged:
             self.get_logger().info(f'Remote: {rstate}, driving: {source}')

@@ -178,6 +178,7 @@ struct YawConfig {
   float trackWidth;      // must equal the bridge's track_width (robot.yaml)
   uint32_t satTimeoutMs; // correction pinned at maxCorr this long -> give up (stuck gyro, stuck wheel)
   uint32_t wrongWayMs;   // gyro says "turning hard the OTHER way" this long -> give up (gyro mounted upside down)
+  float outLimit = 1.0f; // cap on each wheel output (THROTTLE_LIMIT), so yaw correction cannot bypass the bench cap
 };
 
 struct YawState {
@@ -251,12 +252,13 @@ inline void yawLoop(const YawConfig &c, YawState *s, bool active, float gyroZ, u
     s->integ = 0.0f;
     return;
   }
+  float lim = (c.outLimit > 0.0f && c.outLimit <= 1.0f) ? c.outLimit : 1.0f;
   float m = 0.5f * (*a + *b);
   float h = 0.5f * (*b - *a) + corr;
   float big = fabsf(m) + fabsf(h);
-  if (big > 1.0f) h = (h > 0.0f ? 1.0f : -1.0f) * fmaxf(0.0f, 1.0f - fabsf(m));   // keep the mean, shrink the turn
-  *a = m - h;
-  *b = m + h;
+  if (big > lim) h = (h > 0.0f ? 1.0f : -1.0f) * fmaxf(0.0f, lim - fabsf(m));   // keep the mean, shrink the turn
+  *a = clampf(m - h, -lim, lim);
+  *b = clampf(m + h, -lim, lim);
 }
 
 // Stuck gyro (2.4.0). A working MPU6050 always shows a little noise: its raw reading changes by a count or so

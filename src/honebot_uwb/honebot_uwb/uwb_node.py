@@ -21,6 +21,7 @@ import math
 import rclpy
 import serial
 from geometry_msgs.msg import PointStamped
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
@@ -48,6 +49,7 @@ class UwbNode(Node):
         self.max_bearing_deg = self.declare_parameter('max_bearing_deg', 80.0).value
         self.bearing_filter = RangeFilter(alpha=self.declare_parameter('bearing_alpha', 0.6).value,
                                           min_range=-self.max_bearing_deg, max_range=self.max_bearing_deg)
+        self.add_on_set_parameters_callback(self._on_params)
 
         self.target_pub = self.create_publisher(PointStamped, 'target', 10)
         self.ranges_pub = self.create_publisher(Float32MultiArray, 'uwb/ranges', 10)
@@ -60,6 +62,60 @@ class UwbNode(Node):
         self.create_timer(1.0, self._ensure_open)
         self.create_timer(5.0, self._stats)
         self._ensure_open()
+
+    def _on_params(self, params):
+        updates = []
+        for prm in params:
+            if prm.name in ('baseline', 'max_bearing_deg'):
+                val = float(prm.value)
+                if not math.isfinite(val) or val <= 0.0:
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be finite and > 0')
+                updates.append((prm.name, val))
+            elif prm.name == 'max_range':
+                val = float(prm.value)
+                if not math.isfinite(val) or val <= self.aoa_filter.min_range:
+                    return SetParametersResult(successful=False,
+                                               reason=f'max_range must be finite and > {self.aoa_filter.min_range}')
+                updates.append((prm.name, val))
+            elif prm.name in ('filter_alpha', 'bearing_alpha'):
+                val = float(prm.value)
+                if not math.isfinite(val) or not (0.0 < val <= 1.0):
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be in (0, 1]')
+                updates.append((prm.name, val))
+            elif prm.name == 'anchor_x':
+                val = float(prm.value)
+                if not math.isfinite(val):
+                    return SetParametersResult(successful=False, reason='anchor_x must be finite')
+                updates.append((prm.name, val))
+            elif prm.name == 'bearing_sign':
+                val = float(prm.value)
+                if not math.isfinite(val) or val == 0.0:
+                    return SetParametersResult(successful=False, reason='bearing_sign must be finite and non-zero')
+                updates.append((prm.name, val))
+        for name, val in updates:
+            if name == 'baseline':
+                self.geom.baseline = val
+            elif name == 'anchor_x':
+                self.geom.anchor_x = val
+            elif name == 'max_range':
+                self.max_range = val
+                for f in self.filters:
+                    f.max_range = val
+                self.aoa_filter.max_range = val
+            elif name == 'filter_alpha':
+                for f in self.filters:
+                    f.alpha = val
+                self.aoa_filter.alpha = val
+            elif name == 'bearing_alpha':
+                self.bearing_filter.alpha = val
+            elif name == 'max_bearing_deg':
+                self.max_bearing_deg = val
+                self.bearing_filter.min_range = -val
+                self.bearing_filter.max_range = val
+            elif name == 'bearing_sign':
+                self.bearing_sign = val
+            self.get_logger().info(f'{name} = {val}')
+        return SetParametersResult(successful=True)
 
     def _ensure_open(self):
         if self.ser is not None:
@@ -117,6 +173,12 @@ class UwbNode(Node):
         self._publish_target(pos)
 
     def _handle_aoa(self, rng, bearing_deg):
+        if not (math.isfinite(rng) and self.aoa_filter.min_range <= rng <= self.aoa_filter.max_range
+                and math.isfinite(bearing_deg) and abs(bearing_deg) <= self.max_bearing_deg):
+            self.aoa_filter.update(math.nan)
+            self.bearing_filter.update(math.nan)
+            self.n_reject += 1
+            return
         rng = self.aoa_filter.update(rng)
         bearing_deg = self.bearing_filter.update(bearing_deg)
         if rng is None or bearing_deg is None:       # no fix this cycle: publish nothing

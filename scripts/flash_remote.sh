@@ -47,7 +47,7 @@ Flashed. Next:
 
 1. Check the remote on the Mac (stick at rest when it powers up):
      arduino-cli monitor -p $REMOTE_PORT -c baudrate=115200
-   You should see 5 lines a second like:
+   You should see 20 lines a second like:
      state=STOP x=+0.00 y=+0.00 btn=0 robot=0 pi=0 failsafe=0 manual=0
    - Stick pushed away from you: x goes to +1.00. Stick pushed left: y goes to +1.00.
      (If not, set SWAP_XY / X_REVERSED / Y_REVERSED at the top of esp32_remote.ino and flash again.)

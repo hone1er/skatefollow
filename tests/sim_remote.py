@@ -2,7 +2,7 @@
 """Fake handheld remote: prints the remote board's serial lines into a pseudo-terminal, so the ROS remote
 bridge (honebot_remote_bridge, source:=serial) can be tested with no ESP32 at all.
 
-Same line format and rate as firmware/esp32_remote/esp32_remote.ino (5 lines per second):
+Same line format and rate as firmware/esp32_remote/esp32_remote.ino (20 lines per second):
     state=RUN x=+1.00 y=+0.00 btn=0 robot=0 pi=0 failsafe=0 manual=0
 x = forward (+1 = stick pushed away), y = turn (+1 = stick pushed left). Like the real remote it boots in
 STOP, `run` only works with the stick centred, and a click (`stop`) stops at once.
@@ -33,7 +33,7 @@ import time
 import tty
 
 DEFAULT_LINK = '/tmp/honebot_fake_remote'
-PRINT_PERIOD_S = 0.2
+PRINT_PERIOD_S = 0.05
 CENTRE_BAND = 0.15
 
 

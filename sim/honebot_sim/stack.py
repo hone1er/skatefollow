@@ -107,6 +107,11 @@ class PiStack:
 
     # ---- uwb_node --------------------------------------------------------------------------------------
     def on_uwb_line(self, t, rng, bearing_deg):
+        if not (math.isfinite(rng) and self.f_range.min_range <= rng <= self.f_range.max_range
+                and math.isfinite(bearing_deg) and abs(bearing_deg) <= self.max_bearing):
+            self.f_range.update(math.nan)
+            self.f_bearing.update(math.nan)
+            return
         r = self.f_range.update(rng)
         b = self.f_bearing.update(bearing_deg)
         if r is None or b is None:
@@ -115,6 +120,8 @@ class PiStack:
         if pos is None:
             return
         x, y = pos
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return
         self.target = (math.hypot(x, y), math.atan2(y, x))      # follower._on_target
         self.target_t = t
         self.uwb_bearing, self.uwb_t = math.atan2(y, x), t      # camera_aim._on_uwb
@@ -138,15 +145,24 @@ class PiStack:
 
     # ---- esp32_bridge: incoming lines ------------------------------------------------------------------
     def on_r_line(self, t, dist, link):
-        self.range_m = dist if dist >= 0.0 else math.inf
+        if math.isfinite(dist) and dist >= 0.0:
+            self.range_m = dist
+        elif dist == -1.0:
+            self.range_m = math.inf
+        else:
+            self.range_m = math.nan
         self.range_t = t
-        if dist > 0.0:                                          # finite reading = an echo (-1 = none)
+        if math.isfinite(self.range_m) and self.range_m > 0.0:   # finite reading = an echo (-1 = none)
             self.echo_t = t
         self.link_ok, self.link_t = link, t
 
     def on_s_line(self, t, a, b):
+        if not (math.isfinite(a) and math.isfinite(b)):
+            return
         if self.drive_mode == "diff":
-            self.own_speed = (wheels_to_speed(a, b, self.dd), t)
+            v = wheels_to_speed(a, b, self.dd)
+            if math.isfinite(v):
+                self.own_speed = (v, t)
 
     def on_g_line(self, t, yaw, usable):
         if usable and math.isfinite(yaw):
@@ -156,13 +172,20 @@ class PiStack:
     def gate_tick(self, t):
         p = self.gate
         dt = 1.0 / self.rates["gate"]          # safety_gate passes 1 / rate_hz to rising_cap
-        if p.brake_decel > 0.0 and self.range_m is not None and self.range_m == self.range_m:
-            self.speed_cap = rising_cap(self.speed_cap, sight_speed(self.range_m, p), dt, p)
+        age = lambda s: None if s is None else t - s
+        range_age, link_age = age(self.range_t), age(self.link_t)
+        fresh_sensor = (self.link_ok and link_age is not None and link_age <= p.range_timeout
+                        and self.range_m is not None and range_age is not None and range_age <= p.range_timeout
+                        and not math.isnan(self.range_m) and self.range_m > 0.0)
+        if p.brake_decel > 0.0:
+            if fresh_sensor:
+                self.speed_cap = rising_cap(self.speed_cap, sight_speed(self.range_m, p), dt, p)
+            else:
+                self.speed_cap = 0.0
         else:
             self.speed_cap = None
-        age = lambda s: None if s is None else t - s
-        lin, ang, state = gate_command(self.cmd_raw[0], self.cmd_raw[1], self.range_m, age(self.range_t),
-                                       self.link_ok, age(self.link_t), age(self.cmd_raw_t), p, self.speed_cap,
+        lin, ang, state = gate_command(self.cmd_raw[0], self.cmd_raw[1], self.range_m, range_age,
+                                       self.link_ok, link_age, age(self.cmd_raw_t), p, self.speed_cap,
                                        age(self.echo_t))
         self.cmd_vel, self.cmd_vel_t = (lin, ang), t
         self.gate_state = state
@@ -181,7 +204,8 @@ class PiStack:
 
     # ---- camera_aim --------------------------------------------------------------------------------------
     def on_detection(self, t, bearing_err):
-        self.meas = (bearing_err, t)
+        if math.isfinite(bearing_err):
+            self.meas = (bearing_err, t)
 
     def aim_tick(self, t):
         dt = t - self.last_aim_t

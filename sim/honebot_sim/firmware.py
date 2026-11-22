@@ -70,7 +70,7 @@ def lib():
         for name in ("hb_yaw_state_free", "hb_yaw_state_reset", "hb_yaw_state_tripped"):
             getattr(L, name).argtypes = [ctypes.c_void_p]
         L.hb_yaw_state_tripped.restype = i
-        L.hb_yaw_loop.argtypes = [ctypes.c_void_p, f, f, f, f, f, u, u, i, f, u, f, pf, pf]
+        L.hb_yaw_loop.argtypes = [ctypes.c_void_p, f, f, f, f, f, u, u, f, i, f, u, f, pf, pf]
         L.hb_expo.argtypes = [f, f]
         L.hb_expo.restype = f
         L.hb_stuck_new.restype = ctypes.c_void_p
@@ -170,7 +170,9 @@ class Esp32:
             self.gyro_bias_n += 1
             return
         if not self.gyro_bias_done:
-            self.gyro_bias = self.gyro_bias_sum / self.gyro_bias_n if self.gyro_bias_n else 0.0
+            if self.gyro_bias_n < int(self.k["GYRO_BIAS_MIN_SAMPLES"]):
+                return
+            self.gyro_bias = self.gyro_bias_sum / self.gyro_bias_n
             self.gyro_bias_done = True
         self.gyro_z = w - self.gyro_bias
         self.gyro_last_ok = now_ms
@@ -232,8 +234,8 @@ class Esp32:
         active = k["DIFF_DRIVE"] and not self.failsafe and self.yaw_loop_usable(now_ms)
         if k["YAW_LOOP_ENABLED"]:
             L.hb_yaw_loop(self.yaw_state, k["YAW_KP"], k["YAW_KI"], k["YAW_MAX_CORR"], k["FULL_SCALE_MPS"],
-                          k["YAW_TRACK_WIDTH"], int(k["YAW_SAT_MS"]), int(k["YAW_WRONG_WAY_MS"]), int(active),
-                          self.gyro_z, now_ms, dt,
+                          k["YAW_TRACK_WIDTH"], int(k["YAW_SAT_MS"]), int(k["YAW_WRONG_WAY_MS"]),
+                          k["THROTTLE_LIMIT"], int(active), self.gyro_z, now_ms, dt,
                           ctypes.byref(a), ctypes.byref(b))
         self.drive_a, self.drive_b = a.value, b.value
 

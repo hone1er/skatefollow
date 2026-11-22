@@ -18,6 +18,10 @@ def test_camera_ip_is_dot_51_of_host_link():
 def test_other_addresses_are_not_a_gopro():
     assert gopro_ip_from_host_ip('192.168.10.122') is None     # home wifi
     assert gopro_ip_from_host_ip('172.25.123.51') is None      # that is the camera itself
+    assert gopro_ip_from_host_ip('172.17.0.1') is None         # docker0 bridge
+    assert gopro_ip_from_host_ip('172.16.0.1') is None         # non-GoPro 172.16/12
+    assert gopro_ip_from_host_ip('172.20.0.1') is None         # third octet outside 100..199
+    assert gopro_ip_from_host_ip('172.30.123.50') is None      # second octet outside 20..29
     assert gopro_ip_from_host_ip('10.0.0.50') is None
     assert gopro_ip_from_host_ip('garbage') is None
 
@@ -31,12 +35,18 @@ def test_parse_ip_addr_output():
 
 def test_find_gopro_in_interfaces():
     assert find_gopro_in(parse_ip_addr(IP_ADDR_OUT)) == ('enx0a1b2c3d4e5f', '172.25.123.50', '172.25.123.51')
+    assert find_gopro_in([('docker0', '172.17.0.1'), ('enx0a1b2c3d4e5f', '172.25.123.50')]) == (
+        'enx0a1b2c3d4e5f', '172.25.123.50', '172.25.123.51')
+    # USB interfaces (usb*, enx*) win over other interfaces even if listed later
+    assert find_gopro_in([('eth0', '172.20.100.50'), ('usb0', '172.25.123.50')]) == (
+        'usb0', '172.25.123.50', '172.25.123.51')
     assert find_gopro_in([('wlan0', '192.168.10.122')]) is None
     assert find_gopro_in([]) is None
 
 
 def test_stream_url_and_api_paths():
     assert stream_url().startswith('udp://0.0.0.0:8554?')
+    assert 'timeout=' in stream_url()
     assert stream_url('127.0.0.1', 8555).startswith('udp://127.0.0.1:8555?')
     assert opengopro_start_path(1080, 4, 8554) == '/gopro/webcam/start?res=12&fov=4'
     assert opengopro_start_path(1080, 4, 9000) == '/gopro/webcam/start?res=12&fov=4&port=9000'

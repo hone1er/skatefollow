@@ -136,6 +136,7 @@ const float GYRO_SIGN = 1.0f;              // +1: chip side up (turning left rea
 const uint16_t GYRO_I2C_TIMEOUT_MS = 2;    // a hung bus must never stall the loop: a failed read = no gyro
 const unsigned long GYRO_PERIOD_MS = 5;    // 200 Hz
 const unsigned long GYRO_STALE_MS = 50;    // no good reading for this long -> open loop
+const uint32_t GYRO_BIAS_MIN_SAMPLES = 100;  // need at least ~0.5 s of good samples during ARM_MS to trust bias
 const uint16_t GYRO_STUCK_SAMPLES = 100;   // 2.4.0: this many identical raw readings in a row (0.5 s) -> gyro stuck,
                                            // treated as absent until restart (a working chip always shows noise)
 const float YAW_TRACK_WIDTH = 0.39f;       // m, MUST equal track_width in robot.yaml (the Pi converts with it)
@@ -149,8 +150,8 @@ const unsigned long YAW_WRONG_WAY_MS = 75;  // gyro reads a hard turn the other 
 const float MANUAL_MAX_YAW = 3.0f;         // rad/s at full side stick when the loop is on
 const float MANUAL_TURN_EXPO = 0.5f;       // gentle turns near the stick centre when the loop is on
 
-const drive::YawConfig YAW_CFG = {YAW_KP,          YAW_KI,     YAW_MAX_CORR,    FULL_SCALE_MPS,
-                                  YAW_TRACK_WIDTH, YAW_SAT_MS, YAW_WRONG_WAY_MS};
+const drive::YawConfig YAW_CFG = {YAW_KP,          YAW_KI,     YAW_MAX_CORR,     FULL_SCALE_MPS,
+                                  YAW_TRACK_WIDTH, YAW_SAT_MS, YAW_WRONG_WAY_MS, THROTTLE_LIMIT};
 // with the loop on, the stick asks for a yaw rate: full side stick = MANUAL_MAX_YAW
 const float MANUAL_TURN_SCALE_GYRO = MANUAL_MAX_YAW * YAW_TRACK_WIDTH / (2.0f * MANUAL_LIMIT * FULL_SCALE_MPS);
 
@@ -203,6 +204,17 @@ const uint8_t BROADCAST_ADDR[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 char rxBuf[48];
 size_t rxLen = 0;
+bool rxOverflow = false;
+
+// Non-blocking HC-SR04 echo capture (CHANGE interrupt on ECHO_PIN); never stalls loop().
+portMUX_TYPE echoMux = portMUX_INITIALIZER_UNLOCKED;
+volatile unsigned long echoRiseUs = 0;
+volatile unsigned long echoPulseUs = 0;
+volatile bool echoArmed = false;
+volatile bool echoRising = false;
+volatile bool echoReady = false;
+bool pingInFlight = false;
+unsigned long pingStartUs = 0;
 
 // --- servo output ---------------------------------------------------------
 void writePulseUs(int pin, int us, int minUs, int maxUs) {
@@ -229,17 +241,83 @@ void applyOutputs() {
   writePulseUs(PAN_PIN, normToUs(outPan, PAN_TRIM_US, PAN_REVERSED, PAN_SPAN_US), PAN_MIN_US, PAN_MAX_US);
 }
 
-// --- sensor -----------------------------------------------------------------
-float readDistanceMeters() {
+// --- sensor (non-blocking HC-SR04) ------------------------------------------
+void IRAM_ATTR onEchoChange() {
+  unsigned long nowUs = (unsigned long)esp_timer_get_time();
+  bool high = gpio_get_level((gpio_num_t)ECHO_PIN) != 0;
+  portENTER_CRITICAL_ISR(&echoMux);
+  if (echoArmed) {
+    if (high && !echoRising) {
+      echoRiseUs = nowUs;
+      echoRising = true;
+    } else if (!high && echoRising) {
+      echoPulseUs = nowUs - echoRiseUs;
+      echoRising = false;
+      echoReady = true;
+      echoArmed = false;                   // ignore trailing bounce until next startPing()
+    }
+  }
+  portEXIT_CRITICAL_ISR(&echoMux);
+}
+
+void startPing() {
+  portENTER_CRITICAL(&echoMux);
+  echoArmed = false;
+  echoRising = false;
+  echoReady = false;
+  echoPulseUs = 0;
+  portEXIT_CRITICAL(&echoMux);
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
+  // Arm after TRIG falls: HC-SR04 emits 8x 40 kHz cycles (~450 us) before raising ECHO.
+  portENTER_CRITICAL(&echoMux);
+  echoArmed = true;
+  portEXIT_CRITICAL(&echoMux);
+  pingInFlight = true;
+  pingStartUs = micros();
+}
 
-  unsigned long echoUs = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT_US);
-  if (echoUs == 0) return -1.0f;           // no echo
-  return echoUs * 0.000343f / 2.0f;        // speed of sound 343 m/s, there and back
+void pollUltrasonic(unsigned long now) {
+  if (pingInFlight) {
+    bool ready, rising;
+    unsigned long pulseUs, riseUs;
+    portENTER_CRITICAL(&echoMux);
+    ready = echoReady;
+    rising = echoRising;
+    pulseUs = echoPulseUs;
+    riseUs = echoRiseUs;
+    portEXIT_CRITICAL(&echoMux);
+
+    unsigned long nowUs = micros();
+    if (ready) {
+      pingInFlight = false;
+      float d = (pulseUs > 0 && pulseUs <= ECHO_TIMEOUT_US) ? (pulseUs * 0.000343f / 2.0f) : -1.0f;
+      Serial.printf("R,%.3f,%d\n", d, linkOk ? 1 : 0);
+    } else if ((rising && (unsigned long)(nowUs - riseUs) >= ECHO_TIMEOUT_US) ||
+               (!rising && (unsigned long)(nowUs - pingStartUs) >= ECHO_TIMEOUT_US)) {
+      portENTER_CRITICAL(&echoMux);
+      echoArmed = false;
+      echoRising = false;
+      portEXIT_CRITICAL(&echoMux);
+      pingInFlight = false;
+      Serial.printf("R,%.3f,%d\n", -1.0f, linkOk ? 1 : 0);
+    }
+  }
+  if (now - lastMeasureMs >= MEASURE_PERIOD_MS) {
+    lastMeasureMs = now;
+    if (pingInFlight) {
+      portENTER_CRITICAL(&echoMux);
+      echoArmed = false;
+      echoRising = false;
+      portEXIT_CRITICAL(&echoMux);
+      pingInFlight = false;
+      Serial.printf("R,%.3f,%d\n", -1.0f, linkOk ? 1 : 0);
+    }
+    startPing();
+  }
 }
 
 // --- serial input -----------------------------------------------------------
@@ -295,12 +373,15 @@ void readSerial() {
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n') {
-      rxBuf[rxLen] = '\0';
-      handleLine(rxBuf);
+      if (!rxOverflow) {
+        rxBuf[rxLen] = '\0';
+        handleLine(rxBuf);
+      }
       rxLen = 0;
+      rxOverflow = false;
     } else if (c != '\r') {
       if (rxLen < sizeof(rxBuf) - 1) rxBuf[rxLen++] = c;
-      else rxLen = 0;                      // overlong garbage: drop it
+      else rxOverflow = true;              // overlong garbage: discard rest of line until '\n'
     }
   }
 }
@@ -391,7 +472,8 @@ void updateGyro(unsigned long now) {
     return;
   }
   if (!gyroBiasDone) {
-    gyroBias = gyroBiasN ? (float)(gyroBiasSum / gyroBiasN) : 0.0f;
+    if (gyroBiasN < GYRO_BIAS_MIN_SAMPLES) return;   // not enough samples during arming: leave yaw loop off
+    gyroBias = (float)(gyroBiasSum / gyroBiasN);
     gyroBiasDone = true;
   }
   gyroZ = w - gyroBias;
@@ -480,6 +562,7 @@ void setup() {
   Serial.begin(115200);
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(ECHO_PIN), onEchoChange, CHANGE);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(TRIG_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
@@ -506,11 +589,7 @@ void loop() {
   updateOutputs(now);
   updateLed(now);
 
-  if (now - lastMeasureMs >= MEASURE_PERIOD_MS) {
-    lastMeasureMs = now;
-    float d = readDistanceMeters();
-    Serial.printf("R,%.3f,%d\n", d, linkOk ? 1 : 0);
-  }
+  pollUltrasonic(now);
   if (now - lastStatusMs >= STATUS_PERIOD_MS) {
     lastStatusMs = now;
     Serial.printf("S,%d,%.3f,%.3f\n", failsafe ? 1 : 0, driveA, driveB);

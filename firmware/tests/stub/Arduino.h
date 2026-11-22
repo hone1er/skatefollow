@@ -11,15 +11,23 @@
 #define INPUT 0
 #define OUTPUT 1
 #define INPUT_PULLUP 2
+#define CHANGE 1
+#define IRAM_ATTR
 #define ESP_OK 0
 #define constrain(v, lo, hi) ((v) < (lo) ? (lo) : ((v) > (hi) ? (hi) : (v)))
 typedef int esp_err_t;
+typedef int gpio_num_t;
+int64_t esp_timer_get_time();
+int gpio_get_level(gpio_num_t);
 unsigned long millis();
+unsigned long micros();
 void delay(unsigned long);
 void delayMicroseconds(unsigned int);
 void pinMode(int, int);
 void digitalWrite(int, int);
 int digitalRead(int);
+int digitalPinToInterrupt(int);
+void attachInterrupt(int, void (*)(), int);
 int analogRead(int);
 void analogReadResolution(int);
 enum adc_attenuation_t { ADC_11db };
@@ -39,3 +47,5 @@ struct portMUX_TYPE { int x; };
 #define portMUX_INITIALIZER_UNLOCKED {0}
 void portENTER_CRITICAL(portMUX_TYPE *);
 void portEXIT_CRITICAL(portMUX_TYPE *);
+void portENTER_CRITICAL_ISR(portMUX_TYPE *);
+void portEXIT_CRITICAL_ISR(portMUX_TYPE *);

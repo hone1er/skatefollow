@@ -77,11 +77,12 @@ class BearingKF:
     def __init__(self, bearing: float, meas_std: float, accel_std: float, init_rate_std: float = 1.0):
         self.b = bearing
         self.v = 0.0
-        self.p00 = meas_std ** 2
+        r = max(1e-12, meas_std ** 2)
+        self.p00 = r
         self.p01 = 0.0
         self.p11 = init_rate_std ** 2
-        self.r = meas_std ** 2
-        self.q = accel_std ** 2
+        self.r = r
+        self.q = max(0.0, accel_std ** 2)
 
     def predict(self, dt: float):
         dt = max(0.0, dt)
@@ -97,6 +98,8 @@ class BearingKF:
 
     def update(self, z: float):
         s = self.p00 + self.r
+        if s <= 0.0:
+            return
         k0 = self.p00 / s
         k1 = self.p01 / s
         y = z - self.b
@@ -162,7 +165,13 @@ class TargetTracker:
         self.hits = 0
         self.last_match_t = None
 
+    def _sync_kf_noise(self):
+        if self.kf is not None:
+            self.kf.r = max(1e-12, self.p.meas_std ** 2)
+            self.kf.q = max(0.0, self.p.accel_std ** 2)
+
     def gate(self) -> float:
+        self._sync_kf_noise()
         g = self.p.n_sigma * self.kf.innovation_std()
         return min(self.p.gate_max, max(self.p.gate_min, g))
 
@@ -191,11 +200,19 @@ class TargetTracker:
         dt = 0.0 if self.last_t is None else t - self.last_t
         self.last_t = t
 
+        if self.kf is not None:
+            # Drop stale tracks before predicting/associating (e.g. after a multi-second video freeze).
+            if self.confirmed and (t - self.last_match_t) > self.p.coast_time:
+                self.reset()
+            elif not self.confirmed and dt > self.p.coast_time:
+                self.reset()
+
         if self.kf is None:
             if not cands:
                 return None
             return self._seed(t, cands, hint)
 
+        self._sync_kf_noise()
         self.kf.predict(dt)
         gate = self.gate()
         best = None

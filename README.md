@@ -170,7 +170,7 @@ alive. Each layer watches its *own* inputs with its *own* timeout.
 | `follower` | age of the last `/target` | `target_timeout` 0.5 s | publishes a zero `Twist` |
 | `safety_gate` | ESP32 link flag and its age; range reading validity and age; age of the controller's command; obstacle distance; **sight limit** (robot config: never faster than it can stop within what the sensor sees, 2.7–3.8 m/s with the ultrasonic sensor) | `range_timeout` 0.3 s, `cmd_timeout` 0.5 s, `stop_distance` 0.4 m, `slow_distance` 1.0 m | publishes zero (or forward-blocked / scaled / capped) on `/cmd_vel` and the reason on `/safety/state` |
 | `esp32_bridge` | age of the last `/cmd_vel` | `cmd_timeout` 0.3 s | sends `C,0,0` (neutral); also one neutral on exit |
-| ESP32 firmware (2.2.1) | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window; handheld remote (STOP, lost, or never heard when `REMOTE_REQUIRED`) | 500 ms, 200 ms, 2 s, 500 ms | ramps both drive channels to 1500 µs at 0.5 g (hard neutral after 2.5 s and at boot); reports via `S,1,…` and `K,…` |
+| ESP32 firmware (2.4.0) | heartbeat `H` from the Pi; command `C` from the Pi; boot arming window; handheld remote (STOP, lost, or never heard when `REMOTE_REQUIRED`) | 500 ms, 200 ms, 2 s, 500 ms | ramps both drive channels to 1500 µs at 0.5 g (hard neutral after 2.5 s and at boot); reports via `S,1,…` and `K,…` |
 | Handheld remote (`firmware/esp32_remote`) | its button (STOP/RUN) and stick | — | STOP or radio loss stops the robot; in RUN the stick drives manually and overrides the Pi (the ultrasonic gate does not apply to manual driving) |
 | ESC (hardware) | signal present | ESC-specific | stops the motor |
 
@@ -211,9 +211,11 @@ sides (the ESP32 prints boot chatter; the firmware may be newer or older than th
 | ESP32 → Pi | `V,<version>` | once at boot | firmware version; bridge logs it |
 | ESP32 → Pi | `R,<distance_m>,<link_ok>` | 16.7 Hz | ultrasonic distance (`-1` = no echo) and whether a heartbeat arrived within 500 ms |
 | ESP32 → Pi | `S,<failsafe>,<a>,<b>` | 10 Hz | 1 while outputs are forced neutral; `a`, `b` = what is actually on the two drive channels (−1..1) |
+| ESP32 → Pi | `K,<req>,<remote>,<source>` | 10 Hz | kill-switch/remote status: `req` = `REMOTE_REQUIRED`, `remote` = 0 never / 1 lost / 2 STOP / 3 RUN, `source` = 0 nobody / 1 Pi / 2 manual |
+| ESP32 → Pi | `G,<yaw_rad_s>,<usable>` | 10 Hz (when `YAW_LOOP_ENABLED`) | gyro yaw rate (rad/s, +left) and whether the yaw loop considers it usable (calibrated, fresh, not stuck/tripped) |
 | Pi → ESP32 | `H` | 10 Hz | heartbeat |
 | Pi → ESP32 | `C,<a>,<b>` | 50 Hz | drive command, each −1..1. **The ESP32 does not know what the channels mean**: in `diff` mode a/b are left/right wheels, in `ackermann` mode throttle/steer |
-| Pi → ESP32 | `P,<pan>` | 20 Hz | camera pan, −1..1, +1 = full left |
+| Pi → ESP32 | `P,<pan>` | 20 Hz | camera pan, −1..1, +1 = full left (wider `PAN_SPAN_US` range, ~±70°) |
 
 Design points:
 
@@ -492,7 +494,7 @@ cd <your clone of this repo>
 arduino-cli compile --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 arduino-cli upload  -p /dev/cu.usbserial-0001 --fqbn esp32:esp32:esp32 firmware/esp32_ultrasonic
 ```
-On boot it prints `V,2.2.1`; the bridge logs `ESP32 firmware version 2.2.1`. The handheld remote is a second sketch,
+On boot it prints `V,2.4.0`; the bridge logs `ESP32 firmware version 2.4.0`. The handheld remote is a second sketch,
 `firmware/esp32_remote` (see its README); from 2.2.0 the robot does not move unless the remote is in RUN.
 
 ### Auto-start at boot and serial-port tweak (need sudo)

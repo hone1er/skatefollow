@@ -25,7 +25,7 @@
 //   3 quick flashes, pause, repeat   stick fault at power-up (loose wire or stick held): RUN is refused;
 //                    fix the wiring / release the stick and press EN (reset)
 //
-// Serial monitor (115200) prints one line 5x per second for bench checks:
+// Serial monitor (115200) prints one line 20x per second for bench checks:
 //   state=STOP x=+0.00 y=+0.00 btn=0 robot=1 pi=1 failsafe=1 manual=0
 //
 // Requires the esp32 Arduino core 3.x.
@@ -160,7 +160,8 @@ void loop() {
   robotMs = statusMs;
   flags = statusFlags;
   portEXIT_CRITICAL(&statusMux);
-  bool robotLink = robotSeen && (now - robotMs) < ROBOT_TIMEOUT_MS;
+  int32_t robotAge = (int32_t)(now - robotMs);
+  bool robotLink = robotSeen && (robotAge < 0 || (uint32_t)robotAge < ROBOT_TIMEOUT_MS);
 
   // Send
   if (radioOk && (now - lastSendMs) >= SEND_PERIOD_MS) {

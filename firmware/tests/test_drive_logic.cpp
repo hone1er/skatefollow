@@ -173,7 +173,7 @@ static void test_remote_button() {
   assert(toWire(1.0f) == 100 && toWire(-2.0f) == -100 && toWire(0.004f) == 0);
 }
 
-static const YawConfig YAW = {0.12f, 0.8f, 0.2f, 9.6f, 0.39f, 1000, 150};
+static const YawConfig YAW = {0.12f, 0.8f, 0.2f, 9.6f, 0.39f, 1000, 150, 1.0f};
 
 static void test_yaw_loop_inactive_is_passthrough() {
   // Off, fail-safe or no gyro: outputs untouched and the integrator cleared (behaviour of 2.2.1).
@@ -248,6 +248,15 @@ static void test_yaw_loop_keeps_within_full_scale() {
     yawLoop(YAW, &st, true, 0.0f, 1000 + 5 * i, 0.005f, &a, &b);
     assert(std::fabs(a) <= 1.0f + 1e-6f && std::fabs(b) <= 1.0f + 1e-6f);
     assert(near(0.5f * (a + b), 0.95f));
+  }
+  // Bench THROTTLE_LIMIT (0.5): yaw correction must never push either wheel past outLimit.
+  YawConfig benchYaw = {0.12f, 0.8f, 0.2f, 9.6f, 0.39f, 1000, 150, 0.5f};
+  YawState st2;
+  for (int i = 0; i < 200; i++) {
+    float a = 0.45f, b = 0.50f;
+    yawLoop(benchYaw, &st2, true, 0.0f, 1000 + 5 * i, 0.005f, &a, &b);
+    assert(std::fabs(a) <= 0.5f + 1e-6f && std::fabs(b) <= 0.5f + 1e-6f);
+    assert(near(0.5f * (a + b), 0.475f));
   }
   assert(near(expo(0.5f, 0.5f), 0.3125f) && near(expo(1.0f, 0.5f), 1.0f) && near(expo(-1.0f, 0.5f), -1.0f));
 }

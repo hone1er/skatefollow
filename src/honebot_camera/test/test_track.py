@@ -216,3 +216,22 @@ def test_tracked_image_bearing_removes_pan():
     tr = confirmed_tracker(deg(30))
     s = tr.update(0.4, [Candidate(deg(30), person())])
     assert tracked_image_bearing(s, deg(25)) == pytest.approx(deg(5), abs=deg(0.5))
+
+
+def test_stale_track_resets_after_video_freeze():
+    tr = confirmed_tracker(deg(0))                 # last match at t = 0.2, coast_time = 1.0
+    # Video freezes for 3 s, then a random person appears near 0 deg: must NOT be immediately confirmed.
+    s = tr.update(3.2, [Candidate(deg(1), person())])
+    assert s is not None and not s.confirmed and s.hits == 1
+
+
+def test_live_kf_param_updates_and_zero_meas_std_safe():
+    tr = confirmed_tracker(deg(0))
+    tr.p.meas_std = deg(5.0)
+    tr.p.accel_std = deg(180.0)
+    tr.update(0.3, [Candidate(deg(0), person())])
+    assert tr.kf.r == pytest.approx(deg(5.0) ** 2)
+    assert tr.kf.q == pytest.approx(deg(180.0) ** 2)
+    kf = BearingKF(0.0, meas_std=0.0, accel_std=0.0)
+    kf.update(0.1)                                 # must not ZeroDivisionError
+    assert math.isfinite(kf.b)

@@ -17,7 +17,7 @@ MIRRORED = {
     "void applyOutputs(": "a3d34909dd2f",
     "bool parseCommand(": "1eac34ef75b5",
     "bool parsePan(": "595be73ee563",
-    "void updateGyro(": "73f7244c3873",
+    "void updateGyro(": "dbdc168b4b1a",
     "bool yawLoopUsable(": "61ff5e1bce66",
 }
 
@@ -154,3 +154,29 @@ def test_a_frozen_gyro_reading_switches_the_loop_off():
     assert not e.yaw_loop_usable(int(off_by))
     assert not e.L.hb_yaw_state_tripped(e.yaw_state)            # it was the stuck check, not the saturation trip
     assert (e.drive_a, e.drive_b) == (e.out_a, e.out_b)        # open loop, exactly as without a gyro
+
+
+def test_yaw_loop_respects_throttle_limit():
+    fw = dict(FW, YAW_LOOP_ENABLED=True, THROTTLE_LIMIT=0.5)
+    e = Esp32(fw)
+    for t in range(0, 2600):
+        if t % 5 == 0:
+            e.gyro_read(0.02 + (0.002 if t % 10 else -0.002), t)
+        if t % 100 == 0:
+            e.line("H", t)
+        if t % 20 == 0:
+            e.line("C,0.450,0.500", t)
+        e.update(t)
+        assert abs(e.drive_a) <= 0.5 + 1e-6 and abs(e.drive_b) <= 0.5 + 1e-6
+
+
+def test_gyro_requires_min_samples_during_arming():
+    fw = dict(FW, YAW_LOOP_ENABLED=True)
+    e = Esp32(fw)
+    # Only 10 samples during arming (below GYRO_BIAS_MIN_SAMPLES): bias must not lock in.
+    for t in range(0, 50, 5):
+        e.gyro_read(0.02 + (0.002 if t % 10 else -0.002), t)
+    for t in range(int(FW["ARM_MS"]), int(FW["ARM_MS"]) + 200, 5):
+        e.gyro_read(0.02 + (0.002 if t % 10 else -0.002), t)
+    assert not e.gyro_bias_done
+    assert not e.yaw_loop_usable(int(FW["ARM_MS"]) + 200)

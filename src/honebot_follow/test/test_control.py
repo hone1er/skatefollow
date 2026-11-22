@@ -380,3 +380,34 @@ def test_side_mode_hysteresis_and_range():
     assert not ctl.active                                   # never went above 0.8
     ctl, t = _settled(speed=2.0)
     assert ctl.step(t + 0.05, (14.0, 0.3), t + 0.05, 2.0, 0.0, GS) is None   # beyond side_engage_range + 1.5
+
+
+def test_follow_command_relative_stops_on_non_finite_or_negative():
+    for d, b in [(math.nan, 0.0), (0.0, math.nan), (math.nan, math.nan),
+                 (math.inf, 0.0), (-math.inf, 0.0), (5.0, math.inf), (-1.0, 0.0)]:
+        assert follow_command_relative(d, b, G) == (0.0, 0.0, 0.0)
+        assert follow_command_relative(d, b, ROBOT) == (0.0, 0.0, 0.0)
+
+
+def test_side_shot_resets_on_non_finite_inputs():
+    ctl, t = _settled(speed=2.0)
+    assert ctl.active
+    assert ctl.step(t + 0.05, (math.nan, 0.3), t + 0.05, 2.0, 0.0, GS) is None
+    assert not ctl.active
+    ctl, t = _settled(speed=2.0)
+    assert ctl.step(t + 0.05, (2.0, math.inf), t + 0.05, 2.0, 0.0, GS) is None
+    assert not ctl.active
+    ctl, t = _settled(speed=2.0)
+    assert ctl.step(t + 0.05, (2.0, 0.3), t + 0.05, math.nan, 0.0, GS) is None
+    assert not ctl.active
+
+
+def test_side_shot_ignores_bursty_timestamps_and_clamps_spikes():
+    ctl = SideShot(SIDE)
+    # First fix at t = 0.0, second fix 2 ms later with 10 cm UWB noise -> 50 m/s if differentiated!
+    assert ctl.step(0.0, (3.0, 0.0), 0.0, 0.0, 0.0, GS) is None
+    assert ctl.step(0.002, (3.1, 0.0), 0.002, 0.0, 0.0, GS) is None
+    assert not ctl.has_vel and not ctl.active
+    # Normal spacing (50 ms) with an impossible 5 m jump -> velocity magnitude clamped to 15 m/s
+    ctl.step(0.05, (8.0, 0.0), 0.05, 0.0, 0.0, GS)
+    assert ctl.has_vel and math.hypot(*ctl.vel) <= 15.0 + 1e-6

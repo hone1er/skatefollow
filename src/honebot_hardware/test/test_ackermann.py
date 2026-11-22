@@ -64,3 +64,8 @@ def test_pulse_us():
     assert pulse_us(-1.0) == 1000
     assert pulse_us(3.0) == 2000
     assert pulse_us(0.5) == 1750
+
+
+def test_zero_min_speed_for_steer_does_not_divide_by_zero():
+    q = AckermannParams(min_speed_for_steer=0.0)
+    assert twist_to_ackermann(0.0, 1.0, q) == (0.0, 0.0)

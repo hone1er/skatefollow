@@ -40,6 +40,7 @@ import math
 import rclpy
 import serial
 from geometry_msgs.msg import Twist, Vector3
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Range
@@ -78,6 +79,7 @@ class Esp32Bridge(Node):
             steer_reversed=self.declare_parameter('steer_reversed', False).value,
             throttle_reversed=self.declare_parameter('throttle_reversed', False).value,
         )
+        self.add_on_set_parameters_callback(self._on_params)
 
         self.range_pub = self.create_publisher(Range, 'ultrasonic/range', 10)
         self.link_pub = self.create_publisher(Bool, 'esp32/link_ok', 10)
@@ -114,12 +116,58 @@ class Esp32Bridge(Node):
         self.get_logger().info(f'drive_mode = {self.drive_mode} '
                                f'(C line = {"left,right" if self.drive_mode == "diff" else "throttle,steer"})')
 
+    _POSITIVE_PARAMS = {'track_width', 'max_wheel_speed', 'wheelbase',
+                        'max_steer_angle', 'max_speed', 'min_speed_for_steer'}
+
+    def _on_params(self, params):
+        updates = []
+        for p in params:
+            if p.name == 'cmd_timeout':
+                val = float(p.value)
+                if not math.isfinite(val) or val <= 0.0:
+                    return SetParametersResult(successful=False, reason='cmd_timeout must be finite and > 0')
+                updates.append(('self', p.name, val))
+            elif p.name == 'send_commands':
+                updates.append(('self', p.name, bool(p.value)))
+            elif p.name == 'drive_mode':
+                val = str(p.value)
+                if val not in ('diff', 'ackermann'):
+                    return SetParametersResult(successful=False, reason="drive_mode must be 'diff' or 'ackermann'")
+                updates.append(('self', p.name, val))
+            elif hasattr(self.diff, p.name):
+                cur = getattr(self.diff, p.name)
+                if isinstance(cur, bool):
+                    val = bool(p.value)
+                else:
+                    val = float(p.value)
+                    if not math.isfinite(val) or (p.name in self._POSITIVE_PARAMS and val <= 0.0) or val < 0.0:
+                        return SetParametersResult(successful=False, reason=f'{p.name} must be finite and positive')
+                updates.append(('diff', p.name, val))
+            elif hasattr(self.ack, p.name):
+                cur = getattr(self.ack, p.name)
+                if isinstance(cur, bool):
+                    val = bool(p.value)
+                else:
+                    val = float(p.value)
+                    if not math.isfinite(val) or (p.name in self._POSITIVE_PARAMS and val <= 0.0) or val < 0.0:
+                        return SetParametersResult(successful=False, reason=f'{p.name} must be finite and >= 0')
+                updates.append(('ack', p.name, val))
+        for target, name, val in updates:
+            if target == 'self':
+                setattr(self, name, val)
+            elif target == 'diff':
+                setattr(self.diff, name, val)
+            else:
+                setattr(self.ack, name, val)
+            self.get_logger().info(f'{name} = {val}')
+        return SetParametersResult(successful=True)
+
     # --- serial connection -----------------------------------------------
     def _ensure_open(self):
         if self.ser is not None:
             return
         try:
-            self.ser = serial.Serial(self.port, self.baud, timeout=0)
+            self.ser = serial.Serial(self.port, self.baud, timeout=0, write_timeout=0.1)
             self.buf = b''
             self.get_logger().info(f'Connected to ESP32 on {self.port}')
         except serial.SerialException as e:
@@ -230,6 +278,9 @@ class Esp32Bridge(Node):
                 except ValueError:
                     self._bad(line)
                     return
+                if not (math.isfinite(a) and math.isfinite(b)):
+                    self._bad(line)
+                    return
                 # What the ESP32 is really outputting (stick or Pi, after kill switch, ramps and limits).
                 self.outputs_pub.publish(Vector3(x=a, y=b, z=1.0 if parts[1] == '1' else 0.0))
                 if self.drive_mode == 'diff':     # own speed for the follower's side shot, same scale as C lines
@@ -287,8 +338,14 @@ class Esp32Bridge(Node):
         msg.field_of_view = 0.26        # ~15 degrees for an HC-SR04
         msg.min_range = 0.02
         msg.max_range = 4.0
-        # REP 117: +inf means "no object detected within range"
-        msg.range = dist if dist >= 0.0 else math.inf
+        # REP 117: +inf means "no object detected within range" (firmware sends -1.0);
+        # NaN or any other negative value is serial corruption -> publish NaN so safety_gate trips RANGE_INVALID.
+        if math.isfinite(dist) and dist >= 0.0:
+            msg.range = dist
+        elif dist == -1.0:
+            msg.range = math.inf
+        else:
+            msg.range = math.nan
         self.range_pub.publish(msg)
 
     def _publish_link(self, ok):

@@ -72,6 +72,12 @@ class PanController:
         Returns the new pan angle (rad, robot frame).
         """
         g = self.g
+        if not (math.isfinite(now) and math.isfinite(dt)):
+            return self.pan
+        if bearing_err is not None and not math.isfinite(bearing_err):
+            bearing_err = None
+        if fallback_bearing is not None and not math.isfinite(fallback_bearing):
+            fallback_bearing = None
         dt = max(0.0, dt)
         if bearing_err is not None:
             self.last_meas_time = now
@@ -91,5 +97,7 @@ class PanController:
 
     def normalized(self, sign=1.0):
         """-1..1 servo command (1 = full left unless sign = -1)."""
+        if self.g.half_range <= 0.0 or not math.isfinite(self.pan):
+            return 0.0
         n = sign * self.pan / self.g.half_range
         return max(-1.0, min(1.0, n))

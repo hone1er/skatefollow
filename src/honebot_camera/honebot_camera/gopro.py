@@ -40,8 +40,8 @@ _IP_ADDR_RE = re.compile(r'^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+)/(\d+)', r
 
 
 def gopro_ip_from_host_ip(host_ip):
-    """The camera is always .51 on its 172.2X.1YZ.0/24 USB link; the host gets .50 or another DHCP
-    lease (a HERO9 handed out .54). None if host_ip is not on such a link."""
+    """The camera is always .51 on its 172.2X.1YZ.0/24 USB link (second octet 20..29, third 100..199);
+    the host gets .50 or another DHCP lease (a HERO9 handed out .54). None if host_ip is not on such a link."""
     try:
         ip = ipaddress.IPv4Address(host_ip)
     except ipaddress.AddressValueError:
@@ -49,6 +49,9 @@ def gopro_ip_from_host_ip(host_ip):
     if ip not in PRIVATE_172:
         return None
     octets = str(ip).split('.')
+    second, third = int(octets[1]), int(octets[2])
+    if not (20 <= second <= 29 and 100 <= third <= 199):
+        return None
     if octets[3] == '51':
         return None
     return '.'.join(octets[:3] + ['51'])
@@ -60,8 +63,11 @@ def parse_ip_addr(text):
 
 
 def find_gopro_in(addresses):
-    """From [(iface, ip)] return (iface, host_ip, gopro_ip) of the first GoPro link, or None."""
-    for iface, ip in addresses:
+    """From [(iface, ip)] return (iface, host_ip, gopro_ip) of the first GoPro link, or None.
+    USB Ethernet interfaces (usb*, enx*) are prioritized."""
+    usb = [a for a in addresses if a[0].startswith(('usb', 'enx'))]
+    other = [a for a in addresses if not a[0].startswith(('usb', 'enx'))]
+    for iface, ip in usb + other:
         cam = gopro_ip_from_host_ip(ip)
         if cam is not None:
             return iface, ip, cam
@@ -78,12 +84,13 @@ def find_gopro():
     return find_gopro_in(parse_ip_addr(out))
 
 
-def stream_url(host='0.0.0.0', port=GOPRO_UDP_PORT):
+def stream_url(host='0.0.0.0', port=GOPRO_UDP_PORT, timeout_us=2000000):
     """URL OpenCV/FFmpeg opens to receive the camera's MPEG-TS over UDP.
 
-    fifo_size is in 188-byte packets (~9 MB); overrun_nonfatal keeps a burst from killing the capture.
+    fifo_size is in 188-byte packets (~9 MB); overrun_nonfatal keeps a burst from killing the capture;
+    timeout (microseconds) ensures FFmpeg returns EOF instead of hanging forever if the stream stops.
     """
-    return f'udp://{host}:{port}?overrun_nonfatal=1&fifo_size=50000'
+    return f'udp://{host}:{port}?overrun_nonfatal=1&fifo_size=50000&timeout={int(timeout_us)}'
 
 
 def opengopro_start_path(res=1080, fov=4, port=GOPRO_UDP_PORT):

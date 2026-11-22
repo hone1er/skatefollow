@@ -44,7 +44,7 @@ def twist_to_ackermann(linear: float, angular: float, p: AckermannParams) -> Tup
     # to produce the same turn direction.
     sign = -1.0 if linear < 0.0 else 1.0
     v_eff = sign * max(abs(linear), p.min_speed_for_steer)
-    delta = math.atan(p.wheelbase * angular / v_eff)
+    delta = math.atan(p.wheelbase * angular / v_eff) if v_eff != 0.0 else 0.0
     steer = clamp(delta / p.max_steer_angle, -1.0, 1.0) if p.max_steer_angle > 0 else 0.0
 
     if p.steer_reversed:
