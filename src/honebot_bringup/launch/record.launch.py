@@ -12,17 +12,21 @@ import os
 from datetime import datetime
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+
+
+def _record(context):
+    out = os.path.expanduser(context.launch_configurations['out'])
+    parent = os.path.dirname(os.path.abspath(out))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return [ExecuteProcess(cmd=['ros2', 'bag', 'record', '-a', '-o', out], output='screen')]
 
 
 def generate_launch_description():
-    default_out = os.path.expanduser(
-        f'~/bags/honebot_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+    default_out = f'~/bags/honebot_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
     return LaunchDescription([
         DeclareLaunchArgument('out', default_value=default_out,
-                              description='Bag directory to create'),
-        ExecuteProcess(
-            cmd=['ros2', 'bag', 'record', '-a', '-o', LaunchConfiguration('out')],
-            output='screen'),
+                              description='Bag directory to create (~ is expanded)'),
+        OpaqueFunction(function=_record),
     ])

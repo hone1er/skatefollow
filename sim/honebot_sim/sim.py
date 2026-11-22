@@ -311,7 +311,7 @@ class Sim:
                                  skater_x=sx, skater_y=sy, skater_speed=sv, gap=gap,
                                  cmd_lin=self.pi.cmd_raw[0], cmd_ang=self.pi.cmd_raw[1],
                                  gate_lin=self.pi.cmd_vel[0], gate=st, range=self.pi.range_m,
-                                 out_l=self.esp.out_a, out_r=self.esp.out_b, failsafe=int(self.esp.failsafe),
+                                 out_l=self.esp.drive_a, out_r=self.esp.drive_b, failsafe=int(self.esp.failsafe),
                                  i_l=self.motors[0].current, i_r=self.motors[1].current,
                                  pan=float(d.qpos[self.jpan]), uwb_ok=int(not (self.pi.target_t is None or
                                                                                  t - self.pi.target_t > self.pi.target_timeout))))

@@ -9,11 +9,12 @@ cd "$(dirname "$0")"
 cmp ../esp32_ultrasonic/honebot_link.h ../esp32_remote/honebot_link.h
 echo "ok: honebot_link.h copies match"
 out=$(mktemp -d)
-g++ -std=c++17 -Wall -Wextra -Werror -o "$out/t" test_drive_logic.cpp && "$out/t"
+trap 'rm -rf "$out"' EXIT
+g++ -std=c++17 -Wall -Wextra -Werror -o "$out/t" test_drive_logic.cpp
+"$out/t"
 for sketch in esp32_ultrasonic esp32_remote; do
   # Arduino adds the Arduino.h include and function prototypes itself; -include does the first.
   g++ -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-function -x c++ -include stub/Arduino.h -I stub \
       -I "../$sketch" "../$sketch/$sketch.ino"
   echo "ok: $sketch.ino passes the host syntax check"
 done
-rm -rf "$out"

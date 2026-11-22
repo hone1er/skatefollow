@@ -135,28 +135,59 @@ class Follower(Node):
         except Exception as e:  # already exists after a restart, etc.
             self.get_logger().warn(f'Could not spawn {self.follower} ({e}); using existing turtle')
 
+    _SIGNED_PARAMS = {'follow_bearing', 'side_angle'}
+
     def _on_params(self, params):
+        updates = []
         for p in params:
-            if hasattr(self.side_params, p.name):
-                setattr(self.side_params, p.name, float(p.value))
-                self.get_logger().info(f'{p.name} = {p.value}')
+            if p.name in ('target_timeout', 'leader_timeout'):
+                val = float(p.value)
+                if not math.isfinite(val) or val <= 0.0:
+                    return SetParametersResult(successful=False, reason=f'{p.name} must be finite and > 0')
+                updates.append(('timeout', p.name, val))
+            elif hasattr(self.side_params, p.name):
+                val = float(p.value)
+                if not math.isfinite(val) or (p.name not in self._SIGNED_PARAMS and val < 0.0):
+                    return SetParametersResult(successful=False, reason=f'{p.name} must be finite'
+                                               + ('' if p.name in self._SIGNED_PARAMS else ' and >= 0'))
+                updates.append(('side', p.name, val))
             elif hasattr(self.gains, p.name):
                 cur = getattr(self.gains, p.name)
-                setattr(self.gains, p.name, bool(p.value) if isinstance(cur, bool) else float(p.value))
-                self.get_logger().info(f'{p.name} = {p.value}')
+                if isinstance(cur, bool):
+                    val = bool(p.value)
+                else:
+                    val = float(p.value)
+                    if not math.isfinite(val) or (p.name not in self._SIGNED_PARAMS and val < 0.0):
+                        return SetParametersResult(successful=False, reason=f'{p.name} must be finite'
+                                                   + ('' if p.name in self._SIGNED_PARAMS else ' and >= 0'))
+                updates.append(('gains', p.name, val))
+        for kind, name, val in updates:
+            if kind == 'timeout':
+                self.target_timeout = val
+            elif kind == 'side':
+                setattr(self.side_params, name, val)
+            else:
+                setattr(self.gains, name, val)
+            self.get_logger().info(f'{name} = {val}')
         return SetParametersResult(successful=True)
 
     # --- inputs ----------------------------------------------------------
     def _on_target(self, msg: PointStamped):
         x, y = msg.point.x, msg.point.y
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return
         self.target = (math.hypot(x, y), math.atan2(y, x))
         self.target_stamp = self.get_clock().now()
 
     def _on_speed(self, msg: Float32):
-        self.own_speed = (float(msg.data), self.get_clock().now())
+        v = float(msg.data)
+        if math.isfinite(v):
+            self.own_speed = (v, self.get_clock().now())
 
     def _on_yaw(self, msg: Float32):
-        self.own_yaw = (float(msg.data), self.get_clock().now())
+        v = float(msg.data)
+        if math.isfinite(v):
+            self.own_yaw = (v, self.get_clock().now())
 
     def _fresh(self, sample, now):
         if sample is None or (now - sample[1]).nanoseconds * 1e-9 > self.side_params.side_input_timeout:

@@ -18,6 +18,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -46,23 +47,23 @@ def generate_launch_description():
         Node(
             package='honebot_camera', executable='camera_node', name='camera_node', output='screen',
             parameters=[{
-                'source': LaunchConfiguration('source'),
-                'record': LaunchConfiguration('record'),
-                'record_dir': LaunchConfiguration('record_dir'),
-                'gopro_res': LaunchConfiguration('gopro_res'),
-                'gopro_fov': LaunchConfiguration('gopro_fov'),
-                'hfov_deg': LaunchConfiguration('hfov_deg'),
-                'model_path': LaunchConfiguration('model_path'),
-                'input_size': LaunchConfiguration('input_size'),
-                'detector': LaunchConfiguration('detector'),
-                'preview_hz': LaunchConfiguration('preview_hz'),
+                'source': ParameterValue(LaunchConfiguration('source'), value_type=str),
+                'record': ParameterValue(LaunchConfiguration('record'), value_type=bool),
+                'record_dir': ParameterValue(LaunchConfiguration('record_dir'), value_type=str),
+                'gopro_res': ParameterValue(LaunchConfiguration('gopro_res'), value_type=int),
+                'gopro_fov': ParameterValue(LaunchConfiguration('gopro_fov'), value_type=int),
+                'hfov_deg': ParameterValue(LaunchConfiguration('hfov_deg'), value_type=float),
+                'model_path': ParameterValue(LaunchConfiguration('model_path'), value_type=str),
+                'input_size': ParameterValue(LaunchConfiguration('input_size'), value_type=int),
+                'detector': ParameterValue(LaunchConfiguration('detector'), value_type=str),
+                'preview_hz': ParameterValue(LaunchConfiguration('preview_hz'), value_type=float),
             }],
         ),
         Node(
             package='honebot_camera', executable='camera_aim', name='camera_aim', output='screen',
             parameters=[{
-                'pan_sign': LaunchConfiguration('pan_sign'),
-                'half_range_deg': LaunchConfiguration('half_range_deg'),
+                'pan_sign': ParameterValue(LaunchConfiguration('pan_sign'), value_type=float),
+                'half_range_deg': ParameterValue(LaunchConfiguration('half_range_deg'), value_type=float),
             }],
             condition=IfCondition(LaunchConfiguration('aim')),
         ),

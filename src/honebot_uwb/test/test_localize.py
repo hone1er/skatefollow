@@ -98,3 +98,8 @@ def test_aoa_offset_and_rejects():
     assert aoa_position(-1.0, 0.0, G) is None
     assert aoa_position(99.0, 0.0, G, max_range=30.0) is None
     assert aoa_position(float('nan'), 0.0, G) is None
+
+
+def test_two_anchor_rejects_non_finite():
+    for rl, rr in [(math.nan, 2.0), (2.0, math.nan), (math.inf, 2.0), (2.0, -math.inf)]:
+        assert two_anchor_position(rl, rr, G) is None

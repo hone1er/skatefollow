@@ -33,6 +33,7 @@ class RemoteSerial:
         self.state, self.x, self.y = "none", 0.0, 0.0
         self.last = None
         self.lines = 0
+        self._lock = threading.Lock()
         self._stop = threading.Event()
         self.thread = threading.Thread(target=self._read, daemon=True)
         self.thread.start()
@@ -50,18 +51,29 @@ class RemoteSerial:
                 m = LINE.search(line.decode("ascii", "replace"))
                 if m:
                     run = m.group(1) == "RUN"
-                    self.state = "run" if run else "stop"
-                    self.x, self.y = (float(m.group(2)), float(m.group(3))) if run else (0.0, 0.0)
-                    self.last = self.clock()
-                    self.lines += 1
+                    state = "run" if run else "stop"
+                    try:
+                        x, y = (float(m.group(2)), float(m.group(3))) if run else (0.0, 0.0)
+                    except ValueError:
+                        continue
+                    now = self.clock()
+                    with self._lock:
+                        self.state = state
+                        self.x, self.y = x, y
+                        self.last = now
+                        self.lines += 1
+            if len(buf) > 512:
+                buf = b""
 
     def poll(self):
         """(state, forward, turn): state run | stop | lost | none."""
-        if self.last is None:
+        with self._lock:
+            last, state, x, y = self.last, self.state, self.x, self.y
+        if last is None:
             return "none", 0.0, 0.0
-        if self.clock() - self.last > self.timeout:
-            return "lost", self.x, self.y          # the firmware keeps the last packet's stick too
-        return self.state, self.x, self.y
+        if self.clock() - last > self.timeout:
+            return "lost", x, y                    # the firmware keeps the last packet's stick too
+        return state, x, y
 
     def close(self):
         self._stop.set()

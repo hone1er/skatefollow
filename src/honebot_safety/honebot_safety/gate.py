@@ -9,11 +9,12 @@ Rules, in priority order (first match wins):
   2. Range reading stale or never seen   -> STOP
   3. Range reading invalid (NaN, <= 0)   -> STOP
   4. Controller command stale/never seen -> STOP
-  5. No echo for blind_timeout           -> no forward motion (BLIND; only when blind_timeout > 0)
-  6. Range < stop_distance               -> no forward motion (reverse and steering allowed)
-  7. Range < slow_distance               -> forward speed scaled down linearly toward stop_distance
-  8. forward speed above the sight limit -> capped to it (only when brake_decel > 0, see sight_speed)
-  9. otherwise                           -> pass through
+  5. Controller command invalid (NaN/inf)-> STOP
+  6. No echo for blind_timeout           -> no forward motion (BLIND; only when blind_timeout > 0)
+  7. Range < stop_distance               -> no forward motion (reverse and steering allowed)
+  8. Range < slow_distance               -> forward speed scaled down linearly toward stop_distance
+  9. forward speed above the sight limit -> capped to it (only when brake_decel > 0, see sight_speed)
+ 10. otherwise                           -> pass through
 
 A range of +inf means "nothing in range" (REP 117) and counts as clear.
 
@@ -39,13 +40,14 @@ LINK_DOWN = 'LINK_DOWN'
 RANGE_STALE = 'RANGE_STALE'
 RANGE_INVALID = 'RANGE_INVALID'
 CMD_STALE = 'CMD_STALE'
+CMD_INVALID = 'CMD_INVALID'
 BLIND = 'BLIND'
 OBSTACLE = 'OBSTACLE'
 SLOW = 'SLOW'
 SIGHT_LIMIT = 'SIGHT_LIMIT'
 OK = 'OK'
 
-STOP_STATES = (LINK_DOWN, RANGE_STALE, RANGE_INVALID, CMD_STALE)
+STOP_STATES = (LINK_DOWN, RANGE_STALE, RANGE_INVALID, CMD_STALE, CMD_INVALID)
 
 
 @dataclass
@@ -117,6 +119,8 @@ def gate_command(linear: float, angular: float,
         return 0.0, 0.0, RANGE_INVALID
     if cmd_age is None or cmd_age > p.cmd_timeout:
         return 0.0, 0.0, CMD_STALE
+    if not (math.isfinite(linear) and math.isfinite(angular)):
+        return 0.0, 0.0, CMD_INVALID
 
     if linear <= 0.0:                      # reversing or stopped: the forward sensor is irrelevant
         return linear, angular, OK

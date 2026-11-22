@@ -5,8 +5,12 @@
 #pragma once
 #include <stdint.h>
 
-// Change PAIR_ID to any other number if someone nearby runs the same firmware; both sketches must agree.
-const uint32_t HONEBOT_PAIR_ID = 0x486F6E65;   // "Hone"
+// Change PAIR_ID to a private value for field use (the default below is public on GitHub), or pass
+// --build-property compiler.cpp.extra_flags=-DHONEBOT_PAIR_ID_VALUE=0x... when flashing both sketches.
+#ifndef HONEBOT_PAIR_ID_VALUE
+#define HONEBOT_PAIR_ID_VALUE 0x486F6E65u      // "Hone"
+#endif
+const uint32_t HONEBOT_PAIR_ID = HONEBOT_PAIR_ID_VALUE;
 const uint8_t HONEBOT_LINK_VERSION = 1;
 const uint8_t HONEBOT_WIFI_CHANNEL = 1;
 

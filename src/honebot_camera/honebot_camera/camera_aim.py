@@ -66,34 +66,64 @@ class CameraAim(Node):
         return self.get_clock().now().nanoseconds * 1e-9
 
     def _on_params(self, params):
+        updates = []
         for prm in params:
-            if prm.name == 'kp':
-                self.gains.kp = float(prm.value)
-            elif prm.name == 'deadband_deg':
-                self.gains.deadband = math.radians(float(prm.value))
-            elif prm.name == 'max_rate_deg_s':
-                self.gains.max_rate = math.radians(float(prm.value))
-            elif prm.name == 'half_range_deg':
-                self.gains.half_range = math.radians(float(prm.value))
-            elif prm.name == 'lost_timeout':
-                self.gains.lost_timeout = float(prm.value)
-            elif prm.name == 'recenter_timeout':
-                self.gains.recenter_timeout = float(prm.value)
-            elif prm.name == 'recenter_rate_deg_s':
-                self.gains.recenter_rate = math.radians(float(prm.value))
+            if prm.name == 'half_range_deg':
+                val = float(prm.value)
+                if not math.isfinite(val) or val <= 0.0:
+                    return SetParametersResult(successful=False, reason='half_range_deg must be finite and > 0')
+                updates.append(('half_range', math.radians(val)))
+            elif prm.name in ('kp', 'lost_timeout', 'recenter_timeout', 'uwb_timeout', 'measurement_max_age'):
+                val = float(prm.value)
+                if not math.isfinite(val) or val < 0.0:
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be finite and >= 0')
+                updates.append((prm.name, val))
+            elif prm.name in ('deadband_deg', 'max_rate_deg_s', 'recenter_rate_deg_s'):
+                val = float(prm.value)
+                if not math.isfinite(val) or val < 0.0:
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be finite and >= 0')
+                updates.append((prm.name, math.radians(val)))
             elif prm.name == 'pan_sign':
-                self.pan_sign = float(prm.value)
+                val = float(prm.value)
+                if not math.isfinite(val) or val == 0.0:
+                    return SetParametersResult(successful=False, reason='pan_sign must be finite and non-zero')
+                updates.append(('pan_sign', val))
             elif prm.name == 'use_uwb_fallback':
-                self.use_uwb = bool(prm.value)
+                updates.append(('use_uwb', bool(prm.value)))
+        for name, val in updates:
+            if name == 'half_range':
+                self.gains.half_range = val
+            elif name == 'deadband_deg':
+                self.gains.deadband = val
+            elif name == 'max_rate_deg_s':
+                self.gains.max_rate = val
+            elif name == 'recenter_rate_deg_s':
+                self.gains.recenter_rate = val
+            elif name in ('kp', 'lost_timeout', 'recenter_timeout'):
+                setattr(self.gains, name, val)
+            elif name == 'uwb_timeout':
+                self.uwb_timeout = val
+            elif name == 'measurement_max_age':
+                self.meas_max_age = val
+            elif name == 'pan_sign':
+                self.pan_sign = val
+            elif name == 'use_uwb':
+                self.use_uwb = val
         return SetParametersResult(successful=True)
 
     def _on_target(self, msg: Vector3Stamped):
-        self.meas = (float(msg.vector.x), self._now())
+        b = float(msg.vector.x)
+        if not math.isfinite(b):
+            return
+        self.meas = (b, self._now())
         # Fresh robot-frame bearing of the skater: commanded pan + where they sit in the image.
-        self.bearing_pub.publish(Float32(data=float(self.ctl.pan + msg.vector.x)))
+        self.bearing_pub.publish(Float32(data=float(self.ctl.pan + b)))
 
     def _on_uwb(self, msg: PointStamped):
-        self.uwb_bearing = math.atan2(msg.point.y, msg.point.x)
+        x, y = msg.point.x, msg.point.y
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return
+        self.uwb_bearing = math.atan2(y, x)
         self.uwb_time = self._now()
 
     def _step(self):

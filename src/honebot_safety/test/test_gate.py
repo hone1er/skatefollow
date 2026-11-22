@@ -1,7 +1,7 @@
 import math
 
-from honebot_safety.gate import (CMD_STALE, LINK_DOWN, OBSTACLE, OK, RANGE_INVALID, RANGE_STALE,
-                                 SLOW, GateParams, gate_command, slow_factor)
+from honebot_safety.gate import (CMD_INVALID, CMD_STALE, LINK_DOWN, OBSTACLE, OK, RANGE_INVALID, RANGE_STALE,
+                                 SLOW, STOP_STATES, GateParams, gate_command, slow_factor)
 
 P = GateParams(stop_distance=0.4, slow_distance=1.0, range_timeout=0.3, cmd_timeout=0.5)
 
@@ -169,3 +169,10 @@ def test_fresh_echo_clears_blind_and_obstacle_rules_still_apply():
 
 def test_stop_states_beat_blind():
     assert blind(1.0, 5.0, cmd_age=None) == (0.0, 0.0, CMD_STALE)
+
+
+def test_non_finite_command_returns_cmd_invalid():
+    assert CMD_INVALID in STOP_STATES
+    for lin, ang in [(math.nan, 0.0), (0.0, math.nan), (math.inf, 0.0), (-math.inf, 0.0),
+                     (-math.inf, math.nan), (1.0, math.inf)]:
+        assert run(linear=lin, angular=ang) == (0.0, 0.0, CMD_INVALID)

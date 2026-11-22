@@ -46,8 +46,9 @@ void hb_yaw_state_reset(void *s) { static_cast<drive::YawState *>(s)->reset(); }
 int hb_yaw_state_tripped(void *s) { return static_cast<drive::YawState *>(s)->tripped ? 1 : 0; }
 
 void hb_yaw_loop(void *state, float kp, float ki, float maxCorr, float fullScale, float track, unsigned satMs,
-                 unsigned wrongWayMs, int active, float gyroZ, unsigned nowMs, float dt, float *a, float *b) {
-  drive::YawConfig c = {kp, ki, maxCorr, fullScale, track, satMs, wrongWayMs};
+                 unsigned wrongWayMs, float outLimit, int active, float gyroZ, unsigned nowMs, float dt, float *a,
+                 float *b) {
+  drive::YawConfig c = {kp, ki, maxCorr, fullScale, track, satMs, wrongWayMs, outLimit};
   drive::yawLoop(c, static_cast<drive::YawState *>(state), active != 0, gyroZ, nowMs, dt, a, b);
 }
 

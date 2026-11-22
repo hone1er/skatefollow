@@ -72,3 +72,17 @@ def test_lost_target_falls_back_to_uwb_then_recentres():
     assert math.isclose(c.pan, 0.1)
     c.update(3.3, 0.5, bearing_err=None)
     assert c.pan == 0.0
+
+
+def test_pan_controller_ignores_non_finite_inputs_and_zero_half_range():
+    c = PanController()
+    c.update(0.0, 0.05, bearing_err=math.nan)
+    assert c.pan == 0.0
+    c.update(1.0, 0.05, bearing_err=None, fallback_bearing=math.nan)
+    assert c.pan == 0.0
+    c.update(2.0, 0.05, bearing_err=math.inf, fallback_bearing=-math.inf)
+    assert c.pan == 0.0
+    c.update(math.nan, 0.05, bearing_err=0.2)
+    assert c.pan == 0.0
+    c0 = PanController(AimGains(half_range=0.0))
+    assert c0.normalized() == 0.0

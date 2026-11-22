@@ -66,10 +66,16 @@ class SafetyGate(Node):
             f'range timeout {self.params.range_timeout:.2f} s, cmd timeout {self.params.cmd_timeout:.2f} s')
 
     def _on_params(self, params):
+        updates = []
         for p in params:
             if hasattr(self.params, p.name):
-                setattr(self.params, p.name, float(p.value))
-                self.get_logger().info(f'{p.name} = {p.value}')
+                val = float(p.value)
+                if not math.isfinite(val) or val < 0.0:
+                    return SetParametersResult(successful=False, reason=f'{p.name} must be finite and >= 0')
+                updates.append((p.name, val))
+        for name, val in updates:
+            setattr(self.params, name, val)
+            self.get_logger().info(f'{name} = {val}')
         return SetParametersResult(successful=True)
 
     # --- inputs ----------------------------------------------------------
@@ -97,15 +103,24 @@ class SafetyGate(Node):
         want_lin = self.cmd.linear.x if self.cmd is not None else 0.0
         want_ang = self.cmd.angular.z if self.cmd is not None else 0.0
 
-        if self.params.brake_decel > 0.0 and self.range_m is not None and self.range_m == self.range_m:
-            self.speed_cap = rising_cap(self.speed_cap, sight_speed(self.range_m, self.params),
-                                        1.0 / self.rate_hz, self.params)
+        range_age = self._age(self.range_stamp)
+        link_age = self._age(self.link_stamp)
+        fresh_sensor = (self.link_ok and link_age is not None and link_age <= self.params.range_timeout
+                        and self.range_m is not None and range_age is not None
+                        and range_age <= self.params.range_timeout
+                        and not math.isnan(self.range_m) and self.range_m > 0.0)
+        if self.params.brake_decel > 0.0:
+            if fresh_sensor:
+                self.speed_cap = rising_cap(self.speed_cap, sight_speed(self.range_m, self.params),
+                                            1.0 / self.rate_hz, self.params)
+            else:
+                self.speed_cap = 0.0
         else:
             self.speed_cap = None
         lin, ang, state = gate_command(
             want_lin, want_ang,
-            self.range_m, self._age(self.range_stamp),
-            self.link_ok, self._age(self.link_stamp),
+            self.range_m, range_age,
+            self.link_ok, link_age,
             self._age(self.cmd_stamp),
             self.params, self.speed_cap, self._age(self.echo_stamp))
 

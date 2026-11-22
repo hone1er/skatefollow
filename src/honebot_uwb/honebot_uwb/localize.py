@@ -33,6 +33,8 @@ def two_anchor_position(r_left: float, r_right: float, g: UwbGeometry,
     """(x, y) of the tag in the robot frame, or None if the ranges are not
     geometrically consistent (difference larger than the baseline + tolerance,
     or non-positive)."""
+    if not (math.isfinite(r_left) and math.isfinite(r_right)):
+        return None
     b = g.baseline
     if b <= 0.0 or r_left <= 0.0 or r_right <= 0.0:
         return None

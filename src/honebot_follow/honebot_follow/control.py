@@ -93,6 +93,9 @@ def follow_command_relative(distance: float, bearing: float, g: FollowGains):
     - brake_decel > 0: the gap grows with speed (safe_gap / speed_for_gap).
     - min_turn_radius > 0: arcs instead of pivots; max_lat_accel > 0: cornering cap.
     """
+    if not (math.isfinite(distance) and math.isfinite(bearing)) or distance < 0.0:
+        return 0.0, 0.0, 0.0
+
     heading_error = wrap_angle(bearing - g.follow_bearing)     # steer to hold the skater at follow_bearing
     angular = clamp(g.kp_angular * heading_error, -g.max_angular, g.max_angular)
 
@@ -204,6 +207,13 @@ class SideShot:
         if p.side_distance <= 0.0 or target is None or own_speed is None or own_yaw_rate is None:
             self.reset()
             return None
+        distance, bearing = target
+        if not (math.isfinite(t) and math.isfinite(distance) and math.isfinite(bearing)
+                and math.isfinite(own_speed) and math.isfinite(own_yaw_rate)
+                and (target_stamp is None or math.isfinite(target_stamp))
+                and distance >= 0.0):
+            self.reset()
+            return None
         # 1. dead-reckon our own pose
         if self.last_t is not None:
             dt = t - self.last_t
@@ -216,20 +226,27 @@ class SideShot:
         self.last_t = t
         X, Y, TH = self.pose
         c, s = math.cos(TH), math.sin(TH)
-        distance, bearing = target
         tx, ty = distance * math.cos(bearing), distance * math.sin(bearing)
         # 2. skater velocity from successive fixes
         if target_stamp is not None and (self.fix is None or target_stamp > self.fix[2]):
             fx, fy = X + tx * c - ty * s, Y + tx * s + ty * c
-            if self.fix is not None:
+            if self.fix is None:
+                self.fix = (fx, fy, target_stamp)
+            else:
                 dts = target_stamp - self.fix[2]
-                vx, vy = (fx - self.fix[0]) / dts, (fy - self.fix[1]) / dts
-                a = min(1.0, dts / p.side_speed_tau) if p.side_speed_tau > 0.0 else 1.0
-                if not self.has_vel:
-                    a = 1.0
-                self.vel = (self.vel[0] + a * (vx - self.vel[0]), self.vel[1] + a * (vy - self.vel[1]))
-                self.has_vel = True
-            self.fix = (fx, fy, target_stamp)
+                if dts >= 0.015:                           # skip back-to-back serial bursts that amplify noise
+                    vx, vy = (fx - self.fix[0]) / dts, (fy - self.fix[1]) / dts
+                    a = min(1.0, dts / p.side_speed_tau) if p.side_speed_tau > 0.0 else 1.0
+                    if not self.has_vel:
+                        a = 1.0
+                    nvx = self.vel[0] + a * (vx - self.vel[0])
+                    nvy = self.vel[1] + a * (vy - self.vel[1])
+                    vmag = math.hypot(nvx, nvy)
+                    if vmag > 15.0:                        # physical ceiling (~33 mph) against UWB spikes
+                        nvx, nvy = nvx * 15.0 / vmag, nvy * 15.0 / vmag
+                    self.vel = (nvx, nvy)
+                    self.has_vel = True
+                    self.fix = (fx, fy, target_stamp)
         if not self.has_vel:
             return None
         vsx, vsy = self.vel[0] * c + self.vel[1] * s, -self.vel[0] * s + self.vel[1] * c   # robot frame

@@ -3,7 +3,7 @@
 Two ways in, one way out:
 
   * The remote board's USB serial printout (bench use: remote plugged into the Pi or Mac), one line every
-    200 ms, printed by firmware/esp32_remote/esp32_remote.ino:
+    50 ms (20 Hz), printed by firmware/esp32_remote/esp32_remote.ino:
         state=RUN x=+0.50 y=-0.20 btn=0 robot=1 pi=1 failsafe=0 manual=1
     x = forward (+1 = stick pushed away from you), y = turn (+1 = stick pushed left),
     state = STOP | RUN | FAULT (stick fault at power-up; treated as STOP).

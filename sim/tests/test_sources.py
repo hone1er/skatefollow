@@ -118,25 +118,25 @@ def test_aim_gains_defaults_match_the_camera_aim_node():
 # If one of these hashes changes, the node changed: update honebot_sim/stack.py (or sim.py's scheduler) to match,
 # then put the new hash here.
 MIRRORED_NODE_CODE = {
-    ("follower", "_on_target"): "953d5b711012",
+    ("follower", "_on_target"): "93c1ccae2f60",
     ("follower", "_tick"): "1a9aa71bc962",
-    ("follower", "_on_speed"): "2aca794eae9e",
-    ("follower", "_on_yaw"): "f743ee60ac91",
+    ("follower", "_on_speed"): "c3fa95a66333",
+    ("follower", "_on_yaw"): "f27fa8cd6ae1",
     ("follower", "_fresh"): "8dca3adbe831",
     ("safety_gate", "_on_cmd"): "47994b036247",
     ("safety_gate", "_on_range"): "f9df425a6044",
     ("safety_gate", "_on_link"): "3116ad3352ce",
     ("safety_gate", "_age"): "b8a62ad45191",
-    ("safety_gate", "_tick"): "f21b91f50c9d",
+    ("safety_gate", "_tick"): "6f1667309c8f",
     ("uwb_node", "_handle"): "6438ba5681ae",
-    ("uwb_node", "_handle_aoa"): "f7d2ac4b4f2b",
-    ("esp32_bridge", "_send_cmd"): "eba39aa0ad05",
-    ("esp32_bridge", "_send_pan"): "824f91bee311",
+    ("uwb_node", "_handle_aoa"): "10f9a1d41dd4",
+    ("esp32_bridge", "_send_cmd"): "be2d79b3de06",
+    ("esp32_bridge", "_send_pan"): "9011e4cee82d",
     ("esp32_bridge", "_on_pan"): "9d596d8520c6",
-    ("esp32_bridge", "_handle"): "19e02d36c35a",
-    ("esp32_bridge", "_publish_range"): "8a01f16cd88b",
-    ("camera_aim", "_on_target"): "d4d5fad5c672",
-    ("camera_aim", "_on_uwb"): "5e6825906f69",
+    ("esp32_bridge", "_handle"): "2736194accd6",
+    ("esp32_bridge", "_publish_range"): "e379bc5e3017",
+    ("camera_aim", "_on_target"): "c9a7f1f0ba4c",
+    ("camera_aim", "_on_uwb"): "4b8a40fdc022",
     ("camera_aim", "_step"): "c51e8c7cf917",
 }
 
@@ -160,8 +160,10 @@ def test_mirrored_node_code_unchanged(node, name):
 # ------------------------------------------------------------------------------------ firmware <-> Pi numbers
 def test_bridge_full_scale_matches_firmware():
     """The Pi turns m/s into wheel commands with max_wheel_speed; the firmware turns them back (ramps, yaw loop)
-    with FULL_SCALE_MPS."""
-    assert load_robot_yaml()["esp32_bridge"]["max_wheel_speed"] == pytest.approx(FW["FULL_SCALE_MPS"])
+    with FULL_SCALE_MPS and YAW_TRACK_WIDTH."""
+    y = load_robot_yaml()["esp32_bridge"]
+    assert y["max_wheel_speed"] == pytest.approx(FW["FULL_SCALE_MPS"])
+    assert y["track_width"] == pytest.approx(FW["YAW_TRACK_WIDTH"])
 
 
 def test_remote_bridge_constants_match_firmware():

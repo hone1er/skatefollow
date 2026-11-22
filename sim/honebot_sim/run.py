@@ -157,7 +157,11 @@ def run_one(name, args):
         from .remote_link import KeyboardRemote, RemoteSerial
         sim.remote_input = RemoteSerial(args.remote) if args.remote else KeyboardRemote()
     if args.view:
-        return view(sim, args)
+        try:
+            return view(sim, args)
+        finally:
+            if sim.remote_input is not None and hasattr(sim.remote_input, "close"):
+                sim.remote_input.close()
     t0 = time.time()
     mt = sim.run()
     ok, why = evaluate(sc, mt, cfg)
@@ -233,7 +237,8 @@ def plot(log, path, title):
     ax[0].plot(t, [r["gate_lin"] for r in log], "--", label="gate allows")
     ax[0].set_ylabel("m/s"); ax[0].legend(loc="upper right"); ax[0].grid(alpha=.3)
     ax[1].plot(t, [r["gap"] for r in log], label="gap robot -> skater")
-    ax[1].plot(t, [min(r["range"], 5.0) for r in log], label="forward sensor (capped at 5)")
+    ax[1].plot(t, [min(r["range"] if (r["range"] is not None and not math.isnan(r["range"])) else 5.0, 5.0)
+                   for r in log], label="forward sensor (capped at 5)")
     ax[1].set_ylabel("m"); ax[1].legend(loc="upper right"); ax[1].grid(alpha=.3)
     ax[2].plot(t, [r["cmd_ang"] for r in log], label="yaw rate asked (rad/s)")
     ax[2].plot(t, [r["pan"] for r in log], label="camera pan (rad)")

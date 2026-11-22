@@ -25,9 +25,12 @@ class PoseToTarget(Node):
         follower = self.declare_parameter('follower', 'turtle2').value
         self.frame_id = self.declare_parameter('frame_id', 'base_link').value
         rate_hz = self.declare_parameter('rate_hz', 20.0).value
+        self.pose_timeout = self.declare_parameter('pose_timeout', 0.5).value
 
         self.leader_pose = None
+        self.leader_stamp = None
         self.follower_pose = None
+        self.follower_stamp = None
         self.create_subscription(Pose, f'/{leader}/pose', self._on_leader, 10)
         self.create_subscription(Pose, f'/{follower}/pose', self._on_follower, 10)
         self.pub = self.create_publisher(PointStamped, 'target', 10)
@@ -36,18 +39,24 @@ class PoseToTarget(Node):
 
     def _on_leader(self, msg):
         self.leader_pose = msg
+        self.leader_stamp = self.get_clock().now()
 
     def _on_follower(self, msg):
         self.follower_pose = msg
+        self.follower_stamp = self.get_clock().now()
 
     def _tick(self):
         if self.leader_pose is None or self.follower_pose is None:
+            return
+        now = self.get_clock().now()
+        if ((now - self.leader_stamp).nanoseconds * 1e-9 > self.pose_timeout
+                or (now - self.follower_stamp).nanoseconds * 1e-9 > self.pose_timeout):
             return
         f, l = self.follower_pose, self.leader_pose
         dx, dy = l.x - f.x, l.y - f.y
         c, s = math.cos(f.theta), math.sin(f.theta)
         msg = PointStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = now.to_msg()
         msg.header.frame_id = self.frame_id
         msg.point.x = c * dx + s * dy      # world -> follower frame
         msg.point.y = -s * dx + c * dy

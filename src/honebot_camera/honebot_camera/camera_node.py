@@ -45,7 +45,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32, String
 
-from honebot_camera.aim import pixel_to_bearing, pixel_to_elevation, vfov_from_hfov
+from honebot_camera.aim import bearing_to_x_norm, pixel_to_bearing, pixel_to_elevation, vfov_from_hfov
 from honebot_camera.detector import make_detector
 from honebot_camera.gopro import GOPRO_UDP_PORT, GoProControl, find_gopro, stream_url
 from honebot_camera.track import (Candidate, PlausibilityParams, TargetTracker, TrackParams, expected_height_frac,
@@ -74,7 +74,12 @@ class UdpTee(threading.Thread):
         self._stop_evt = threading.Event()   # not _stop: Thread.join() calls a private _stop()
 
     def run(self):
-        with open(self.path, 'ab') as f:
+        f = None
+        try:
+            f = open(self.path, 'ab')
+        except OSError as e:
+            self.log.error(f'cannot open recording file {self.path!r} ({e}); forwarding without recording')
+        try:
             while not self._stop_evt.is_set():
                 try:
                     data, _ = self.sock.recvfrom(65536)
@@ -82,13 +87,28 @@ class UdpTee(threading.Thread):
                     continue
                 except OSError:
                     break
-                f.write(data)
-                self.bytes += len(data)
+                if f is not None:
+                    try:
+                        f.write(data)
+                        self.bytes += len(data)
+                    except OSError as e:
+                        self.log.error(f'recording write failed ({e}); stopping file write, stream continues')
+                        try:
+                            f.close()
+                        except OSError:
+                            pass
+                        f = None
                 try:
                     self.sock.sendto(data, self.forward)
                 except OSError:
                     pass
-        self.sock.close()
+        finally:
+            if f is not None:
+                try:
+                    f.close()
+                except OSError:
+                    pass
+            self.sock.close()
 
     def stop(self):
         self._stop_evt.set()
@@ -123,13 +143,16 @@ class FrameGrabber(threading.Thread):
                 self.connected = True
                 failures = 0
                 self.log.info('video source opened')
+            t_read = time.monotonic()
             ok, frame = cap.read()
             if not ok or frame is None:
-                failures += 1
+                # A slow read (>= 1 s, e.g. FFmpeg UDP timeout=2s) means the stream already timed out;
+                # reopen immediately instead of waiting 30 x 2 s = 60 s.
+                failures += 30 if (time.monotonic() - t_read) >= 1.0 else 1
                 if self.loop_file and failures < 3:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
-                if failures >= 30:            # ~a second of nothing: reopen (USB unplugged, stream stopped)
+                if failures >= 30:            # ~a second of nothing (or a timed-out stream): reopen
                     self.log.warn('video source lost; reopening')
                     cap.release()
                     cap = None
@@ -150,6 +173,12 @@ class FrameGrabber(threading.Thread):
             if self.seq == after_seq or self.frame is None:
                 return None, after_seq
             return self.frame, self.seq
+
+    def pop_frames_in(self):
+        with self.lock:
+            n = self.frames_in
+            self.frames_in = 0
+            return n
 
     def stop(self):
         self._stop_evt.set()
@@ -207,10 +236,9 @@ class CameraNode(Node):
         self.create_subscription(PointStamped, 'target', self._on_uwb, 10)
         self.create_subscription(Float32, 'camera/pan_angle', self._on_pan, 10)
 
-        self.uwb_bearing = None
-        self.uwb_dist = None
-        self.uwb_stamp = None
+        self._uwb = None             # immutable (bearing, dist, stamp), swapped atomically across threads
         self.pan_angle = 0.0
+        self._stats_lock = threading.Lock()
         self.track_text = 'none'
         self.tee = None
         self.gopro = None
@@ -308,31 +336,62 @@ class CameraNode(Node):
         'track_hint_gate_deg': ('hint_gate', math.radians),
     }
 
+    _POSITIVE_TRACK = {'track_gate_max_deg', 'track_n_sigma', 'track_meas_std_deg'}
+    _POSITIVE_PLAUS = {'max_aspect', 'person_height_m', 'size_tol_high'}
+
     def _on_params(self, params):
+        updates = []
         for prm in params:
             if prm.name in self._TRACK_PARAMS:
                 attr, conv = self._TRACK_PARAMS[prm.name]
-                setattr(self.track_params, attr, conv(prm.value))
+                if prm.name == 'track_confirm_hits':
+                    val = int(prm.value)
+                    if val < 1:
+                        return SetParametersResult(successful=False, reason='track_confirm_hits must be >= 1')
+                else:
+                    raw = float(prm.value)
+                    if not math.isfinite(raw) or (prm.name in self._POSITIVE_TRACK and raw <= 0.0) or raw < 0.0:
+                        return SetParametersResult(successful=False, reason=f'{prm.name} must be finite and valid')
+                    val = conv(raw)
+                updates.append(('track', prm.name, attr, val))
             elif hasattr(self.plaus, prm.name):
-                setattr(self.plaus, prm.name, float(prm.value))
+                val = float(prm.value)
+                if not math.isfinite(val):
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be finite')
+                if prm.name in self._POSITIVE_PLAUS and val <= 0.0:
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be > 0')
+                if prm.name != 'min_bottom_y_norm' and val < 0.0:
+                    return SetParametersResult(successful=False, reason=f'{prm.name} must be >= 0')
+                updates.append(('plaus', prm.name, prm.name, val))
             elif prm.name == 'use_uwb_hint':
-                self.use_uwb_hint = bool(prm.value)
+                updates.append(('self', prm.name, 'use_uwb_hint', bool(prm.value)))
+        for kind, pname, attr, val in updates:
+            if kind == 'track':
+                setattr(self.track_params, attr, val)
+            elif kind == 'plaus':
+                setattr(self.plaus, attr, val)
             else:
-                continue
-            self.get_logger().info(f'{prm.name} = {prm.value}')
+                setattr(self, attr, val)
+            self.get_logger().info(f'{pname} = {val}')
         return SetParametersResult(successful=True)
 
     def _on_uwb(self, msg: PointStamped):
-        self.uwb_bearing = math.atan2(msg.point.y, msg.point.x)
-        self.uwb_dist = math.hypot(msg.point.x, msg.point.y)
-        self.uwb_stamp = time.monotonic()
+        x, y = msg.point.x, msg.point.y
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return
+        self._uwb = (math.atan2(y, x), math.hypot(x, y), time.monotonic())
 
     def _on_pan(self, msg: Float32):
-        self.pan_angle = float(msg.data)
+        v = float(msg.data)
+        if math.isfinite(v):
+            self.pan_angle = v
 
-    def _uwb_fresh(self):
-        return (self.use_uwb_hint and self.uwb_stamp is not None
-                and time.monotonic() - self.uwb_stamp <= self.uwb_timeout)
+    def _uwb_sample(self):
+        """Return (bearing, dist) if UWB hint is enabled and fresh, else (None, None)."""
+        uwb = self._uwb
+        if not self.use_uwb_hint or uwb is None or time.monotonic() - uwb[2] > self.uwb_timeout:
+            return None, None
+        return uwb[0], uwb[1]
 
     # --- detection loop -----------------------------------------------------------------
     def _detect_loop(self):
@@ -357,35 +416,38 @@ class CameraNode(Node):
         t0 = time.monotonic()
         dets = self.detector.detect(frame)
         dt = time.monotonic() - t0
-        self.det_count += 1
-        self.det_time_acc += dt
-        self.last_n_dets = len(dets)
 
         # 1. Plausibility: drop boxes that cannot be a person (and, with UWB, not a person at that distance).
-        uwb_fresh = self._uwb_fresh()
-        exp_h = expected_height_frac(self.uwb_dist, self.hfov, w, h, self.plaus.person_height_m) if uwb_fresh else None
+        uwb_bearing, uwb_dist = self._uwb_sample()
+        exp_h = (expected_height_frac(uwb_dist, self.hfov, w, h, self.plaus.person_height_m)
+                 if uwb_dist is not None else None)
         pan = self.pan_angle                       # sampled once so every box in this frame uses the same pan
         plausible_dets, rejected = [], []
         for d in dets:
             (plausible_dets if plausible(d, w, h, self.plaus, exp_h) else rejected).append(d)
         # 2. Track in the robot frame: robot bearing = commanded pan + where the box sits in the image.
         cands = [Candidate(pan + pixel_to_bearing(2.0 * d.cx / w - 1.0, self.hfov), d) for d in plausible_dets]
-        hint = self.uwb_bearing if uwb_fresh else None
-        state = self.tracker.update(time.monotonic(), cands, hint)
+        state = self.tracker.update(time.monotonic(), cands, uwb_bearing)
 
         target = None
         if state is None:
-            self.track_text = 'none'
+            track_text = 'none'
         elif not state.confirmed:
-            self.track_text = f'acquiring {state.hits}/{self.track_params.confirm_hits}'
+            track_text = f'acquiring {state.hits}/{self.track_params.confirm_hits}'
         elif state.matched:
-            self.track_text = 'locked'
+            track_text = 'locked'
             target = state.det
         else:
-            self.track_text = f'coasting {state.coast:.1f}s'
+            track_text = f'coasting {state.coast:.1f}s'
         self.have_target = target is not None
-        if target is not None:
-            self.seen_count += 1
+        with self._stats_lock:
+            self.det_count += 1
+            self.det_time_acc += dt
+            self.last_n_dets = len(dets)
+            self.track_text = track_text
+            if target is not None:
+                self.seen_count += 1
+            det_fps = self.det_fps
 
         if target is not None:
             # Filtered bearing (less box jitter than the raw centre); elevation and size from the matched box.
@@ -403,11 +465,13 @@ class CameraNode(Node):
             self.last_preview = time.monotonic()
             pred_x = None
             if state is not None and state.confirmed:
-                xn = -math.tan(state.bearing - pan) / math.tan(self.hfov / 2.0)   # inverse of pixel_to_bearing
-                pred_x = int((xn + 1.0) * 0.5 * w)
-            self._publish_preview(frame, plausible_dets, rejected, target, pred_x)
+                diff = state.bearing - pan
+                if abs(diff) < math.pi / 2.0 - 0.05:
+                    xn = bearing_to_x_norm(diff, self.hfov)
+                    pred_x = int((xn + 1.0) * 0.5 * w)
+            self._publish_preview(frame, plausible_dets, rejected, target, pred_x, det_fps, pan, track_text)
 
-    def _publish_preview(self, frame, dets, rejected, target, pred_x=None):
+    def _publish_preview(self, frame, dets, rejected, target, pred_x=None, det_fps=0.0, pan=0.0, track_text='none'):
         """green = tracked target, orange = other plausible people, grey = rejected as implausible,
         white circle = where the track predicts the target (visible while coasting)."""
         img = frame.copy()
@@ -422,7 +486,7 @@ class CameraNode(Node):
         if pred_x is not None and 0 <= pred_x < w:
             cv2.circle(img, (pred_x, h // 2), 8, (255, 255, 255), 2)
         cv2.line(img, (w // 2, 0), (w // 2, h), (255, 255, 255), 1)
-        cv2.putText(img, f'{self.det_fps:.1f} det/s  pan {math.degrees(self.pan_angle):+.0f} deg  {self.track_text}',
+        cv2.putText(img, f'{det_fps:.1f} det/s  pan {math.degrees(pan):+.0f} deg  {track_text}',
                     (6, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         ok, buf = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
         if not ok:
@@ -436,22 +500,26 @@ class CameraNode(Node):
 
     # --- status ------------------------------------------------------------------------------
     def _status(self):
-        if self.det_count:
-            self.det_fps = self.det_count / max(self.det_time_acc, 1e-6) if self.det_time_acc else 0.0
-            self.det_fps = min(self.det_fps, float(self.det_count))   # bounded by frames actually processed
-        n = self.det_count
-        seen = self.seen_count
-        self.det_count = 0
-        self.seen_count = 0
-        self.det_time_acc = 0.0
+        with self._stats_lock:
+            n = self.det_count
+            seen = self.seen_count
+            dt_acc = self.det_time_acc
+            last_n_dets = self.last_n_dets
+            track_text = self.track_text
+            if n:
+                det_fps = n / max(dt_acc, 1e-6) if dt_acc else 0.0
+                self.det_fps = min(det_fps, float(n))   # bounded by frames actually processed
+            self.det_count = 0
+            self.seen_count = 0
+            self.det_time_acc = 0.0
+        frames_in = self.grabber.pop_frames_in()
         rec = ''
         if self.tee is not None:
             rec = f' rec={os.path.basename(self.record_path)} {self.tee.bytes / 1e6:.1f}MB'
         s = (f'source={self.source} {"connected" if self.grabber.connected else "NO VIDEO"} '
-             f'frames_in={self.grabber.frames_in} det/s={n} people={self.last_n_dets} '
-             f'seen={seen}/{n} track={self.track_text} '
+             f'frames_in={frames_in} det/s={n} people={last_n_dets} '
+             f'seen={seen}/{n} track={track_text} '
              f'detector={self.detector.name}{rec}')
-        self.grabber.frames_in = 0
         self.status_pub.publish(String(data=s))
         self.get_logger().info(s, throttle_duration_sec=10.0)
 

@@ -16,4 +16,17 @@
 # One-off test without installing anything permanent:
 #   sudo setserial /dev/ttyUSB0 closing_wait none
 
-ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="esp32", RUN+="/usr/bin/setserial /dev/%k closing_wait none"
+# IMPORTANT — multiple CP2102 boards (robot ESP32 + UWB board or handheld remote):
+# The single-board rule below matches EVERY CP2102 (10c4:ea60). As soon as a second CP2102
+# board is plugged into the Pi, whichever enumerates last will overwrite /dev/esp32!
+# Pin each board by its USB serial number (or physical USB port KERNELS=="1-1.X"):
+#   udevadm info -a -n /dev/ttyUSB0 | grep -m1 '{serial}'
+# Then comment out the generic SYMLINK rule below and uncomment/fill in the pinned rules:
+#
+# ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="ROBOT_SERIAL", SYMLINK+="esp32"
+# ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="UWB_SERIAL", SYMLINK+="uwb"
+
+# Apply closing_wait=none to every CP2102 board so closing any port never blocks 5 s.
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", RUN+="/usr/bin/setserial /dev/%k closing_wait none"
+# Single-board default symlink (replace with the ATTRS{serial}-pinned rules above once UWB/second ESP32 is attached):
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="esp32"

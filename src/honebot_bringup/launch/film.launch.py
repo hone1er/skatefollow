@@ -27,35 +27,62 @@ from datetime import datetime
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
-def _movers(context):
-    """uwb_node + follower. A launch argument overrides config/robot.yaml only when it was actually given."""
+def _nodes(context):
+    """uwb_node + follower + optional camera + optional bag recording.
+    Launch arguments override config/robot.yaml only when explicitly given."""
+    lc = context.launch_configurations
     share = FindPackageShare('honebot_bringup').perform(context)
     config = os.path.join(share, 'config', 'robot.yaml')
+    side_shot = lc.get('side_shot', 'false').lower() == 'true'
+
+    uwb_params = [config]
+    if lc.get('uwb_port', '') != '':
+        uwb_params.append({'port': lc['uwb_port']})
+
     follower_params = [config]
-    if context.launch_configurations.get('side_shot', 'false').lower() == 'true':
+    if side_shot:
         follower_params.append(os.path.join(share, 'config', 'side_shot.yaml'))
     overrides = {}
     for name in ('max_linear', 'follow_bearing'):
-        value = context.launch_configurations.get(name, '')
+        value = lc.get(name, '')
         if value != '':
             overrides[name] = float(value)
-    return [
+
+    actions = [
         Node(package='honebot_uwb', executable='uwb_node', name='uwb_node', output='screen',
-             parameters=[config, {'port': context.launch_configurations['uwb_port']}]),
+             parameters=uwb_params),
         Node(package='honebot_follow', executable='follower', name='follower', output='screen',
              parameters=follower_params + ([overrides] if overrides else [])),
     ]
 
+    if lc.get('camera', 'true').lower() == 'true':
+        cam_share = FindPackageShare('honebot_camera').perform(context)
+        gopro_fov = lc.get('gopro_fov', '') or ('0' if side_shot else '4')
+        hfov_deg = lc.get('hfov_deg', '') or ('118.0' if side_shot else '87.0')
+        actions.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(cam_share, 'launch', 'camera.launch.py')),
+            launch_arguments={
+                'source': lc['camera_source'],
+                'record': lc['record'],
+                'pan_sign': lc['pan_sign'],
+                'gopro_fov': gopro_fov,
+                'hfov_deg': hfov_deg,
+            }.items()))
+
+    if lc.get('bag', 'true').lower() == 'true':
+        bag_dir = os.path.expanduser(f'~/bags/honebot_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        os.makedirs(os.path.dirname(bag_dir), exist_ok=True)
+        actions.append(ExecuteProcess(cmd=['ros2', 'bag', 'record', '-a', '-o', bag_dir], output='screen'))
+
+    return actions
+
 
 def generate_launch_description():
-    bag_dir = os.path.expanduser(f'~/bags/honebot_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
     return LaunchDescription([
         DeclareLaunchArgument('max_linear', default_value='',
                               description='Top follow speed (m/s); empty = value in config/robot.yaml'),
@@ -63,21 +90,17 @@ def generate_launch_description():
                               description='Keep the skater at this bearing (rad, + = left); empty = config value'),
         DeclareLaunchArgument('side_shot', default_value='false',
                               description='Side view: 2 m, 45 deg behind on the right (config/side_shot.yaml)'),
-        DeclareLaunchArgument('uwb_port', default_value='/dev/ttyUSB1', description='UWB board serial device'),
+        DeclareLaunchArgument('uwb_port', default_value='',
+                              description='UWB board serial device; empty = value in config/robot.yaml'),
         DeclareLaunchArgument('camera', default_value='true', description='Start the camera detector and pan aim'),
         DeclareLaunchArgument('camera_source', default_value='gopro'),
+        DeclareLaunchArgument('gopro_fov', default_value='',
+                              description='GoPro FOV (0 wide, 4 linear); empty = 0 for side_shot, else 4'),
+        DeclareLaunchArgument('hfov_deg', default_value='',
+                              description='Camera horizontal FOV deg; empty = 118.0 for side_shot, else 87.0'),
         DeclareLaunchArgument('record', default_value='false', description='Save the GoPro webcam stream'),
         DeclareLaunchArgument('pan_sign', default_value='1.0', description='-1.0 if the camera pans the wrong way'),
         DeclareLaunchArgument('bag', default_value='true', description='Record all topics to ~/bags'),
 
-        OpaqueFunction(function=_movers),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(PathJoinSubstitution(
-                [FindPackageShare('honebot_camera'), 'launch', 'camera.launch.py'])),
-            launch_arguments={'source': LaunchConfiguration('camera_source'),
-                              'record': LaunchConfiguration('record'),
-                              'pan_sign': LaunchConfiguration('pan_sign')}.items(),
-            condition=IfCondition(LaunchConfiguration('camera'))),
-        ExecuteProcess(cmd=['ros2', 'bag', 'record', '-a', '-o', bag_dir], output='screen',
-                       condition=IfCondition(LaunchConfiguration('bag'))),
+        OpaqueFunction(function=_nodes),
     ])
